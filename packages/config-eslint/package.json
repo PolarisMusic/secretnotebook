@@ -1,0 +1,29 @@
+{
+  "name": "@secretnotebook/config-eslint",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared ESLint flat-config presets",
+  "type": "module",
+  "main": "./base.js",
+  "exports": {
+    ".": "./base.js",
+    "./base": "./base.js",
+    "./node": "./node.js",
+    "./react-native": "./react-native.js"
+  },
+  "files": [
+    "base.js",
+    "node.js",
+    "react-native.js"
+  ],
+  "dependencies": {
+    "@eslint/js": "^9.13.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.11.0",
+    "typescript-eslint": "^8.11.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.0"
+  }
+}
