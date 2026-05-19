@@ -19,6 +19,9 @@
     "typecheck": "tsc -b --noEmit",
     "test": "echo 'no tests yet' && exit 0"
   },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
   "devDependencies": {
     "@secretnotebook/config-eslint": "workspace:*",
     "@secretnotebook/config-tsconfig": "workspace:*",
