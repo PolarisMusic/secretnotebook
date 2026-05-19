@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./apps/api" },
+    { "path": "./apps/mobile" },
+    { "path": "./packages/shared-types" },
+    { "path": "./packages/crypto" },
+    { "path": "./packages/couple-protocol" },
+    { "path": "./packages/prompt-library" }
+  ]
+}
