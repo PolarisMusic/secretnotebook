@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Secret Notebook",
+    "slug": "secretnotebook",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "scheme": "secretnotebook",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.secretnotebook.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Face ID unlocks your couple notebook and confirms pairing.",
+        "NSBluetoothAlwaysUsageDescription": "Bluetooth is used briefly to pair with your partner's device.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.secretnotebook.app",
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_ADVERTISE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Face ID unlocks your couple notebook and confirms pairing."
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Bluetooth is used briefly to pair with your partner's device."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          },
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
+    ]
+  }
+}
