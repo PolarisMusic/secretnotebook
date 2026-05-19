@@ -1,4 +1,4 @@
-import { concatBytes } from './sodium.js';
+import { concatBytes, getSodium } from './sodium.js';
 import { x25519DH } from './x25519.js';
 import { hkdfSha256 } from './hkdf.js';
 import { constantTimeEqual } from './hmac.js';
@@ -66,7 +66,6 @@ export async function pairingCode(
   pubkeyB: Uint8Array,
   digits = 6,
 ): Promise<string> {
-  const { getSodium } = await import('./sodium.js');
   const sodium = await getSodium();
   const first = pickFirst(pubkeyA, pubkeyB) ? pubkeyA : pubkeyB;
   const second = pickFirst(pubkeyA, pubkeyB) ? pubkeyB : pubkeyA;

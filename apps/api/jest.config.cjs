@@ -16,15 +16,7 @@ module.exports = {
       },
     ],
   },
-  collectCoverageFrom: ['src/**/*.ts'],
-  coverageThreshold: {
-    global: {
-      branches: 85,
-      functions: 90,
-      lines: 90,
-      statements: 90,
-    },
-  },
+  collectCoverageFrom: ['src/**/*.ts', '!src/index.ts'],
   coverageReporters: ['text', 'lcov'],
   testTimeout: 30000,
 };

@@ -1,0 +1,40 @@
+name: secretnotebook
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: secretnotebook
+      POSTGRES_PASSWORD: dev_only_not_for_prod
+      POSTGRES_DB: secretnotebook
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U secretnotebook -d secretnotebook']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://secretnotebook:dev_only_not_for_prod@postgres:5432/secretnotebook
+      PORT: '3000'
+      HOST: '0.0.0.0'
+      LOG_LEVEL: info
+      SIGNATURE_MAX_DRIFT_SECONDS: '300'
+    ports:
+      - '3000:3000'
+
+volumes:
+  postgres_data:

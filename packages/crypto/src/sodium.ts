@@ -1,4 +1,12 @@
-import sodium from 'libsodium-wrappers-sumo';
+import { createRequire } from 'node:module';
+import type sodiumTypes from 'libsodium-wrappers-sumo';
+
+// libsodium-wrappers-sumo ships a broken ESM build that references a sibling
+// file (./libsodium-sumo.mjs) which is actually a separate package. The CJS
+// build resolves correctly, so we pull it in via createRequire on Node. The
+// React Native target swaps this module out at the Metro level (see F3).
+const require = createRequire(import.meta.url);
+const sodium = require('libsodium-wrappers-sumo') as typeof sodiumTypes;
 
 export type Sodium = typeof sodium;
 
