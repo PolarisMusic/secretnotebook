@@ -140,6 +140,139 @@ Relay endpoints (added at the end of Phase 1):
 ### Security architecture (Phase 1)
 Key chain: `biometric unlock → keychain-sealed device_master → device_master unwraps {sqlcipher_key, ratchet_state}`. TLS pinning. PII-scrubbed Sentry. Logs ship only stack frames + anonymized device id. Safe Word never leaves device, never logged.
 
+### Step-by-step build order
+
+Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship the **vertical slices (S1–S9)** — each slice is independently testable, demoable, and PR-sized.
+
+#### Foundation
+
+**F0 — Monorepo + tooling**
+- Init pnpm workspace + Turborepo (`pnpm-workspace.yaml`, `turbo.json`)
+- Scaffold `packages/config-tsconfig` (base + node + react-native presets) and `packages/config-eslint`
+- Wire `apps/mobile`, `apps/api`, `packages/{shared-types,crypto,couple-protocol,prompt-library}` placeholders with `package.json` + tsconfig extending the shared base
+- GitHub Actions workflow: `pnpm install` → `pnpm -w lint` → `pnpm -w typecheck` → `pnpm -w test` on every PR
+- Husky + lint-staged pre-commit (eslint + prettier on staged files)
+- **Acceptance**: clean repo, `pnpm install && pnpm -w lint && pnpm -w typecheck` pass with no source files yet
+- **Depends on**: —
+
+**F1 — Shared types + crypto primitives**
+- `packages/shared-types`: install Zod; export `PostSchema`, `PostInputSchema`, `DeviceRegisterSchema`, `SyncEnvelopeSchema` (envelope schema lives here so server can validate shape without reading content)
+- `packages/crypto`: typed wrappers around `react-native-libsodium` (X25519, Ed25519, XChaCha20-Poly1305, Argon2id, HKDF, HMAC); Node-side polyfill for unit tests
+- `packages/crypto/src/safeword.ts`: `deriveVerifier(safeword, salt)` using Argon2id (m=64MB, t=3, p=1); `verify(input, stored)` with constant-time compare
+- `packages/crypto/src/handshake.ts`: X3DH triple-DH → 32-byte `root_key`
+- Jest KAT tests against published vectors for every primitive; verifier round-trip + mismatch tests
+- **Acceptance**: `pnpm --filter crypto test` green; coverage ≥90% for `packages/crypto`
+- **Depends on**: F0
+
+**F2 — API service skeleton**
+- `apps/api`: Fastify 4 + `@fastify/sensible` + `fastify-type-provider-zod` + Drizzle ORM + `pg` driver
+- `infra/db/migrations/0001_init.sql` for `posts` + `devices`; Drizzle schema reflects it
+- `apps/api/src/auth/http-signature.ts`: middleware that verifies `X-Device-Pubkey` (Ed25519) signed `METHOD|PATH|sha256(body)|timestamp`; rejects timestamp drift > 5 min
+- `GET /v1/health` route + Fastify-inject integration test (signed and unsigned)
+- `infra/docker/docker-compose.yml`: Postgres 16 + the api service for local dev
+- **Acceptance**: `pnpm --filter api dev` boots; `curl /v1/health` returns 200; signed request passes, unsigned fails 401
+- **Depends on**: F0, F1
+
+**F3 — Mobile app skeleton + SQLCipher**
+- `apps/mobile`: Expo bare workflow + RN 0.74 + TypeScript; `@react-navigation/native` v7 native-stack; Zustand + TanStack Query
+- Install native modules: `op-sqlite` (SQLCipher build), `react-native-mmkv`, `react-native-keychain`, `expo-local-authentication`, `react-native-ble-plx`, `react-native-libsodium`; verify iOS Pod + Android Gradle integration builds clean on both
+- `apps/mobile/src/db/migrations/` runner; Phase-1 migrations create every table from the Mobile local DB schema above (including `roleplay_session`)
+- Key-chain wrapper: on first launch, generate `device_master` (32 bytes), seal behind biometric via `react-native-keychain`; derive SQLCipher key as `HKDF(device_master, "sqlcipher")`
+- Navigation skeleton: `RootStack` with `Onboarding` / `Main` switch driven by Zustand `couple.status`
+- Detox config + first smoke test (`app launches`)
+- **Acceptance**: app launches in iOS + Android simulators; `sqlite3` CLI cannot open the DB file; Detox smoke test green
+- **Depends on**: F0, F1
+
+#### Vertical slices
+
+**S1 — Pairing**
+- `apps/mobile/src/features/pairing/state-machine.ts`: states `idle → scanning → code_shown → biometric → handshake → safeword_required`; use XState or a typed reducer
+- BLE adapter (`packages/couple-protocol/src/transport/ble.ts`) with `react-native-ble-plx`; pluggable mock for unit tests
+- Compute 6-digit verification code = `truncate(sha256(pubkey_A || pubkey_B), 3)`; show on both screens
+- Mutual biometric confirmation via `expo-local-authentication`; if mismatch, restart
+- X3DH derives `root_key`; persist `couple` row with `status='awaiting_safeword'`
+- Screen: `screens/onboarding/PairWithPartner.tsx`
+- **Tests**: pairing harness with two in-process devices using BLE mock — full state machine completes and stores matching `couple` rows; Detox `pair` step on simulators
+- **Acceptance**: two devices pair; both have identical `root_key` (verified via shared HMAC); couple row exists with same `couple.id`
+- **Depends on**: F3
+
+**S2 — Safe Word & session**
+- `features/safeword/verifier.ts`: each side derives verifier locally; exchange via the freshly established couple channel; compare constant-time; on match, persist `safeword_verifier` + `safeword_salt`, advance `couple.status='paired'`
+- Screens: `onboarding/DefineSafeWord.tsx` (joint entry with partner-ready indicator), `auth/SafeWordGate.tsx` (gate on cold start, on background >60s, on screen-lock release)
+- `features/safeword/session.ts`: Zustand in-memory `session` (never persisted), TTL 30 min idle
+- **Tests**: unit — matching word produces identical verifiers, mismatched restarts; E2E — cold launch shows gate, correct entry passes, wrong rejects 3× and locks for 30s
+- **Acceptance**: Safe Word required on every cold start; no session token in DB or MMKV
+- **Depends on**: S1
+
+**S3 — Global posts feed (server + mobile)**
+- Server: `apps/api/src/routes/posts.ts` (POST/GET list/GET id) + `routes/devices.ts` (POST register); rate limit by device pubkey via `@fastify/rate-limit`
+- Mobile API client: TanStack Query hooks, signs every request with device Ed25519 key
+- Screens: `feed/GlobalFeed.tsx` (infinite scroll + pull-to-refresh), `feed/SubmitPost.tsx` (text or link, content-type radio), `feed/PostDetail.tsx`
+- `post_cache` write-through on every fetch
+- **Tests**: server integration for each endpoint incl. signature rejection + dedup-by-`body_hash`; mobile component test for SubmitPost form; manual cross-simulator submission visible in feed
+- **Acceptance**: submit on A → appears in feed on B within one refresh; rate limit returns 429 after threshold
+- **Depends on**: F2, F3, S2
+
+**S4 — Couple Channel (relay + sync engine)**
+- Server: `apps/api/src/routes/relay.ts` (`POST/GET/DELETE /v1/relay/inbox/:blindedId`), 30-day TTL enforced by cron in `apps/api/src/cron/relay-gc.ts`
+- `packages/couple-protocol/src/envelope.ts`: `SyncEnvelope` Zod schema; `blindedId(couple_root, recipient_pubkey, day) = HMAC(couple_root, recipient_pubkey || day)`
+- `packages/couple-protocol/src/ratchet.ts`: Double Ratchet wrappers (init from `root_key`, encrypt/decrypt CRDT ops)
+- `apps/mobile/src/features/couple-channel/sync-engine.ts`: outbox table writer, periodic relay poll (foreground polling + `react-native-background-fetch`), envelope dedup via `sync_seen`
+- CRDT merge: per-entity LWW for fields, add-only set for `saved_post` and `ledger_entry`
+- **Tests**: two-device integration with fake relay clock — writes on A appear on B in one poll cycle; replays deduped; out-of-order envelopes still converge to identical state; property tests with `fast-check`
+- **Acceptance**: arbitrary write on one device is consistently visible on the other; server cannot decrypt any envelope (verified by attempting decryption with wrong key in test)
+- **Depends on**: F2, S2
+
+**S5 — Save-for-Partner**
+- Mobile: "Save for partner" action on `PostDetail` → writes `saved_post` row locally (`saved_by_pubkey=me`, `saved_for_pubkey=partner`, `unlocked_at=NULL`) + enqueues sync envelope
+- Recipient screens: `couple/SavedByYou.tsx` (your own saves with status) and `couple/SavedForYou.tsx` (locked-count tile only — actual post hidden until unlocked)
+- SavedForYou CTA: "complete a prompt to unlock one"
+- **Tests**: save on A → `saved_post` row on B (still locked, body not fetched); E2E covers the save action; permission test — A cannot save for someone they're not paired with
+- **Acceptance**: locked count on recipient's screen increments after sync
+- **Depends on**: S3, S4
+
+**S6 — Prompts (assignment + certification)**
+- `packages/prompt-library/src/seed.json`: ~30 seed prompts each `{key, title, body, suggestedAssignee: 'either'|'curator'|'enactor'}`; assignee is a hint only
+- `features/prompts/assigner.ts`: weighted-random selection avoiding immediate repeats; writes `prompt` row with `state='assigned'`, `assigned_to_pubkey`, `assigned_by_pubkey`
+- Screens: `prompts/PromptList.tsx` (active prompts assigned to you), `prompts/ActivePrompt.tsx` (mark "I did it"), `prompts/CertifyCompletion.tsx` (partner side — "I confirm they completed it" button → `state='certified'`)
+- All transitions write through the couple channel
+- **Tests**: completing without partner certification leaves prompt at `completed` (not `certified`); only the non-assignee partner can certify; race test — concurrent certify + complete settles deterministically
+- **Acceptance**: a prompt cannot reach `certified` without both sides' actions
+- **Depends on**: S4
+
+**S7 — Random unlock**
+- `features/saved-posts/random-unlocker.ts`: on `prompt.state` transition to `certified`, atomically pick one random `saved_post` where `unlocked_at IS NULL AND saved_for_pubkey = assignee_of_prompt`, set `unlocked_at = now()`, `unlock_prompt_id = prompt.id`, enqueue sync envelope
+- Recipient UI: notification ("a post unlocked"); unlocked tile moves into `SavedForYou`; opening it fetches the body from the global feed; Safe Word gate enforced on view
+- Edge: zero unlockable posts — prompt still credits points but UI shows "ask your partner to save more"
+- **Tests**: certifying one prompt unlocks exactly one post (not zero, not two); concurrent certifications on two devices result in two distinct posts unlocked (CRDT add-only set semantics); Safe Word gate blocks view until satisfied
+- **Acceptance**: exactly-one-unlock invariant holds across concurrent merges
+- **Depends on**: S5, S6, S2
+
+**S8 — Rating + gratitude + Couple Points**
+- `features/roleplay/rating-flow.ts`: opens after recipient taps "I tried it" on an unlocked post; curator privately enters 1–10; written to `roleplay_session.rating` only — **never sent to API, never in events**
+- `features/roleplay/gratitude-screen.tsx`: pulls a gratitude prompt from `prompt-library`; both sides must complete and tap "done"; sets `gratitude_enactor_done_at` / `gratitude_curator_done_at`
+- `features/ledger/couple-points.ts`: accrual rules — prompt certification = +10, save-for-partner = +2, completed role-play loop (both gratitude done) = +25; writes `ledger_entry` rows; syncs via couple channel
+- `screens/couple/CoupleHome.tsx`: Couple Level (derived view over `ledger_entry`) + recent activity list
+- **Tests**: rating never appears in any sync envelope payload sent to the API (intercept relay POST in test); both sides see matching `ledger_entry` rows after gratitude; CRDT merge resolves duplicate writes idempotently
+- **Acceptance**: full loop completion adds the same point totals on both devices
+- **Depends on**: S4, S7
+
+**S9 — End-to-end happy-path validation**
+- Detox spec covering the Phase 1 verification flow (pair → Safe Word → submit + save → complete + certify prompt → unlock → view → enact → rate → gratitude → points)
+- Security smoke: SQLCipher unreadable by `sqlite3` CLI; `FLAG_SECURE` on every couple-content screen on Android; biometric required after backgrounding
+- Sentry PII-scrubber unit test with sample payloads
+- Manual internal build distribution (TestFlight + Android internal track)
+- **Acceptance**: green Detox run on iOS + Android simulators in CI; happy path walked through on physical devices by two testers
+- **Depends on**: S1–S8
+
+#### Dependency graph (at a glance)
+```
+F0 → F1 → F2 ↘
+          ↘ F3 → S1 → S2 → S3 → S5 ↘
+                         ↘ S4 ↗   ↘
+                              S6 → S7 → S8 → S9
+```
+
 ### Phase 1 testing
 - Unit (Jest): crypto KAT vectors, CRDT merge, Safe Word KDF, ledger math
 - Integration: two-simulator pairing harness (BLE mocked at adapter), relay sync with fake clock
