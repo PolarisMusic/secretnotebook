@@ -23,6 +23,7 @@ module.exports = {
     'src/db/migrate.ts',
     'src/db/executor.ts',
     'src/db/migrations/**/*.ts',
+    'src/features/pairing/**/*.ts',
     'src/security/device-master.ts',
     'src/security/sqlcipher-key.ts',
     'src/state/**/*.ts',
