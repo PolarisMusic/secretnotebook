@@ -1,10 +1,12 @@
 {
   "extends": "@secretnotebook/config-tsconfig/react-native.json",
   "compilerOptions": {
-    "rootDir": "./src",
+    "rootDir": ".",
     "outDir": "./dist",
-    "tsBuildInfoFile": "./.tsbuildinfo"
+    "tsBuildInfoFile": "./.tsbuildinfo",
+    "types": ["react"],
+    "jsx": "react-native"
   },
-  "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules"]
+  "include": ["index.ts", "App.tsx", "src/**/*"],
+  "exclude": ["dist", "node_modules", "babel.config.js", "metro.config.js", ".expo"]
 }

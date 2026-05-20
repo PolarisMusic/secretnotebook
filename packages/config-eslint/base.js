@@ -4,7 +4,21 @@ import prettier from 'eslint-config-prettier';
 
 export default [
   {
-    ignores: ['**/dist/**', '**/build/**', '**/.turbo/**', '**/coverage/**', '**/node_modules/**'],
+    ignores: [
+      '**/dist/**',
+      '**/build/**',
+      '**/.turbo/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '**/babel.config.js',
+      '**/metro.config.js',
+      '**/jest.config.cjs',
+      '**/jest.config.js',
+      '**/.detoxrc.js',
+      '**/.expo/**',
+      '**/ios/**',
+      '**/android/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
