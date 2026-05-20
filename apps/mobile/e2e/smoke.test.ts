@@ -53,7 +53,17 @@ describe('Global feed (S3) — placeholder for the post-pairing happy path', () 
   //     submit-post.too-long     — visible above the 4000-char limit
   //     submit-post.error        — visible on a 4xx response
   //   screen.post-detail
-  //     post-detail.back         — pops back to feed
-  //     post-detail.body         — for text posts
-  //     post-detail.open-link    — for link posts
+  //     post-detail.back              — pops back to feed
+  //     post-detail.body              — for text posts
+  //     post-detail.open-link         — for link posts
+  //     post-detail.save-for-partner  — wired iff sync engine is ready
+  //     post-detail.save-notice       — inline status after save
+  //   feed.open-saved                 — opens SavedByYou (engine-ready only)
+  //   screen.saved-by-you
+  //     saved-by-you.back / .view-for-you / .row.<savedPostId>
+  //     saved-by-you.empty / .loading
+  //   screen.saved-for-you
+  //     saved-for-you.back / .view-by-you
+  //     saved-for-you.locked-tile / .unlocked-tile
+  //     saved-for-you.total
 });

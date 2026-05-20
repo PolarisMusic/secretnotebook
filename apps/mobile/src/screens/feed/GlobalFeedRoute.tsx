@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
 import { usePostsFeed } from '../../features/api/queries';
+import { useSyncEngineStore } from '../../features/couple-channel/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { GlobalFeed } from './GlobalFeed';
 
@@ -22,6 +23,7 @@ import { GlobalFeed } from './GlobalFeed';
 export function GlobalFeedRoute(): JSX.Element {
   const client = useApiStore((s) => s.client);
   const exec = useDatabaseStore((s) => s.exec);
+  const engine = useSyncEngineStore((s) => s.engine);
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
 
   const feedHooks = useMemo(
@@ -60,6 +62,7 @@ export function GlobalFeedRoute(): JSX.Element {
         onLoadMore={() => void query.fetchNextPage()}
         onSelectPost={(id) => navigation.navigate('PostDetail', { id })}
         onCompose={() => navigation.navigate('SubmitPost')}
+        onOpenSaved={engine ? () => navigation.navigate('SavedByYou') : undefined}
       />
     </View>
   );

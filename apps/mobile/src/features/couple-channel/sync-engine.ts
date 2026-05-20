@@ -97,6 +97,17 @@ export class SyncEngine {
     this.pollLimit = deps.pollLimit ?? 100;
   }
 
+  /** Read-only views on the deps the screens need. */
+  get selfPub(): Uint8Array {
+    return this.deps.selfPub;
+  }
+  get peerPub(): Uint8Array {
+    return this.deps.peerPub;
+  }
+  get coupleId(): string {
+    return this.deps.coupleId;
+  }
+
   /** Append a CRDT op to the outbox. Visible to flush() on the next tick. */
   async enqueue(op: CrdtOp): Promise<void> {
     await enqueueOutbox(this.deps.exec, {

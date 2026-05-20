@@ -22,6 +22,8 @@ export interface GlobalFeedProps {
   readonly onLoadMore: () => void;
   readonly onSelectPost: (id: string) => void;
   readonly onCompose: () => void;
+  /** Optional — hidden on unpaired devices (no Saved area to navigate to). */
+  readonly onOpenSaved?: () => void;
 }
 
 /**
@@ -59,14 +61,26 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
     <SafeAreaView style={styles.container} testID="screen.global-feed">
       <View style={styles.header}>
         <Text style={styles.title}>Global feed</Text>
-        <Pressable
-          accessibilityRole="button"
-          testID="feed.compose"
-          onPress={props.onCompose}
-          style={styles.composeButton}
-        >
-          <Text style={styles.composeButtonText}>+ Post</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          {props.onOpenSaved ? (
+            <Pressable
+              accessibilityRole="button"
+              testID="feed.open-saved"
+              onPress={props.onOpenSaved}
+              style={styles.savedButton}
+            >
+              <Text style={styles.savedButtonText}>Saved</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            testID="feed.compose"
+            onPress={props.onCompose}
+            style={styles.composeButton}
+          >
+            <Text style={styles.composeButtonText}>+ Post</Text>
+          </Pressable>
+        </View>
       </View>
 
       {props.error ? (
@@ -120,6 +134,14 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   title: { color: '#f5f5f5', fontSize: 22, fontWeight: '600' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  savedButton: {
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  savedButtonText: { color: '#9ec5ff', fontWeight: '600' },
   composeButton: {
     backgroundColor: '#2a2a2a',
     paddingHorizontal: 14,

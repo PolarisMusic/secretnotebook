@@ -8,10 +8,13 @@ export interface PostDetailProps {
   readonly isLoading: boolean;
   readonly error: Error | null;
   readonly onBack: () => void;
-  /** Optional: called when the user taps "Save for partner". S5 wires
-   *  this up; for S3 we leave it undefined so the button can be hidden
-   *  while we ship the read-only detail view first. */
-  readonly onSaveForPartner?: () => void;
+  /** Wired by the route iff the SyncEngine is ready (couple paired +
+   *  couple_ratchet seeded + ApiClient live). Hidden on unpaired
+   *  devices so users don't see a Save action that can't do anything. */
+  readonly onSaveForPartner?: () => void | Promise<void>;
+  /** Optional inline status line after a save attempt — error or
+   *  success. Cleared by the route on the next render once relevant. */
+  readonly saveNotice?: string | null;
 }
 
 function isLinkLike(body: string): boolean {
@@ -73,6 +76,11 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
               <Text style={styles.saveButtonText}>Save for partner</Text>
             </Pressable>
           ) : null}
+          {props.saveNotice ? (
+            <Text style={styles.saveNotice} testID="post-detail.save-notice">
+              {props.saveNotice}
+            </Text>
+          ) : null}
         </View>
       ) : null}
     </SafeAreaView>
@@ -102,6 +110,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveButtonText: { color: '#f5f5f5', fontWeight: '600' },
+  saveNotice: { color: '#9e9e9e', fontSize: 13, textAlign: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   errorText: { color: '#ffb4b4', fontSize: 14, textAlign: 'center' },
 });
