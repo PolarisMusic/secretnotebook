@@ -6,6 +6,9 @@ import { MIGRATIONS } from '../../db/migrations';
 import { useDatabaseStore } from '../../db/store';
 import { createKeychainAdapter } from '../../security/keychain';
 import { useCoupleStore } from '../../state/couple';
+import { ApiClient } from '../api/client';
+import { DEFAULT_API_CONFIG } from '../api/config';
+import { useApiStore } from '../api/store';
 import { bootstrap, type BootDeps } from './bootstrap';
 import { useBootStore } from './store';
 
@@ -33,6 +36,12 @@ export async function runBoot(): Promise<void> {
         coupleId: result.couple.coupleId,
       });
     }
+    useApiStore.getState().setClient(
+      new ApiClient({
+        baseUrl: DEFAULT_API_CONFIG.baseUrl,
+        keyPair: result.deviceSigningKey,
+      }),
+    );
     boot.succeed();
   } catch (e) {
     boot.fail((e as Error).message ?? 'Boot failed');

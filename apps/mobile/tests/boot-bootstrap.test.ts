@@ -111,6 +111,17 @@ describe('bootstrap', () => {
     expect(result.couple?.status).toBe('awaiting_safeword');
   });
 
+  it('derives a stable device signing keypair from the same device_master across boots', async () => {
+    const kc = inMemoryKeychain();
+    const r1 = await bootstrap(harness(kc).deps);
+    const r2 = await bootstrap(harness(kc).deps);
+    expect(Array.from(r1.deviceSigningKey.publicKey)).toEqual(
+      Array.from(r2.deviceSigningKey.publicKey),
+    );
+    expect(r1.deviceSigningKey.publicKey.length).toBe(32);
+    expect(r1.deviceSigningKey.privateKey.length).toBe(64);
+  });
+
   it('surfaces a keychain error verbatim (caller is responsible for retry UX)', async () => {
     const broken: KeychainAdapter = {
       hasDeviceMaster: async () => false,

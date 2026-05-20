@@ -34,3 +34,26 @@ describe('Pairing (S1) — single-device flow up to code_shown', () => {
     // For now this is documented as a placeholder Detox step.
   });
 });
+
+describe('Global feed (S3) — placeholder for the post-pairing happy path', () => {
+  // The full feed flow needs a paired + Safe-Word-satisfied couple, so
+  // the Detox step here is a placeholder until the harness wires that up
+  // on the Mac runbook. The testIDs the feed slice exposes for E2E:
+  //   screen.global-feed
+  //     feed.compose             — opens SubmitPost
+  //     feed.post.<uuid>         — opens PostDetail
+  //     feed.empty               — visible until the first GET 200
+  //     feed.loading-more        — visible during fetchNextPage()
+  //   screen.submit-post
+  //     submit-post.type.text    — content-type radio: text
+  //     submit-post.type.link    — content-type radio: link
+  //     submit-post.body         — TextInput
+  //     submit-post.submit       — disabled until non-empty body
+  //     submit-post.cancel       — pops back to feed
+  //     submit-post.too-long     — visible above the 4000-char limit
+  //     submit-post.error        — visible on a 4xx response
+  //   screen.post-detail
+  //     post-detail.back         — pops back to feed
+  //     post-detail.body         — for text posts
+  //     post-detail.open-link    — for link posts
+});
