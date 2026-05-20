@@ -143,6 +143,28 @@ describe('POST /v1/posts', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('returns 400 when the JSON body is syntactically invalid (raw-body parser surfaces the error)', async () => {
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const rawBytes = Buffer.from('{ this is not json ', 'utf8');
+    const bodyHash = createHash('sha256').update(rawBytes).digest('hex');
+    const canonical = `POST|/v1/posts|${bodyHash}|${ts}`;
+    const { ed25519Sign, bytesToHex: hex } = await import('@secretnotebook/crypto');
+    const sig = await ed25519Sign(new TextEncoder().encode(canonical), kp.privateKey);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/v1/posts',
+      headers: {
+        'x-device-pubkey': hex(kp.publicKey),
+        'x-signature': hex(sig),
+        'x-timestamp': String(ts),
+        'content-type': 'application/json',
+      },
+      payload: rawBytes,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('rejects a tampered body whose hash no longer matches the signed canonical string', async () => {
     const kp = await generateEd25519KeyPair();
     const ts = Math.floor(ctx.now() / 1000);

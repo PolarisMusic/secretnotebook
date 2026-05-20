@@ -30,6 +30,22 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.setSerializerCompiler(serializerCompiler);
   void jsonSchemaTransform;
 
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+    const buf = body as Buffer;
+    req.rawBody = buf;
+    if (buf.length === 0) {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(buf.toString('utf8')));
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error('invalid JSON body');
+      (e as Error & { statusCode?: number }).statusCode = 400;
+      done(e, undefined);
+    }
+  });
+
   await app.register(sensible);
   await app.register(rateLimit, {
     max: opts.env.RATE_LIMIT_MAX,

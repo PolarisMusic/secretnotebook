@@ -55,22 +55,15 @@ export const postsRoute: FastifyPluginAsyncZod<PostsRouteOptions> = async (fasti
     },
     async (req) => {
       const input = req.body;
-      const bodyHash = sha256(input.body);
-      const existing = await opts.store.findByBodyHash(bodyHash);
-      if (existing) {
-        return { id: existing.id, createdAt: existing.createdAt.toISOString() };
-      }
-
       const pubkey = req.devicePubkey;
       if (!pubkey) {
         throw fastify.httpErrors.unauthorized('signature pubkey missing');
       }
-
-      const row = await opts.store.insert({
+      const row = await opts.store.insertOrGetByBodyHash({
         id: randomUUID(),
         contentType: input.contentType,
         body: input.body,
-        bodyHash,
+        bodyHash: sha256(input.body),
         anonAuthor: pubkey,
         createdAt: now(),
       });

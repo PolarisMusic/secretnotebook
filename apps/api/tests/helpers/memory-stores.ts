@@ -25,11 +25,9 @@ function compareDesc(a: StoredPost, b: StoredPost): number {
 export class MemoryPostsStore implements PostsStore {
   readonly rows: StoredPost[] = [];
 
-  async findByBodyHash(bodyHash: Uint8Array): Promise<StoredPost | null> {
-    return this.rows.find((r) => bytesEqual(r.bodyHash, bodyHash)) ?? null;
-  }
-
-  async insert(input: NewPostInput): Promise<StoredPost> {
+  async insertOrGetByBodyHash(input: NewPostInput): Promise<StoredPost> {
+    const existing = this.rows.find((r) => bytesEqual(r.bodyHash, input.bodyHash));
+    if (existing) return existing;
     const row: StoredPost = {
       id: input.id,
       contentType: input.contentType,

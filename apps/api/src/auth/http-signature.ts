@@ -13,6 +13,13 @@ const HEX_128 = /^[0-9a-f]{128}$/i;
 declare module 'fastify' {
   interface FastifyRequest {
     devicePubkey?: Uint8Array;
+    /**
+     * Raw request body bytes, captured by the `application/json` content-type
+     * parser before JSON.parse runs. The signature middleware hashes these
+     * bytes directly so the wire bytes the client signed are the ones we
+     * verify against — no JSON re-serialization step in between.
+     */
+    rawBody?: Buffer;
   }
 }
 
@@ -50,18 +57,10 @@ function getHeader(req: FastifyRequest, name: string): string | undefined {
   return undefined;
 }
 
-function rawBodyHex(req: FastifyRequest): string {
-  const body = req.body;
-  if (body === undefined || body === null) {
-    return sha256Hex(null);
-  }
-  if (typeof body === 'string') {
-    return sha256Hex(body);
-  }
-  if (Buffer.isBuffer(body)) {
-    return sha256Hex(new Uint8Array(body));
-  }
-  return sha256Hex(JSON.stringify(body));
+function rawBodyHashHex(req: FastifyRequest): string {
+  const raw = req.rawBody;
+  if (!raw || raw.length === 0) return sha256Hex(null);
+  return sha256Hex(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
 }
 
 export async function verifyRequestSignature(
@@ -84,7 +83,7 @@ export async function verifyRequestSignature(
     return { ok: false, reason: 'timestamp drift exceeded' };
   }
 
-  const bodyHash = rawBodyHex(req);
+  const bodyHash = rawBodyHashHex(req);
   const canonical = canonicalRequestString(req.method, req.url, bodyHash, tsHeader);
 
   const pubkey = hexToBytes(pubkeyHex);
@@ -103,6 +102,7 @@ export const httpSignaturePlugin: FastifyPluginAsync<HttpSignatureOptions> = asy
   opts,
 ) => {
   fastify.decorateRequest('devicePubkey', undefined);
+  fastify.decorateRequest('rawBody', undefined);
   fastify.decorate(
     'requireSignature',
     async function requireSignature(req: FastifyRequest, reply: FastifyReply): Promise<void> {

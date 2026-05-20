@@ -28,8 +28,13 @@ export interface PostListResult {
 }
 
 export interface PostsStore {
-  findByBodyHash(bodyHash: Uint8Array): Promise<StoredPost | null>;
-  insert(input: NewPostInput): Promise<StoredPost>;
+  /**
+   * Atomically create a post or — if a row with the same body_hash already
+   * exists — return the existing row unchanged. This collapses the legacy
+   * find-then-insert race into a single round trip; in Drizzle land that's
+   * INSERT ... ON CONFLICT (body_hash) DO UPDATE ... RETURNING.
+   */
+  insertOrGetByBodyHash(input: NewPostInput): Promise<StoredPost>;
   list(opts: PostListOptions): Promise<PostListResult>;
   findById(id: string): Promise<StoredPost | null>;
 }

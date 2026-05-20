@@ -25,12 +25,7 @@ function rowToStored(row: typeof posts.$inferSelect): StoredPost {
 export class DrizzlePostsStore implements PostsStore {
   constructor(private readonly db: Database) {}
 
-  async findByBodyHash(bodyHash: Uint8Array): Promise<StoredPost | null> {
-    const rows = await this.db.select().from(posts).where(eq(posts.bodyHash, bodyHash)).limit(1);
-    return rows[0] ? rowToStored(rows[0]) : null;
-  }
-
-  async insert(input: NewPostInput): Promise<StoredPost> {
+  async insertOrGetByBodyHash(input: NewPostInput): Promise<StoredPost> {
     const [row] = await this.db
       .insert(posts)
       .values({
@@ -41,8 +36,12 @@ export class DrizzlePostsStore implements PostsStore {
         anonAuthor: input.anonAuthor,
         createdAt: input.createdAt,
       })
+      .onConflictDoUpdate({
+        target: posts.bodyHash,
+        set: { bodyHash: posts.bodyHash },
+      })
       .returning();
-    if (!row) throw new Error('insert returned no row');
+    if (!row) throw new Error('insertOrGetByBodyHash returned no row');
     return rowToStored(row);
   }
 

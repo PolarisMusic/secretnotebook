@@ -13,7 +13,7 @@ interface FakeReq {
   method: string;
   url: string;
   headers: Record<string, string>;
-  body?: unknown;
+  rawBody?: Buffer;
 }
 
 async function signedRequest({
@@ -31,10 +31,19 @@ async function signedRequest({
   privateKey: Uint8Array;
   publicKey: Uint8Array;
 }): Promise<FakeReq> {
-  let bodyHash: string;
-  if (body === undefined) bodyHash = sha256Hex(null);
-  else if (typeof body === 'string') bodyHash = sha256Hex(body);
-  else bodyHash = sha256Hex(JSON.stringify(body));
+  let rawBody: Buffer | undefined;
+  if (body === undefined) {
+    rawBody = undefined;
+  } else if (typeof body === 'string') {
+    rawBody = Buffer.from(body, 'utf8');
+  } else {
+    rawBody = Buffer.from(JSON.stringify(body), 'utf8');
+  }
+
+  const bodyHash =
+    rawBody && rawBody.length > 0
+      ? sha256Hex(new Uint8Array(rawBody.buffer, rawBody.byteOffset, rawBody.byteLength))
+      : sha256Hex(null);
 
   const canonical = canonicalRequestString(method, url, bodyHash, String(timestampSec));
   const sig = await ed25519Sign(new TextEncoder().encode(canonical), privateKey);
@@ -42,7 +51,7 @@ async function signedRequest({
   return {
     method,
     url,
-    body,
+    rawBody,
     headers: {
       [HEADER_PUBKEY]: bytesToHex(publicKey),
       [HEADER_SIGNATURE]: bytesToHex(sig),
@@ -144,7 +153,7 @@ describe('verifyRequestSignature', () => {
     if (!result.ok) expect(result.reason).toMatch(/drift/);
   });
 
-  it('rejects a request whose body was tampered after signing', async () => {
+  it('rejects a request whose body bytes were tampered after signing', async () => {
     const kp = await generateEd25519KeyPair();
     const req = await signedRequest({
       method: 'POST',
@@ -153,7 +162,7 @@ describe('verifyRequestSignature', () => {
       publicKey: kp.publicKey,
       body: { hello: 'world' },
     });
-    req.body = { hello: 'tampered' };
+    req.rawBody = Buffer.from(JSON.stringify({ hello: 'tampered' }), 'utf8');
     const result = await verifyRequestSignature(req as never, opts);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toMatch(/signature mismatch/);
@@ -184,5 +193,33 @@ describe('verifyRequestSignature', () => {
     const result = await verifyRequestSignature(req as never, opts);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toMatch(/signature mismatch/);
+  });
+
+  it('hashes the raw body bytes — different JSON whitespace still verifies if it matches the signed bytes', async () => {
+    // The whole point of moving to raw-body hashing: the client controls the
+    // bytes, so a non-canonical serialization (with spaces, key order, etc.)
+    // verifies as long as the bytes the client signed match the bytes on the
+    // wire.
+    const kp = await generateEd25519KeyPair();
+    const exactBytes = Buffer.from('{ "b" : 1, "a" : 2 }', 'utf8');
+    const ts = Math.floor(FIXED_NOW_MS / 1000);
+    const bodyHash = sha256Hex(
+      new Uint8Array(exactBytes.buffer, exactBytes.byteOffset, exactBytes.byteLength),
+    );
+    const canonical = canonicalRequestString('POST', '/v1/test', bodyHash, String(ts));
+    const sig = await ed25519Sign(new TextEncoder().encode(canonical), kp.privateKey);
+
+    const req: FakeReq = {
+      method: 'POST',
+      url: '/v1/test',
+      rawBody: exactBytes,
+      headers: {
+        [HEADER_PUBKEY]: bytesToHex(kp.publicKey),
+        [HEADER_SIGNATURE]: bytesToHex(sig),
+        [HEADER_TIMESTAMP]: String(ts),
+      },
+    };
+    const result = await verifyRequestSignature(req as never, opts);
+    expect(result.ok).toBe(true);
   });
 });
