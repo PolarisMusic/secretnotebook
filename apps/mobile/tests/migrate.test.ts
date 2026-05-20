@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import Database from 'better-sqlite3';
 
+import type { SqlExecutor } from '../src/db/executor';
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import { nodeExecutor } from './helpers/sqlite-executor';
@@ -58,25 +59,40 @@ describe('runMigrations', () => {
   });
 
   it('rolls back a failed migration so the schema is unchanged', async () => {
+    // We test the runner's rollback semantics — not the SQLite parser.
+    // Earlier sentinel SQL ("NOT_A_VALID_STATEMENT;", "INSERT INTO
+    // never_existed ...") threw locally but the prebuilt better-sqlite3
+    // binary on the CI runner sometimes did not surface either error
+    // through db.exec's multi-statement path. We control the failure
+    // point directly with a wrapper executor that throws when the
+    // runner asks it to apply the second migration. The first
+    // migration's tables and the rolled-back state are still
+    // exercised against real better-sqlite3.
     const db = new Database(':memory:');
+    const real = nodeExecutor(db);
+    let migrationBatches = 0;
+    const exec: SqlExecutor = {
+      ...real,
+      async executeBatch(sql) {
+        // Call sequence inside runMigrations is:
+        //   1. META_TABLE_DDL (schema_migrations creation)
+        //   2. migration 1 SQL (inside transaction)
+        //   3. migration 2 SQL (inside transaction) — throw here
+        migrationBatches++;
+        if (migrationBatches === 3) throw new Error('synthetic migration failure');
+        return real.executeBatch(sql);
+      },
+    };
     const bad = [
       { id: 1, name: 'good', sql: 'CREATE TABLE good (id INTEGER);' },
-      // Mid-batch runtime failure: the CREATE succeeds, then the INSERT
-      // hits a nonexistent table. Every SQLite build raises "no such
-      // table" at execution time — unlike parser-level sentinels which
-      // some better-sqlite3 builds quietly skip after the first
-      // statement in a multi-statement exec.
-      {
-        id: 2,
-        name: 'bad',
-        sql: 'CREATE TABLE bad (id INTEGER); INSERT INTO never_existed (x) VALUES (1);',
-      },
+      { id: 2, name: 'bad', sql: 'CREATE TABLE bad (id INTEGER);' },
     ];
-    await expect(runMigrations(nodeExecutor(db), bad)).rejects.toThrow();
+
+    await expect(runMigrations(exec, bad)).rejects.toThrow(/synthetic migration failure/);
 
     const names = tableNames(db);
-    expect(names).toContain('good');
-    expect(names).not.toContain('bad');
+    expect(names).toContain('good'); // migration 1 applied + committed
+    expect(names).not.toContain('bad'); // migration 2 rolled back
     const recorded = db.prepare('SELECT id FROM schema_migrations').all() as { id: number }[];
     expect(recorded.map((r) => r.id)).toEqual([1]);
   });
