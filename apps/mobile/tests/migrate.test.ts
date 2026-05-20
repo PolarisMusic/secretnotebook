@@ -61,7 +61,11 @@ describe('runMigrations', () => {
     const db = new Database(':memory:');
     const bad = [
       { id: 1, name: 'good', sql: 'CREATE TABLE good (id INTEGER);' },
-      { id: 2, name: 'bad', sql: 'CREATE TABLE bad (id INTEGER); SELECT INVALID SQL;' },
+      // The second statement is a syntax error that every SQLite version
+      // rejects at parse time, so the assertion does not depend on
+      // semantic-resolution quirks (e.g. older builds accept undefined
+      // identifiers in a SELECT, newer ones reject them).
+      { id: 2, name: 'bad', sql: 'CREATE TABLE bad (id INTEGER); NOT_A_VALID_STATEMENT;' },
     ];
     await expect(runMigrations(nodeExecutor(db), bad)).rejects.toThrow();
 
