@@ -1,6 +1,8 @@
 import { bytesToHex, hmacSha256 } from '@secretnotebook/crypto';
+import type { CoupleSide } from '@secretnotebook/couple-protocol';
 
 import type { SqlExecutor } from '../../db/executor';
+import { initAndSaveRatchet } from '../couple-channel/ratchet-store';
 
 export interface CompletedPairing {
   readonly rootKey: Uint8Array;
@@ -10,6 +12,8 @@ export interface CompletedPairing {
 
 export interface PersistedCouple {
   readonly coupleId: string;
+  /** Which side of the channel this device is. Stable across cold starts. */
+  readonly selfSide: CoupleSide;
 }
 
 /**
@@ -50,7 +54,21 @@ export async function persistCouple(
     [coupleId, partnerA, partnerB, pairing.rootKey, pairedAt, 'awaiting_safeword'],
   );
 
-  return { coupleId };
+  // Seed the couple_ratchet row in the same logical step. Idempotent
+  // through ON CONFLICT, so re-running persistCouple after a partial
+  // failure picks up where it left off rather than blowing up.
+  const { side } = await initAndSaveRatchet(
+    exec,
+    {
+      coupleId,
+      rootKey: pairing.rootKey,
+      selfPub: pairing.selfPub,
+      peerPub: pairing.peerPub,
+    },
+    now,
+  );
+
+  return { coupleId, selfSide: side };
 }
 
 function canonicalOrder(a: Uint8Array, b: Uint8Array): [Uint8Array, Uint8Array] {

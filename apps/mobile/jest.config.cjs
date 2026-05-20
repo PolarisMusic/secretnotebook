@@ -27,6 +27,7 @@ module.exports = {
     'src/features/api/client.ts',
     'src/features/api/device-key.ts',
     'src/features/api/signing.ts',
+    'src/features/couple-channel/ratchet-store.ts',
     'src/features/pairing/state-machine.ts',
     'src/features/pairing/orchestrator.ts',
     'src/features/pairing/persistence.ts',
