@@ -15,6 +15,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^9.1.0",
     "@fastify/sensible": "^5.6.0",
     "@secretnotebook/crypto": "workspace:*",
     "@secretnotebook/shared-types": "workspace:*",

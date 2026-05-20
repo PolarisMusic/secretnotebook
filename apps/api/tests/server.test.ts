@@ -10,6 +10,7 @@ import {
 } from '../src/auth/http-signature.js';
 import { loadEnv } from '../src/config.js';
 import { buildApp } from '../src/server.js';
+import { MemoryDevicesStore, MemoryPostsStore } from './helpers/memory-stores.js';
 
 const FIXED_NOW_MS = 1_700_000_000_000;
 
@@ -17,7 +18,12 @@ describe('GET /v1/health', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    app = await buildApp({ env: loadEnv({ LOG_LEVEL: 'fatal' }), now: () => FIXED_NOW_MS });
+    app = await buildApp({
+      env: loadEnv({ LOG_LEVEL: 'fatal', RATE_LIMIT_MAX: '1000' }),
+      now: () => FIXED_NOW_MS,
+      postsStore: new MemoryPostsStore(),
+      devicesStore: new MemoryDevicesStore(),
+    });
   });
   afterEach(async () => {
     await app.close();
@@ -34,7 +40,12 @@ describe('signed-request enforcement on a protected fixture route', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    app = await buildApp({ env: loadEnv({ LOG_LEVEL: 'fatal' }), now: () => FIXED_NOW_MS });
+    app = await buildApp({
+      env: loadEnv({ LOG_LEVEL: 'fatal', RATE_LIMIT_MAX: '1000' }),
+      now: () => FIXED_NOW_MS,
+      postsStore: new MemoryPostsStore(),
+      devicesStore: new MemoryDevicesStore(),
+    });
     app.get('/v1/_test/protected', { preHandler: app.requireSignature }, async (req) => ({
       pubkey: req.devicePubkey ? bytesToHex(req.devicePubkey) : null,
     }));
