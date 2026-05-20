@@ -4,6 +4,10 @@ import type {
   Post,
   PostInput,
   PostListResponse,
+  RelayDeleteResponse,
+  RelayPostResponse,
+  SyncEnvelope,
+  SyncEnvelopeList,
 } from '@secretnotebook/shared-types';
 import { buildSignedHeaders } from './signing';
 
@@ -64,7 +68,7 @@ export class ApiClient {
   }
 
   private async sendSigned<T>(args: {
-    method: 'GET' | 'POST';
+    method: 'GET' | 'POST' | 'DELETE';
     path: string;
     body?: unknown;
     expectedStatuses?: number[];
@@ -127,5 +131,38 @@ export class ApiClient {
 
   async getPost(id: string): Promise<Post> {
     return this.sendSigned<Post>({ method: 'GET', path: `/v1/posts/${id}` });
+  }
+
+  /**
+   * Push an encrypted envelope into the partner's blinded relay inbox.
+   * Body shape comes from shared-types/SyncEnvelopeSchema, which the
+   * server re-validates against the same Zod schema.
+   */
+  async postEnvelope(blindedIdHex: string, envelope: SyncEnvelope): Promise<RelayPostResponse> {
+    return this.sendSigned<RelayPostResponse>({
+      method: 'POST',
+      path: `/v1/relay/inbox/${blindedIdHex}`,
+      body: envelope,
+    });
+  }
+
+  async listEnvelopes(
+    blindedIdHex: string,
+    opts: { since?: string; limit?: number } = {},
+  ): Promise<SyncEnvelopeList> {
+    const params = new URLSearchParams();
+    if (opts.since !== undefined) params.set('since', opts.since);
+    if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    const path =
+      qs.length > 0 ? `/v1/relay/inbox/${blindedIdHex}?${qs}` : `/v1/relay/inbox/${blindedIdHex}`;
+    return this.sendSigned<SyncEnvelopeList>({ method: 'GET', path });
+  }
+
+  async deleteEnvelope(blindedIdHex: string, envelopeId: string): Promise<RelayDeleteResponse> {
+    return this.sendSigned<RelayDeleteResponse>({
+      method: 'DELETE',
+      path: `/v1/relay/inbox/${blindedIdHex}/${envelopeId}`,
+    });
   }
 }

@@ -4,3 +4,4 @@ export * from './transport/mock.js';
 export * from './transport/ble.js';
 export * from './envelope/blinded-id.js';
 export * from './ratchet/index.js';
+export * from './crdt/op.js';
