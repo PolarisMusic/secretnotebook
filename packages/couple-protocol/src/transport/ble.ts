@@ -28,34 +28,24 @@ export interface BleDependencies {
 }
 
 /**
- * The subset of react-native-ble-plx's `BleManager` we actually depend on.
- * Captured as an interface so we never form a hard runtime dependency on
- * the native module from a workspace package.
+ * Loose structural type for react-native-ble-plx's BleManager. We capture
+ * only the entry points we will use (scan start/stop) and leave the
+ * device-level surface untyped here — once the full GATT flow lands in
+ * S1 Push C the consuming code will narrow it locally. Loose typing keeps
+ * the package Node-typecheckable without forming a hard dependency on the
+ * native module's exact types.
+ *
+ * Note: react-native-ble-plx is central-only. BLE *peripheral* mode
+ * (advertising the pairing service) needs a separate library; that's a
+ * known gap, see implementation-details S1 risks.
  */
 export interface BleManagerLike {
   startDeviceScan(
     serviceUUIDs: string[] | null,
     options: unknown,
-    listener: (error: Error | null, device: BleDeviceLike | null) => void,
+    listener: (error: unknown, device: unknown) => void,
   ): void;
   stopDeviceScan(): void;
-}
-
-export interface BleDeviceLike {
-  readonly id: string;
-  connect(): Promise<BleDeviceLike>;
-  discoverAllServicesAndCharacteristics(): Promise<BleDeviceLike>;
-  writeCharacteristicWithResponseForService(
-    serviceUUID: string,
-    characteristicUUID: string,
-    valueBase64: string,
-  ): Promise<BleDeviceLike>;
-  monitorCharacteristicForService(
-    serviceUUID: string,
-    characteristicUUID: string,
-    listener: (error: Error | null, characteristic: { value: string | null } | null) => void,
-  ): { remove(): void };
-  cancelConnection(): Promise<BleDeviceLike>;
 }
 
 /**
