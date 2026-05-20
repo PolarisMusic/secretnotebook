@@ -61,11 +61,16 @@ describe('runMigrations', () => {
     const db = new Database(':memory:');
     const bad = [
       { id: 1, name: 'good', sql: 'CREATE TABLE good (id INTEGER);' },
-      // The second statement is a syntax error that every SQLite version
-      // rejects at parse time, so the assertion does not depend on
-      // semantic-resolution quirks (e.g. older builds accept undefined
-      // identifiers in a SELECT, newer ones reject them).
-      { id: 2, name: 'bad', sql: 'CREATE TABLE bad (id INTEGER); NOT_A_VALID_STATEMENT;' },
+      // Mid-batch runtime failure: the CREATE succeeds, then the INSERT
+      // hits a nonexistent table. Every SQLite build raises "no such
+      // table" at execution time — unlike parser-level sentinels which
+      // some better-sqlite3 builds quietly skip after the first
+      // statement in a multi-statement exec.
+      {
+        id: 2,
+        name: 'bad',
+        sql: 'CREATE TABLE bad (id INTEGER); INSERT INTO never_existed (x) VALUES (1);',
+      },
     ];
     await expect(runMigrations(nodeExecutor(db), bad)).rejects.toThrow();
 
