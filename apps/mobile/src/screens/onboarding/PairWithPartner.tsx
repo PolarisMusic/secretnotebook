@@ -12,7 +12,6 @@ import {
   type PairingRun,
 } from '../../features/pairing/orchestrator';
 import type { PairingState, SelfKeys } from '../../features/pairing/state-machine';
-import { useCoupleStore } from '../../state/couple';
 
 export interface PairWithPartnerProps {
   /** Transport factory — injected so the screen has no compile-time
@@ -32,7 +31,6 @@ export interface PairWithPartnerProps {
 export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   const [state, setState] = useState<PairingState>({ name: 'idle' });
   const runRef = useRef<PairingRun | null>(null);
-  const setCoupleStatus = useCoupleStore((s) => s.setStatus);
 
   useEffect(() => {
     return () => {
@@ -73,12 +71,13 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
 
     const final = await run.result;
     if (final.name === 'safeword_required') {
+      // onPaired persists the couple row and advances couple.status
+      // via the store. The screen itself no longer touches status.
       await props.onPaired({
         rootKey: final.rootKey,
         selfPub: selfKeys.identityPub,
         peerPub: final.peerKeys.identityPub,
       });
-      setCoupleStatus('awaiting_safeword');
     }
   }
 

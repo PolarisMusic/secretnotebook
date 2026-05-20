@@ -29,6 +29,7 @@ module.exports = {
     'src/features/safeword/verifier.ts',
     'src/features/safeword/session.ts',
     'src/features/safeword/lockout.ts',
+    'src/features/safeword/background-lock-policy.ts',
     'src/security/device-master.ts',
     'src/security/sqlcipher-key.ts',
     'src/state/**/*.ts',
