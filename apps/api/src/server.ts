@@ -12,13 +12,15 @@ import type { Env } from './config.js';
 import { devicesRoute } from './routes/devices.js';
 import { healthRoute } from './routes/health.js';
 import { postsRoute } from './routes/posts.js';
-import type { DevicesStore, PostsStore } from './storage/types.js';
+import { relayRoute } from './routes/relay.js';
+import type { DevicesStore, PostsStore, RelayStore } from './storage/types.js';
 
 export interface BuildAppOptions {
   env: Env;
   now?: () => number;
   postsStore: PostsStore;
   devicesStore: DevicesStore;
+  relayStore: RelayStore;
 }
 
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
@@ -64,6 +66,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   const nowDate = (): Date => new Date((opts.now ?? Date.now)());
   await app.register(postsRoute, { store: opts.postsStore, now: nowDate });
   await app.register(devicesRoute, { store: opts.devicesStore, now: nowDate });
+  await app.register(relayRoute, {
+    store: opts.relayStore,
+    now: nowDate,
+    ttlMs: opts.env.RELAY_TTL_DAYS * 24 * 60 * 60 * 1000,
+  });
 
   return app;
 }

@@ -10,7 +10,7 @@ import {
 } from '../src/auth/http-signature.js';
 import { loadEnv } from '../src/config.js';
 import { buildApp } from '../src/server.js';
-import { MemoryDevicesStore, MemoryPostsStore } from './helpers/memory-stores.js';
+import { MemoryDevicesStore, MemoryPostsStore, MemoryRelayStore } from './helpers/memory-stores.js';
 
 const FIXED_NOW_MS = 1_700_000_000_000;
 
@@ -23,6 +23,7 @@ describe('GET /v1/health', () => {
       now: () => FIXED_NOW_MS,
       postsStore: new MemoryPostsStore(),
       devicesStore: new MemoryDevicesStore(),
+      relayStore: new MemoryRelayStore(),
     });
   });
   afterEach(async () => {
@@ -45,6 +46,7 @@ describe('signed-request enforcement on a protected fixture route', () => {
       now: () => FIXED_NOW_MS,
       postsStore: new MemoryPostsStore(),
       devicesStore: new MemoryDevicesStore(),
+      relayStore: new MemoryRelayStore(),
     });
     app.get('/v1/_test/protected', { preHandler: app.requireSignature }, async (req) => ({
       pubkey: req.devicePubkey ? bytesToHex(req.devicePubkey) : null,

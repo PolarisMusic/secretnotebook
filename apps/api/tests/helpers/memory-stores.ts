@@ -1,10 +1,15 @@
 import { decodeCursor, encodeCursor } from '../../src/storage/cursor.js';
 import type {
   DevicesStore,
+  EnvelopeListOptions,
+  EnvelopeListResult,
+  NewEnvelopeInput,
   NewPostInput,
   PostListOptions,
   PostListResult,
   PostsStore,
+  RelayStore,
+  StoredEnvelope,
   StoredPost,
 } from '../../src/storage/types.js';
 
@@ -83,5 +88,67 @@ export class MemoryDevicesStore implements DevicesStore {
 
   async exists(pubkey: Uint8Array): Promise<boolean> {
     return this.registered.has(Buffer.from(pubkey).toString('hex'));
+  }
+}
+
+function compareEnvelopeDesc(a: StoredEnvelope, b: StoredEnvelope): number {
+  const at = b.receivedAt.getTime() - a.receivedAt.getTime();
+  if (at !== 0) return at;
+  return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+}
+
+export class MemoryRelayStore implements RelayStore {
+  readonly rows: StoredEnvelope[] = [];
+
+  async insert(input: NewEnvelopeInput): Promise<StoredEnvelope> {
+    const row: StoredEnvelope = { ...input };
+    this.rows.push(row);
+    return row;
+  }
+
+  async list(opts: EnvelopeListOptions): Promise<EnvelopeListResult> {
+    const decoded = opts.cursor ? decodeCursor(opts.cursor) : null;
+    const cursorDate = decoded ? new Date(decoded.createdAt) : null;
+    const cursorId = decoded?.id ?? null;
+
+    const matching = this.rows
+      .filter((r) => bytesEqual(r.blindedId, opts.blindedId))
+      .filter((r) => r.expiresAt.getTime() > opts.now.getTime());
+    const sorted = matching.sort(compareEnvelopeDesc);
+    const filtered =
+      cursorDate && cursorId
+        ? sorted.filter(
+            (r) =>
+              r.receivedAt.getTime() < cursorDate.getTime() ||
+              (r.receivedAt.getTime() === cursorDate.getTime() && r.id < cursorId),
+          )
+        : sorted;
+
+    const items = filtered.slice(0, opts.limit);
+    const overflow = filtered.length > opts.limit;
+    const last = items[items.length - 1];
+    const nextCursor =
+      overflow && last
+        ? encodeCursor({ createdAt: last.receivedAt.toISOString(), id: last.id })
+        : null;
+    return { items, nextCursor };
+  }
+
+  async remove(blindedId: Uint8Array, envelopeId: string): Promise<boolean> {
+    const idx = this.rows.findIndex(
+      (r) => bytesEqual(r.blindedId, blindedId) && r.id === envelopeId,
+    );
+    if (idx === -1) return false;
+    this.rows.splice(idx, 1);
+    return true;
+  }
+
+  async purgeExpired(now: Date): Promise<number> {
+    const before = this.rows.length;
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      const row = this.rows[i];
+      if (row && row.expiresAt.getTime() <= now.getTime()) this.rows.splice(i, 1);
+    }
+    return before - this.rows.length;
   }
 }
