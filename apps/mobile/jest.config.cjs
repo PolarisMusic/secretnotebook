@@ -26,10 +26,18 @@ module.exports = {
     'src/features/pairing/state-machine.ts',
     'src/features/pairing/orchestrator.ts',
     'src/features/pairing/persistence.ts',
+    'src/features/safeword/verifier.ts',
+    'src/features/safeword/session.ts',
+    'src/features/safeword/lockout.ts',
     'src/security/device-master.ts',
     'src/security/sqlcipher-key.ts',
     'src/state/**/*.ts',
   ],
   coverageReporters: ['text', 'lcov'],
   testTimeout: 15000,
+  // better-sqlite3 is a native module and flakes when multiple Jest worker
+  // processes hammer it concurrently (the "rolls back a failed migration"
+  // assertion was the canary). Serialise tests in this package only — the
+  // mobile suite is small enough that this costs ~1 s in total.
+  maxWorkers: 1,
 };
