@@ -35,6 +35,7 @@ module.exports = {
     'src/features/couple-channel/saved-post-store.ts',
     'src/features/couple-channel/seen.ts',
     'src/features/couple-channel/sync-engine.ts',
+    'src/features/couple-channel/ticker.ts',
     'src/features/couple-channel/uuid.ts',
     'src/features/pairing/state-machine.ts',
     'src/features/pairing/orchestrator.ts',
