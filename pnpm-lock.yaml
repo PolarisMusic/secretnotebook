@@ -114,6 +114,9 @@ importers:
       '@secretnotebook/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
+      '@secretnotebook/prompt-library':
+        specifier: workspace:*
+        version: link:../../packages/prompt-library
       '@secretnotebook/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -310,16 +313,35 @@ importers:
         version: 5.9.3
 
   packages/prompt-library:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
+      '@jest/globals':
+        specifier: ^29.7.0
+        version: 29.7.0
       '@secretnotebook/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
       '@secretnotebook/config-tsconfig':
         specifier: workspace:*
         version: link:../config-tsconfig
+      '@types/jest':
+        specifier: ^29.5.13
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.14.0
+        version: 20.19.41
       eslint:
         specifier: ^9.13.0
         version: 9.39.4
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.41)
+      ts-jest:
+        specifier: ^29.2.5
+        version: 29.4.10(@babel/core@7.29.0)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.0))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.41))(typescript@5.9.3)
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

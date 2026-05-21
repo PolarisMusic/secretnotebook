@@ -22,6 +22,27 @@ const sampleLedgerEntryAdd: CrdtOp = {
   createdAt: 1_700_000_100,
 };
 
+const samplePromptAssign: CrdtOp = {
+  v: 1,
+  kind: 'prompt.assign',
+  id: '55555555-5555-5555-5555-555555555555',
+  libraryKey: 'eye-contact-60s',
+  title: 'Sixty seconds of eye contact',
+  body: 'Sit facing each other, put phones down, and hold steady eye contact for one minute.',
+  assignedToPubkey: '11'.repeat(32),
+  assignedByPubkey: '22'.repeat(32),
+  createdAt: 1_700_000_200,
+};
+
+const samplePromptTransition: CrdtOp = {
+  v: 1,
+  kind: 'prompt.transition',
+  id: '55555555-5555-5555-5555-555555555555',
+  toState: 'completed',
+  actorPubkey: '11'.repeat(32),
+  at: 1_700_000_300,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
@@ -35,6 +56,26 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
 
   it('accepts refId === null on ledger_entry.add', () => {
     const op: CrdtOp = { ...sampleLedgerEntryAdd, refId: null };
+    expect(deserialiseOp(serialiseOp(op))).toEqual(op);
+  });
+
+  it('round-trips a prompt.assign op byte-for-byte', () => {
+    const bytes = serialiseOp(samplePromptAssign);
+    expect(deserialiseOp(bytes)).toEqual(samplePromptAssign);
+  });
+
+  it('round-trips a prompt.transition op (completed)', () => {
+    const bytes = serialiseOp(samplePromptTransition);
+    expect(deserialiseOp(bytes)).toEqual(samplePromptTransition);
+  });
+
+  it('round-trips a prompt.transition op (certified)', () => {
+    const op: CrdtOp = { ...samplePromptTransition, toState: 'certified' };
+    expect(deserialiseOp(serialiseOp(op))).toEqual(op);
+  });
+
+  it('round-trips a prompt.transition op (expired)', () => {
+    const op: CrdtOp = { ...samplePromptTransition, toState: 'expired' };
     expect(deserialiseOp(serialiseOp(op))).toEqual(op);
   });
 });
@@ -70,6 +111,25 @@ describe('CrdtOpSchema rejects malformed ops', () => {
 
   it('rejects an empty reason', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleLedgerEntryAdd, reason: '' })).toThrow();
+  });
+
+  it('rejects a prompt.assign with a non-kebab libraryKey', () => {
+    // libraryKey min length is 3, so anything shorter fails first;
+    // and the assigner has its own pattern check anyway. We're
+    // mostly asserting `min(3)` here.
+    expect(() => CrdtOpSchema.parse({ ...samplePromptAssign, libraryKey: 'ab' })).toThrow();
+  });
+
+  it('rejects a prompt.assign with too-long body', () => {
+    expect(() => CrdtOpSchema.parse({ ...samplePromptAssign, body: 'x'.repeat(401) })).toThrow();
+  });
+
+  it('rejects a prompt.transition with an unknown toState', () => {
+    expect(() => CrdtOpSchema.parse({ ...samplePromptTransition, toState: 'sideways' })).toThrow();
+  });
+
+  it('rejects a prompt.transition with a non-32-byte actorPubkey', () => {
+    expect(() => CrdtOpSchema.parse({ ...samplePromptTransition, actorPubkey: 'ab' })).toThrow();
   });
 });
 

@@ -38,9 +38,54 @@ export const LedgerEntryAddOpSchema = z.object({
 });
 export type LedgerEntryAddOp = z.infer<typeof LedgerEntryAddOpSchema>;
 
+/**
+ * Add-only assign op for a `prompt` row. The recipient writes the row
+ * with state='assigned' under INSERT OR IGNORE — so the assigner's
+ * own copy (written immediately when they hit "Assign") collapses
+ * with the partner-side projection on the next sync.
+ */
+export const PromptAssignOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('prompt.assign'),
+  id: z.string().uuid(),
+  /** Library key — referenced by prompt.library_key, useful for repeat
+   *  avoidance and for re-rendering after a library version bump. */
+  libraryKey: z.string().min(3).max(80),
+  title: z.string().min(3).max(80),
+  body: z.string().min(10).max(400),
+  assignedToPubkey: HexString(32),
+  assignedByPubkey: HexString(32),
+  createdAt: z.number().int().nonnegative(),
+});
+export type PromptAssignOp = z.infer<typeof PromptAssignOpSchema>;
+
+/**
+ * Conditional state-transition op for a `prompt` row. The projector
+ * applies it with a guarded UPDATE — the WHERE clause enforces the
+ * legal transition + actor constraints atomically, so an invalid op
+ * (e.g. the assignee trying to certify their own prompt) is a no-op
+ * rather than a corruption.
+ */
+export const PromptTransitionOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('prompt.transition'),
+  id: z.string().uuid(),
+  toState: z.enum(['completed', 'certified', 'expired']),
+  /** Whoever fired the transition. The projector cross-checks this
+   *  against the row's assigned_to_pubkey to enforce the spec rules
+   *  ("only the assignee can complete; only the non-assignee can
+   *  certify"). */
+  actorPubkey: HexString(32),
+  /** Unix seconds — written into completed_at or certified_at. */
+  at: z.number().int().nonnegative(),
+});
+export type PromptTransitionOp = z.infer<typeof PromptTransitionOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
+  PromptAssignOpSchema,
+  PromptTransitionOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 
