@@ -107,6 +107,9 @@ export class SyncEngine {
   get coupleId(): string {
     return this.deps.coupleId;
   }
+  get exec(): SqlExecutor {
+    return this.deps.exec;
+  }
 
   /** Append a CRDT op to the outbox. Visible to flush() on the next tick. */
   async enqueue(op: CrdtOp): Promise<void> {

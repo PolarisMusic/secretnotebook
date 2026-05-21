@@ -104,12 +104,72 @@ export const SavedPostUnlockOpSchema = z.object({
 });
 export type SavedPostUnlockOp = z.infer<typeof SavedPostUnlockOpSchema>;
 
+/**
+ * Add-only op for starting a role-play session. The enactor (recipient
+ * of the unlocked saved_post) fires it when they tap "I tried it";
+ * both partners materialise the row via INSERT OR IGNORE, with the
+ * shared id collapsing the self-deliver case.
+ *
+ * The gratitude prompt text travels with the op so both sides render
+ * the same words even if a future library version edits them — keeps
+ * the role-play surface self-contained.
+ */
+export const RoleplayStartOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('roleplay.start'),
+  id: z.string().uuid(),
+  enactorPubkey: HexString(32),
+  curatorPubkey: HexString(32),
+  savedPostId: z.string().uuid(),
+  gratitudePromptKey: z.string().min(3).max(80),
+  gratitudePromptTitle: z.string().min(3).max(80),
+  gratitudePromptBody: z.string().min(10).max(400),
+  startedAt: z.number().int().nonnegative(),
+});
+export type RoleplayStartOp = z.infer<typeof RoleplayStartOpSchema>;
+
+/**
+ * Curator's private rating, 1..10. Per the Phase-1 spec this NEVER
+ * leaves the couple channel — the relay sees only ratchet ciphertext
+ * and the global posts API never sees ratings at all. The projector's
+ * WHERE guard enforces "only the curator can rate; only once" at the
+ * SQL level so a misfired actor or replay can't overwrite.
+ */
+export const RoleplayRatingOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('roleplay.rating'),
+  id: z.string().uuid(),
+  rating: z.number().int().min(1).max(10),
+  actorPubkey: HexString(32),
+  at: z.number().int().nonnegative(),
+});
+export type RoleplayRatingOp = z.infer<typeof RoleplayRatingOpSchema>;
+
+/**
+ * One side of the gratitude prompt is marked done. Two of these
+ * (one per side) complete the loop and trigger the +25 award via the
+ * sweeper. WHERE-clause guards ensure only the matching side's column
+ * is touched, and only once (NULL-guarded UPDATE).
+ */
+export const RoleplayGratitudeStepOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('roleplay.gratitude-step'),
+  id: z.string().uuid(),
+  side: z.enum(['enactor', 'curator']),
+  actorPubkey: HexString(32),
+  at: z.number().int().nonnegative(),
+});
+export type RoleplayGratitudeStepOp = z.infer<typeof RoleplayGratitudeStepOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
   PromptAssignOpSchema,
   PromptTransitionOpSchema,
   SavedPostUnlockOpSchema,
+  RoleplayStartOpSchema,
+  RoleplayRatingOpSchema,
+  RoleplayGratitudeStepOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 

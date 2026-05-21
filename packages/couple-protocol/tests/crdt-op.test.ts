@@ -51,6 +51,38 @@ const sampleSavedPostUnlock: CrdtOp = {
   at: 1_700_000_400,
 };
 
+const sampleRoleplayStart: CrdtOp = {
+  v: 1,
+  kind: 'roleplay.start',
+  id: '77777777-7777-7777-7777-777777777777',
+  enactorPubkey: '11'.repeat(32),
+  curatorPubkey: '22'.repeat(32),
+  savedPostId: '66666666-6666-6666-6666-666666666666',
+  gratitudePromptKey: 'thank-you-for-doing',
+  gratitudePromptTitle: 'Thank you for doing the thing',
+  gratitudePromptBody:
+    "Pick one chore your partner does that you don't always thank them for. Thank them today, by name.",
+  startedAt: 1_700_000_500,
+};
+
+const sampleRoleplayRating: CrdtOp = {
+  v: 1,
+  kind: 'roleplay.rating',
+  id: '77777777-7777-7777-7777-777777777777',
+  rating: 8,
+  actorPubkey: '22'.repeat(32),
+  at: 1_700_000_600,
+};
+
+const sampleRoleplayGratitudeStep: CrdtOp = {
+  v: 1,
+  kind: 'roleplay.gratitude-step',
+  id: '77777777-7777-7777-7777-777777777777',
+  side: 'enactor',
+  actorPubkey: '11'.repeat(32),
+  at: 1_700_000_700,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
@@ -90,6 +122,24 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.unlock op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostUnlock);
     expect(deserialiseOp(bytes)).toEqual(sampleSavedPostUnlock);
+  });
+
+  it('round-trips a roleplay.start op byte-for-byte', () => {
+    const bytes = serialiseOp(sampleRoleplayStart);
+    expect(deserialiseOp(bytes)).toEqual(sampleRoleplayStart);
+  });
+
+  it('round-trips a roleplay.rating op byte-for-byte', () => {
+    const bytes = serialiseOp(sampleRoleplayRating);
+    expect(deserialiseOp(bytes)).toEqual(sampleRoleplayRating);
+  });
+
+  it('round-trips a roleplay.gratitude-step op (enactor + curator sides)', () => {
+    expect(deserialiseOp(serialiseOp(sampleRoleplayGratitudeStep))).toEqual(
+      sampleRoleplayGratitudeStep,
+    );
+    const cur: CrdtOp = { ...sampleRoleplayGratitudeStep, side: 'curator' };
+    expect(deserialiseOp(serialiseOp(cur))).toEqual(cur);
   });
 });
 
@@ -153,6 +203,24 @@ describe('CrdtOpSchema rejects malformed ops', () => {
 
   it('rejects a saved_post.unlock with a negative `at`', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleSavedPostUnlock, at: -1 })).toThrow();
+  });
+
+  it('rejects a roleplay.rating outside 1..10', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleRoleplayRating, rating: 0 })).toThrow();
+    expect(() => CrdtOpSchema.parse({ ...sampleRoleplayRating, rating: 11 })).toThrow();
+    expect(() => CrdtOpSchema.parse({ ...sampleRoleplayRating, rating: 7.5 })).toThrow();
+  });
+
+  it('rejects a roleplay.gratitude-step with an unknown side', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleRoleplayGratitudeStep, side: 'observer' }),
+    ).toThrow();
+  });
+
+  it('rejects a roleplay.start with too-short library key', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleRoleplayStart, gratitudePromptKey: 'ab' }),
+    ).toThrow();
   });
 });
 

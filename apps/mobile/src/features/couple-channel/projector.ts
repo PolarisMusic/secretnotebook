@@ -117,5 +117,63 @@ export async function applyCrdtOp(exec: SqlExecutor, op: CrdtOp): Promise<void> 
         [op.at, op.unlockPromptId, op.savedPostId],
       );
       return;
+
+    case 'roleplay.start':
+      await exec.execute(
+        `INSERT OR IGNORE INTO roleplay_session (
+           id, enactor_pubkey, curator_pubkey,
+           started_at, saved_post_id,
+           gratitude_prompt_id, gratitude_prompt_title, gratitude_prompt_body
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          op.id,
+          hexToBytes(op.enactorPubkey),
+          hexToBytes(op.curatorPubkey),
+          op.startedAt,
+          op.savedPostId,
+          op.gratitudePromptKey,
+          op.gratitudePromptTitle,
+          op.gratitudePromptBody,
+        ],
+      );
+      return;
+
+    case 'roleplay.rating': {
+      // Only the curator can rate; only once (rating IS NULL guard).
+      const actor = hexToBytes(op.actorPubkey);
+      await exec.execute(
+        `UPDATE roleplay_session
+            SET rating = ?
+          WHERE id = ?
+            AND curator_pubkey = ?
+            AND rating IS NULL`,
+        [op.rating, op.id, actor],
+      );
+      return;
+    }
+
+    case 'roleplay.gratitude-step': {
+      // Whichever side, set the matching column once (NULL-guarded).
+      // We don't actor-check here — both sides legitimately mark
+      // their own step; the `side` is the source of truth.
+      if (op.side === 'enactor') {
+        await exec.execute(
+          `UPDATE roleplay_session
+              SET gratitude_enactor_done_at = ?
+            WHERE id = ?
+              AND gratitude_enactor_done_at IS NULL`,
+          [op.at, op.id],
+        );
+      } else {
+        await exec.execute(
+          `UPDATE roleplay_session
+              SET gratitude_curator_done_at = ?
+            WHERE id = ?
+              AND gratitude_curator_done_at IS NULL`,
+          [op.at, op.id],
+        );
+      }
+      return;
+    }
   }
 }

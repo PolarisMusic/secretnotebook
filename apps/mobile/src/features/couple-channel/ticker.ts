@@ -1,24 +1,33 @@
 import { useEffect, useRef } from 'react';
+import { sweepCompletedLoops } from '../roleplay/loop-sweeper';
 import type { FlushResult, PullResult, SyncEngine } from './sync-engine';
 
 export interface SyncCycleResult {
   flushed: FlushResult;
   pulled: PullResult;
+  /** Session ids that newly received their +25 award in this cycle's
+   *  sweep. Empty on most ticks; non-empty exactly when a gratitude
+   *  step pulled in just closed a loop. */
+  awardedSessionIds: string[];
 }
 
+export type SyncStep = 'flush' | 'pull' | 'sweep';
+
 /**
- * One full sync cycle: flush() then pull(). Pure-ish — no timers, no
- * React. Errors thrown by either step are caught and forwarded to
- * `onError`; the cycle does not abort halfway so the second step still
- * runs if the first failed. That keeps a transient network blip from
- * starving the read path indefinitely.
+ * One full sync cycle: flush() → pull() → sweepCompletedLoops().
+ * Pure-ish — no timers, no React. Errors thrown by any step are
+ * caught and forwarded to `onError`; the cycle does not abort halfway
+ * so a downstream step still runs if an earlier one failed. That
+ * keeps a transient network blip from starving the read path or the
+ * +25 award sweep indefinitely.
  */
 export async function runSyncCycle(
   engine: SyncEngine,
-  opts: { onError?: (err: Error, step: 'flush' | 'pull') => void } = {},
+  opts: { onError?: (err: Error, step: SyncStep) => void } = {},
 ): Promise<SyncCycleResult> {
   let flushed: FlushResult = { attempted: 0, delivered: 0, failed: 0 };
   let pulled: PullResult = { fetched: 0, applied: 0, duplicates: 0 };
+  let awardedSessionIds: string[] = [];
   try {
     flushed = await engine.flush();
   } catch (e) {
@@ -29,7 +38,13 @@ export async function runSyncCycle(
   } catch (e) {
     opts.onError?.(e as Error, 'pull');
   }
-  return { flushed, pulled };
+  try {
+    const sweep = await sweepCompletedLoops(engine.exec, engine);
+    awardedSessionIds = sweep.awardedSessionIds;
+  } catch (e) {
+    opts.onError?.(e as Error, 'sweep');
+  }
+  return { flushed, pulled, awardedSessionIds };
 }
 
 export const DEFAULT_SYNC_INTERVAL_MS = 15_000;
@@ -41,7 +56,7 @@ export interface UseSyncTickerOpts {
   /** Fire one cycle immediately on mount (don't wait for the first tick). */
   readonly runOnMount?: boolean;
   /** Optional error sink — surfaced inline rather than crashing the timer. */
-  readonly onError?: (err: Error, step: 'flush' | 'pull') => void;
+  readonly onError?: (err: Error, step: SyncStep) => void;
 }
 
 /**
