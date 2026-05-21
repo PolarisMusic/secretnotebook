@@ -20,6 +20,10 @@ import type { SqlExecutor } from '../../db/executor';
  *     (assignee only for `completed`, NON-assignee only for `certified`).
  *     Illegal transitions are silent no-ops rather than errors so a
  *     racing partner's op can't crash the projector.
+ *   - `saved_post.unlock`: WHERE unlocked_at IS NULL guard collapses
+ *     replays + concurrent picks of the same row. The certifier picks
+ *     and emits; both partners apply via the projector, with the
+ *     loser's op landing as a no-op when the row's already unlocked.
  */
 export async function applyCrdtOp(exec: SqlExecutor, op: CrdtOp): Promise<void> {
   switch (op.kind) {
@@ -103,5 +107,15 @@ export async function applyCrdtOp(exec: SqlExecutor, op: CrdtOp): Promise<void> 
       }
       return;
     }
+
+    case 'saved_post.unlock':
+      await exec.execute(
+        `UPDATE saved_post
+            SET unlocked_at = ?, unlock_prompt_id = ?
+          WHERE id = ?
+            AND unlocked_at IS NULL`,
+        [op.at, op.unlockPromptId, op.savedPostId],
+      );
+      return;
   }
 }

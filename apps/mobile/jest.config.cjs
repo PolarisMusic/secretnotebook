@@ -41,6 +41,7 @@ module.exports = {
     'src/features/prompts/assigner.ts',
     'src/features/prompts/store.ts',
     'src/features/prompts/transitions.ts',
+    'src/features/saved-posts/random-unlocker.ts',
     'src/features/pairing/orchestrator.ts',
     'src/features/pairing/persistence.ts',
     'src/features/safeword/verifier.ts',

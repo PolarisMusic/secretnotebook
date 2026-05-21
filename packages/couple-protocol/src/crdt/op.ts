@@ -81,11 +81,35 @@ export const PromptTransitionOpSchema = z.object({
 });
 export type PromptTransitionOp = z.infer<typeof PromptTransitionOpSchema>;
 
+/**
+ * Conditional unlock op for a `saved_post` row. Fired by the certifier
+ * (the non-assignee partner) on `prompt.transition → certified`, picks
+ * one random locked saved_post owned by the assignee, and stamps it
+ * with the unlocking prompt's id. The projector enforces the
+ * "locked-rows only" guard atomically via WHERE unlocked_at IS NULL —
+ * so a duplicate delivery, a self-deliver, or a racing partner who
+ * picked the same row collapses cleanly.
+ */
+export const SavedPostUnlockOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('saved_post.unlock'),
+  /** The saved_post.id being unlocked. */
+  savedPostId: z.string().uuid(),
+  /** The prompt.id whose certification triggered this unlock. Written
+   *  into saved_post.unlock_prompt_id so the UI can show "unlocked by
+   *  <prompt>". */
+  unlockPromptId: z.string().uuid(),
+  /** Unix seconds — written into saved_post.unlocked_at. */
+  at: z.number().int().nonnegative(),
+});
+export type SavedPostUnlockOp = z.infer<typeof SavedPostUnlockOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
   PromptAssignOpSchema,
   PromptTransitionOpSchema,
+  SavedPostUnlockOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 

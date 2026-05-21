@@ -43,6 +43,14 @@ const samplePromptTransition: CrdtOp = {
   at: 1_700_000_300,
 };
 
+const sampleSavedPostUnlock: CrdtOp = {
+  v: 1,
+  kind: 'saved_post.unlock',
+  savedPostId: '66666666-6666-6666-6666-666666666666',
+  unlockPromptId: '55555555-5555-5555-5555-555555555555',
+  at: 1_700_000_400,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
@@ -77,6 +85,11 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a prompt.transition op (expired)', () => {
     const op: CrdtOp = { ...samplePromptTransition, toState: 'expired' };
     expect(deserialiseOp(serialiseOp(op))).toEqual(op);
+  });
+
+  it('round-trips a saved_post.unlock op byte-for-byte', () => {
+    const bytes = serialiseOp(sampleSavedPostUnlock);
+    expect(deserialiseOp(bytes)).toEqual(sampleSavedPostUnlock);
   });
 });
 
@@ -130,6 +143,16 @@ describe('CrdtOpSchema rejects malformed ops', () => {
 
   it('rejects a prompt.transition with a non-32-byte actorPubkey', () => {
     expect(() => CrdtOpSchema.parse({ ...samplePromptTransition, actorPubkey: 'ab' })).toThrow();
+  });
+
+  it('rejects a saved_post.unlock with a non-uuid savedPostId', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleSavedPostUnlock, savedPostId: 'not-a-uuid' }),
+    ).toThrow();
+  });
+
+  it('rejects a saved_post.unlock with a negative `at`', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSavedPostUnlock, at: -1 })).toThrow();
   });
 });
 

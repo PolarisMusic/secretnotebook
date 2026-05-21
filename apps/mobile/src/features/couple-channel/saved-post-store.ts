@@ -95,3 +95,22 @@ export async function summariseSavedForMe(
   const unlocked = row?.unlocked ?? 0;
   return { total, locked: total - unlocked, unlocked };
 }
+
+/**
+ * Rows my partner saved for me AND are now unlocked. Powers the S7
+ * "browse unlocked" list. Newest-unlock first.
+ */
+export async function listUnlockedForMe(
+  exec: SqlExecutor,
+  selfPubkey: Uint8Array,
+): Promise<SavedPostRow[]> {
+  const rows = await exec.query<RawSavedPostRow>(
+    `SELECT id, global_post_id, saved_by_pubkey, saved_for_pubkey,
+            created_at, unlocked_at, unlock_prompt_id
+       FROM saved_post
+      WHERE saved_for_pubkey = ? AND unlocked_at IS NOT NULL
+      ORDER BY unlocked_at DESC, id DESC`,
+    [selfPubkey],
+  );
+  return rows.map(rowOf);
+}
