@@ -59,6 +59,7 @@ describe('Global feed (S3) — placeholder for the post-pairing happy path', () 
   //     post-detail.save-for-partner  — wired iff sync engine is ready
   //     post-detail.save-notice       — inline status after save
   //   feed.open-saved                 — opens SavedByYou (engine-ready only)
+  //   feed.open-prompts               — opens PromptList (engine-ready only)
   //   screen.saved-by-you
   //     saved-by-you.back / .view-for-you / .row.<savedPostId>
   //     saved-by-you.empty / .loading
@@ -66,4 +67,14 @@ describe('Global feed (S3) — placeholder for the post-pairing happy path', () 
   //     saved-for-you.back / .view-by-you
   //     saved-for-you.locked-tile / .unlocked-tile
   //     saved-for-you.total
+  //   screen.prompt-list
+  //     prompt-list.back / .assign / .assign-error
+  //     prompt-list.section.assigned-to-me / .section.awaiting-my-cert
+  //     prompt-list.empty.assigned-to-me / .empty.awaiting-my-cert
+  //     prompt-list.row.<promptId> / .loading
+  //   screen.active-prompt
+  //     active-prompt.back / .title / .body / .mark-done / .waiting / .error
+  //   screen.certify-completion
+  //     certify-completion.back / .title / .body / .certify
+  //     certify-completion.already-certified / .error
 });

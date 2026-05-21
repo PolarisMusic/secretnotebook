@@ -5,6 +5,9 @@ import { SavedForYouRoute } from '../screens/couple/SavedForYouRoute';
 import { GlobalFeedRoute } from '../screens/feed/GlobalFeedRoute';
 import { PostDetailRoute } from '../screens/feed/PostDetailRoute';
 import { SubmitPostRoute } from '../screens/feed/SubmitPostRoute';
+import { ActivePromptRoute } from '../screens/prompts/ActivePromptRoute';
+import { CertifyCompletionRoute } from '../screens/prompts/CertifyCompletionRoute';
+import { PromptListRoute } from '../screens/prompts/PromptListRoute';
 
 export type MainStackParamList = {
   GlobalFeed: undefined;
@@ -12,15 +15,18 @@ export type MainStackParamList = {
   PostDetail: { id: string };
   SavedByYou: undefined;
   SavedForYou: undefined;
+  PromptList: undefined;
+  ActivePrompt: { id: string };
+  CertifyCompletion: { id: string };
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
 /**
- * Authenticated stack. Phase-1 surfaces the global posts loop +
- * SavedByYou / SavedForYou (S5). S6 / S8 will add prompts and the
- * couple home; S7 will turn the SavedForYou unlocked-tile tap into a
- * "browse unlocked posts" list.
+ * Authenticated stack. Phase-1 now surfaces the global posts loop
+ * (S3), saved-for-partner (S5), and prompts (S6). S7 turns the
+ * SavedForYou unlocked tile into a browse list; S8 adds the
+ * rate + gratitude + Couple Points home.
  */
 export function MainStack(): JSX.Element {
   return (
@@ -37,6 +43,9 @@ export function MainStack(): JSX.Element {
       <Stack.Screen name="PostDetail" component={PostDetailRoute} />
       <Stack.Screen name="SavedByYou" component={SavedByYouRoute} />
       <Stack.Screen name="SavedForYou" component={SavedForYouRoute} />
+      <Stack.Screen name="PromptList" component={PromptListRoute} />
+      <Stack.Screen name="ActivePrompt" component={ActivePromptRoute} />
+      <Stack.Screen name="CertifyCompletion" component={CertifyCompletionRoute} />
     </Stack.Navigator>
   );
 }
