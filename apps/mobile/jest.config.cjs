@@ -37,6 +37,8 @@ module.exports = {
     'src/features/couple-channel/sync-engine.ts',
     'src/features/couple-channel/ticker.ts',
     'src/features/couple-channel/uuid.ts',
+    'src/features/ledger/couple-points.ts',
+    'src/features/ledger/store.ts',
     'src/features/pairing/state-machine.ts',
     'src/features/prompts/assigner.ts',
     'src/features/prompts/store.ts',

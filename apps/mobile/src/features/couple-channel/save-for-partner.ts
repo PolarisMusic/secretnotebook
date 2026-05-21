@@ -2,6 +2,7 @@ import { bytesToHex, hexToBytes } from '@secretnotebook/crypto';
 import type { SavedPostAddOp } from '@secretnotebook/couple-protocol';
 
 import type { SqlExecutor } from '../../db/executor';
+import { awardCouplePoints, LEDGER_REASON, POINTS_SAVE_FOR_PARTNER } from '../ledger/couple-points';
 import { randomUuidV4 } from './uuid';
 import type { SyncEngine } from './sync-engine';
 
@@ -68,6 +69,18 @@ export async function saveForPartner(args: SaveForPartnerArgs): Promise<SaveForP
     createdAt,
   };
   await args.engine.enqueue(op);
+
+  // S8 accrual: +2 Couple Points per save-for-partner. The ledger row
+  // id derives from (reason, refId=savedPostId), so a duplicate save
+  // attempt collapses idempotently — only one +2 ever lands.
+  await awardCouplePoints({
+    exec: args.exec,
+    engine: args.engine,
+    delta: POINTS_SAVE_FOR_PARTNER,
+    reason: LEDGER_REASON.saveForPartner,
+    refId: id,
+    now: args.now,
+  });
 
   return { savedPostId: id, op };
 }

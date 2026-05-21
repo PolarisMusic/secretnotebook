@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/couple-channel/store';
+import {
+  awardCouplePoints,
+  LEDGER_REASON,
+  POINTS_PROMPT_CERTIFIED,
+} from '../../features/ledger/couple-points';
 import { findPromptById, type PromptRow } from '../../features/prompts/store';
 import { certifyPromptCompletion } from '../../features/prompts/transitions';
 import { unlockOneRandomFor } from '../../features/saved-posts/random-unlocker';
@@ -75,6 +80,20 @@ export function CertifyCompletionRoute(): JSX.Element {
         });
       } catch {
         // best effort — the certify state is what counts for the UX
+      }
+      // S8 accrual: +10 Couple Points per certification. Deterministic
+      // ledger row id keyed on (reason, promptId) so a re-tap or a
+      // partner-side retry merges into a single entry.
+      try {
+        await awardCouplePoints({
+          exec,
+          engine,
+          delta: POINTS_PROMPT_CERTIFIED,
+          reason: LEDGER_REASON.promptCertified,
+          refId: row.id,
+        });
+      } catch {
+        // best effort — same logic as the unlock above
       }
       void engine.flush().catch(() => undefined);
       await load();
