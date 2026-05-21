@@ -66,7 +66,11 @@ describe('Global feed (S3) — placeholder for the post-pairing happy path', () 
   //   screen.saved-for-you
   //     saved-for-you.back / .view-by-you
   //     saved-for-you.locked-tile / .unlocked-tile
+  //     saved-for-you.open-unlocked   — opens UnlockedSavedList (S7)
   //     saved-for-you.total
+  //   screen.unlocked-saved-list
+  //     unlocked-saved-list.back / .row.<savedPostId>
+  //     unlocked-saved-list.loading / .empty
   //   screen.prompt-list
   //     prompt-list.back / .assign / .assign-error
   //     prompt-list.section.assigned-to-me / .section.awaiting-my-cert

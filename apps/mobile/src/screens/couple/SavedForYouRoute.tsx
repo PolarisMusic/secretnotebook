@@ -59,6 +59,9 @@ export function SavedForYouRoute(): JSX.Element {
       onRefresh={() => void refresh()}
       onBack={() => navigation.goBack()}
       onViewSavedByYou={() => navigation.navigate('SavedByYou')}
+      onOpenUnlockedList={
+        view.unlocked > 0 ? () => navigation.navigate('UnlockedSavedList') : undefined
+      }
     />
   );
 }

@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { SavedByYouRoute } from '../screens/couple/SavedByYouRoute';
 import { SavedForYouRoute } from '../screens/couple/SavedForYouRoute';
+import { UnlockedSavedListRoute } from '../screens/couple/UnlockedSavedListRoute';
 import { GlobalFeedRoute } from '../screens/feed/GlobalFeedRoute';
 import { PostDetailRoute } from '../screens/feed/PostDetailRoute';
 import { SubmitPostRoute } from '../screens/feed/SubmitPostRoute';
@@ -15,6 +16,7 @@ export type MainStackParamList = {
   PostDetail: { id: string };
   SavedByYou: undefined;
   SavedForYou: undefined;
+  UnlockedSavedList: undefined;
   PromptList: undefined;
   ActivePrompt: { id: string };
   CertifyCompletion: { id: string };
@@ -43,6 +45,7 @@ export function MainStack(): JSX.Element {
       <Stack.Screen name="PostDetail" component={PostDetailRoute} />
       <Stack.Screen name="SavedByYou" component={SavedByYouRoute} />
       <Stack.Screen name="SavedForYou" component={SavedForYouRoute} />
+      <Stack.Screen name="UnlockedSavedList" component={UnlockedSavedListRoute} />
       <Stack.Screen name="PromptList" component={PromptListRoute} />
       <Stack.Screen name="ActivePrompt" component={ActivePromptRoute} />
       <Stack.Screen name="CertifyCompletion" component={CertifyCompletionRoute} />
