@@ -26,6 +26,8 @@ export interface GlobalFeedProps {
   readonly onOpenSaved?: () => void;
   /** Optional — hidden on unpaired devices. Opens PromptList. */
   readonly onOpenPrompts?: () => void;
+  /** Optional — hidden on unpaired devices. Opens CoupleHome. */
+  readonly onOpenCouple?: () => void;
 }
 
 /**
@@ -64,6 +66,16 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
       <View style={styles.header}>
         <Text style={styles.title}>Global feed</Text>
         <View style={styles.headerActions}>
+          {props.onOpenCouple ? (
+            <Pressable
+              accessibilityRole="button"
+              testID="feed.open-couple"
+              onPress={props.onOpenCouple}
+              style={styles.savedButton}
+            >
+              <Text style={styles.savedButtonText}>Couple</Text>
+            </Pressable>
+          ) : null}
           {props.onOpenPrompts ? (
             <Pressable
               accessibilityRole="button"

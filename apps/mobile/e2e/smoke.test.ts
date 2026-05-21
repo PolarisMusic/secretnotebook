@@ -71,6 +71,19 @@ describe('Global feed (S3) — placeholder for the post-pairing happy path', () 
   //   screen.unlocked-saved-list
   //     unlocked-saved-list.back / .row.<savedPostId>
   //     unlocked-saved-list.loading / .empty
+  //   screen.unlocked-post-detail
+  //     unlocked-post-detail.back / .body / .open-link / .tried-it
+  //     unlocked-post-detail.already-started / .continue-loop / .error
+  //   feed.open-couple                — opens CoupleHome (engine-ready only)
+  //   screen.couple-home
+  //     couple-home.back / .points-tile / .open-saved / .open-prompts
+  //     couple-home.row.<ledgerId> / .empty / .loading
+  //   screen.rating-flow              — curator's 1..10
+  //     rating-flow.back / .chip.<1..10> / .submit
+  //     rating-flow.already-rated / .error
+  //   screen.gratitude
+  //     gratitude.back / .title / .body / .mark-done
+  //     gratitude.mine-done / .both-done / .loop-awarded / .error
   //   screen.prompt-list
   //     prompt-list.back / .assign / .assign-error
   //     prompt-list.section.assigned-to-me / .section.awaiting-my-cert

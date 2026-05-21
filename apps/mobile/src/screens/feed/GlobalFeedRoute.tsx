@@ -64,6 +64,7 @@ export function GlobalFeedRoute(): JSX.Element {
         onCompose={() => navigation.navigate('SubmitPost')}
         onOpenSaved={engine ? () => navigation.navigate('SavedByYou') : undefined}
         onOpenPrompts={engine ? () => navigation.navigate('PromptList') : undefined}
+        onOpenCouple={engine ? () => navigation.navigate('CoupleHome') : undefined}
       />
     </View>
   );

@@ -93,7 +93,14 @@ export function UnlockedSavedListRoute(): JSX.Element {
       isRefreshing={isRefreshing}
       onRefresh={() => void refresh()}
       onBack={() => navigation.goBack()}
-      onSelect={(globalPostId) => navigation.navigate('PostDetail', { id: globalPostId })}
+      onSelect={(globalPostId) => {
+        // Find the saved_post row that matches and route through the
+        // S8 unlocked-post-detail (with "I tried it"). FlatList row
+        // already carries the savedPostId; we look it up via items
+        // here rather than re-querying since we already have it.
+        const item = items?.find((r) => r.globalPostId === globalPostId);
+        if (item) navigation.navigate('UnlockedPostDetail', { savedPostId: item.savedPostId });
+      }}
     />
   );
 }
