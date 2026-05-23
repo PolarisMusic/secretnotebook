@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useBackgroundLock } from '../features/safeword/background-lock';
 import { isSafeWordSatisfied, useSafeWordSession } from '../features/safeword/session';
 import { SafeWordGateRoute } from '../screens/auth/SafeWordGateRoute';
+import { useSecureScreen } from '../security/secure-screen';
 import { useCoupleStore } from '../state/couple';
 import { MainStack } from './MainStack';
 import { OnboardingStack } from './OnboardingStack';
@@ -31,6 +32,13 @@ export function RootStack(): JSX.Element {
   // than 60 s — the gate re-renders automatically on the next status
   // selector tick.
   useBackgroundLock();
+
+  // Pin Android FLAG_SECURE on for the entire app surface. iOS is a
+  // no-op (the OS handles recents-thumbnail blurring). See
+  // apps/mobile/RUNBOOK.md §FLAG_SECURE for the prebuild patch that
+  // registers the native bridge — until it's applied the hook is a
+  // transparent no-op so dev / Expo-Go / Jest still work.
+  useSecureScreen();
 
   const phase: 'onboarding' | 'gate' | 'main' =
     status === 'paired' ? (satisfied ? 'main' : 'gate') : 'onboarding';
