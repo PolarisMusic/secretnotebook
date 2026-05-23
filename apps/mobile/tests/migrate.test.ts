@@ -17,6 +17,7 @@ const EXPECTED_TABLES = [
   'roleplay_session',
   'sync_outbox',
   'sync_seen',
+  'couple_ratchet',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -31,7 +32,11 @@ describe('runMigrations', () => {
     const db = new Database(':memory:');
     const result = await runMigrations(nodeExecutor(db), MIGRATIONS);
 
-    expect(result.applied.map((m) => m.name)).toEqual(['init']);
+    expect(result.applied.map((m) => m.name)).toEqual([
+      'init',
+      'couple-ratchet',
+      'roleplay-session-extra',
+    ]);
     expect(result.alreadyApplied).toEqual([]);
 
     const names = tableNames(db);
@@ -46,7 +51,11 @@ describe('runMigrations', () => {
     await runMigrations(nodeExecutor(db), MIGRATIONS);
     const second = await runMigrations(nodeExecutor(db), MIGRATIONS);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied.map((m) => m.name)).toEqual(['init']);
+    expect(second.alreadyApplied.map((m) => m.name)).toEqual([
+      'init',
+      'couple-ratchet',
+      'roleplay-session-extra',
+    ]);
   });
 
   it('rejects duplicate migration ids', async () => {

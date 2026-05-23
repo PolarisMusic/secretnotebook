@@ -1,4 +1,6 @@
+import type { Ed25519KeyPair } from '@secretnotebook/crypto';
 import type { SqlExecutor } from '../../db/executor';
+import { deriveDeviceSigningKey } from '../api/device-key';
 import { getOrCreateDeviceMaster, type RandomBytes } from '../../security/device-master';
 import type { KeychainAdapter } from '../../security/keychain';
 import { deriveSqlcipherKey } from '../../security/sqlcipher-key';
@@ -36,6 +38,7 @@ export interface BootDeps {
 export interface BootResult {
   readonly executor: SqlExecutor;
   readonly couple: ActiveCouple | null;
+  readonly deviceSigningKey: Ed25519KeyPair;
 }
 
 export async function bootstrap(deps: BootDeps): Promise<BootResult> {
@@ -44,5 +47,6 @@ export async function bootstrap(deps: BootDeps): Promise<BootResult> {
   const { executor } = await deps.openDatabase(sqlcipherKey);
   await deps.runMigrations(executor);
   const couple = await loadActiveCouple(executor);
-  return { executor, couple };
+  const deviceSigningKey = await deriveDeviceSigningKey(deviceMaster);
+  return { executor, couple, deviceSigningKey };
 }

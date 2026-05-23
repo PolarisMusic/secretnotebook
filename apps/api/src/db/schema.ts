@@ -30,7 +30,19 @@ export const devices = pgTable('devices', {
   reputation: integer('reputation').notNull().default(0),
 });
 
+export const relayInbox = pgTable('relay_inbox', {
+  id: uuid('id').primaryKey(),
+  blindedId: bytea('blinded_id').notNull(),
+  header: bytea('header').notNull(),
+  ciphertext: bytea('ciphertext').notNull(),
+  sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
 export type Device = typeof devices.$inferSelect;
 export type NewDevice = typeof devices.$inferInsert;
+export type RelayInboxRow = typeof relayInbox.$inferSelect;
+export type NewRelayInboxRow = typeof relayInbox.$inferInsert;

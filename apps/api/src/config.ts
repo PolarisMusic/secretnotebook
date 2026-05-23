@@ -6,6 +6,9 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   DATABASE_URL: z.string().url().optional(),
   SIGNATURE_MAX_DRIFT_SECONDS: z.coerce.number().int().positive().default(300),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  RELAY_TTL_DAYS: z.coerce.number().int().positive().default(30),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

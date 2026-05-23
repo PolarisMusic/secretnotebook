@@ -27,19 +27,41 @@ describe('persistCouple', () => {
   const selfPub = new Uint8Array(32).fill(0x01);
   const peerPub = new Uint8Array(32).fill(0x02);
 
-  it('inserts a couple row with status awaiting_safeword', async () => {
+  it('inserts a couple row with status awaiting_safeword and returns the self side', async () => {
     const { db, exec } = await freshDb();
-    const { coupleId } = await persistCouple(
+    const { coupleId, selfSide } = await persistCouple(
       exec,
       { rootKey, selfPub, peerPub },
       () => 1_700_000_000_000,
     );
     expect(coupleId).toMatch(/^[0-9a-f]{32}$/);
+    // selfPub (0x01..) < peerPub (0x02..) → 'a'.
+    expect(selfSide).toBe('a');
 
     const row = db.prepare('SELECT * FROM couple WHERE id = ?').get(coupleId) as CoupleRow;
     expect(row.status).toBe('awaiting_safeword');
     expect(row.paired_at).toBe(1_700_000_000);
     expect(Array.from(row.channel_root_key_wrapped)).toEqual(Array.from(rootKey));
+
+    // The migration also seeded a couple_ratchet row keyed on the same id.
+    const ratchet = db
+      .prepare(
+        'SELECT self_side, sending_counter, receiving_counter FROM couple_ratchet WHERE couple_id = ?',
+      )
+      .get(coupleId) as { self_side: string; sending_counter: number; receiving_counter: number };
+    expect(ratchet.self_side).toBe('a');
+    expect(ratchet.sending_counter).toBe(0);
+    expect(ratchet.receiving_counter).toBe(0);
+  });
+
+  it("returns selfSide 'b' for the partner whose pubkey sorts higher", async () => {
+    const { exec } = await freshDb();
+    const { selfSide } = await persistCouple(exec, {
+      rootKey,
+      selfPub: peerPub, // 0x02..
+      peerPub: selfPub, // 0x01..
+    });
+    expect(selfSide).toBe('b');
   });
 
   it('derives a canonical id regardless of which side computes it (acceptance criterion)', async () => {

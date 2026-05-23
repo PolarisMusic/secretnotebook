@@ -1,0 +1,215 @@
+{
+  "version": 1,
+  "prompts": [
+    {
+      "key": "eye-contact-60s",
+      "title": "Sixty seconds of eye contact",
+      "body": "Sit facing each other, put phones down, and hold steady eye contact for one minute. No talking. Notice what comes up.",
+      "suggestedAssignee": "either",
+      "tags": ["presence", "non-verbal"]
+    },
+    {
+      "key": "three-things-noticed",
+      "title": "Three things you noticed today",
+      "body": "Tell each other three small things you noticed about the other person this week. Specific beats sweeping.",
+      "suggestedAssignee": "either",
+      "tags": ["appreciation"]
+    },
+    {
+      "key": "compliment-mirror",
+      "title": "Compliment, then mirror",
+      "body": "Give your partner one compliment. They repeat it back in their own words, then give one back. Take turns three rounds.",
+      "suggestedAssignee": "either",
+      "tags": ["appreciation"]
+    },
+    {
+      "key": "ask-curious-question",
+      "title": "Ask one curious question",
+      "body": "Ask something you've been quietly wondering about your partner but haven't asked. Listen all the way through before responding.",
+      "suggestedAssignee": "either",
+      "tags": ["curiosity"]
+    },
+    {
+      "key": "twenty-second-hug",
+      "title": "A twenty-second hug",
+      "body": "Hug for a full twenty seconds, ideally longer. Notice what shifts when neither of you lets go first.",
+      "suggestedAssignee": "either",
+      "tags": ["touch"]
+    },
+    {
+      "key": "favorite-shared-memory",
+      "title": "Your favorite shared memory",
+      "body": "Each of you describes a favorite memory of the two of you together. Don't compare or rank — just listen.",
+      "suggestedAssignee": "either",
+      "tags": ["memory"]
+    },
+    {
+      "key": "share-a-fear",
+      "title": "Share a small fear",
+      "body": "Share a small fear you've been carrying lately. The other person doesn't fix it — they just receive it.",
+      "suggestedAssignee": "either",
+      "tags": ["vulnerability"]
+    },
+    {
+      "key": "high-low-buffalo",
+      "title": "High, low, buffalo",
+      "body": "Each share your high of the week, your low, and one weird/funny/random thing (the 'buffalo'). No commentary until both are done.",
+      "suggestedAssignee": "either",
+      "tags": ["check-in"]
+    },
+    {
+      "key": "plan-tiny-adventure",
+      "title": "Plan a tiny adventure",
+      "body": "Together, plan a small adventure for this week — under two hours, under twenty dollars. Decide where and when before the conversation ends.",
+      "suggestedAssignee": "either",
+      "tags": ["planning"]
+    },
+    {
+      "key": "cook-together-simple",
+      "title": "Cook one thing together",
+      "body": "Pick a simple recipe neither of you has made and cook it together this week. The point is the doing, not the eating.",
+      "suggestedAssignee": "either",
+      "tags": ["shared-activity"]
+    },
+    {
+      "key": "music-pick-five",
+      "title": "Pick five songs for them",
+      "body": "Each make a five-song playlist that reminds you of the other. Listen to both back to back, holding hands.",
+      "suggestedAssignee": "either",
+      "tags": ["shared-activity"]
+    },
+    {
+      "key": "letter-from-future",
+      "title": "Write a short letter from your future self",
+      "body": "Write a two-paragraph letter from a version of yourself five years from now, addressed to the two of you today. Read them aloud to each other.",
+      "suggestedAssignee": "either",
+      "tags": ["imagination"]
+    },
+    {
+      "key": "device-free-meal",
+      "title": "One device-free meal",
+      "body": "Share one meal this week with phones in another room. Aim for sixty minutes. Notice the silences as much as the talking.",
+      "suggestedAssignee": "either",
+      "tags": ["presence"]
+    },
+    {
+      "key": "back-to-back-breathing",
+      "title": "Five minutes back to back",
+      "body": "Sit on the floor back to back, close enough to feel each other breathe. Five minutes of synchronized breathing, no talking.",
+      "suggestedAssignee": "either",
+      "tags": ["presence", "non-verbal"]
+    },
+    {
+      "key": "morning-text-warmth",
+      "title": "A morning text with warmth",
+      "body": "Send your partner a text first thing tomorrow morning saying one specific thing you're grateful for about them.",
+      "suggestedAssignee": "either",
+      "tags": ["appreciation", "async"]
+    },
+    {
+      "key": "favorite-tiny-thing",
+      "title": "Their favorite tiny thing",
+      "body": "Tell your partner the tiniest thing they do that you love. Wait for them to do it without prompting, then thank them.",
+      "suggestedAssignee": "curator",
+      "tags": ["appreciation", "observation"]
+    },
+    {
+      "key": "draw-each-other",
+      "title": "Draw each other in two minutes",
+      "body": "No looking at the paper, no lifting the pen. Two minutes each. Compare, laugh, keep the drawings somewhere.",
+      "suggestedAssignee": "either",
+      "tags": ["play"]
+    },
+    {
+      "key": "first-impression-revisited",
+      "title": "First impression, revisited",
+      "body": "Tell each other your honest first impression of the other, and how it has changed. Be generous with both versions.",
+      "suggestedAssignee": "either",
+      "tags": ["memory"]
+    },
+    {
+      "key": "thirty-minute-walk",
+      "title": "A thirty-minute walk, no phones",
+      "body": "Walk somewhere for thirty minutes, phones in pockets. No agenda. Let the conversation wander or not.",
+      "suggestedAssignee": "either",
+      "tags": ["shared-activity", "presence"]
+    },
+    {
+      "key": "thank-you-for-doing",
+      "title": "Thank you for doing the thing",
+      "body": "Pick one chore your partner does that you don't always thank them for. Thank them today, specifically, by name of the task.",
+      "suggestedAssignee": "either",
+      "tags": ["appreciation"]
+    },
+    {
+      "key": "fifteen-second-kiss",
+      "title": "A fifteen-second kiss",
+      "body": "A real fifteen-second kiss — count it. Notice what changes around second eight.",
+      "suggestedAssignee": "either",
+      "tags": ["touch"]
+    },
+    {
+      "key": "secret-talent-show",
+      "title": "Show a secret talent",
+      "body": "Each show your partner a small skill or party trick they haven't seen. No skill too small.",
+      "suggestedAssignee": "either",
+      "tags": ["play"]
+    },
+    {
+      "key": "favorite-photo-of-us",
+      "title": "Find your favorite photo of us",
+      "body": "Each scroll back and pick your favorite photo of the two of you. Share why. Make it a Live Photo if you have one.",
+      "suggestedAssignee": "either",
+      "tags": ["memory"]
+    },
+    {
+      "key": "request-without-blame",
+      "title": "Make one request without blame",
+      "body": "Ask your partner for one thing you'd like more of, framed as a positive request. No mention of what they're not doing.",
+      "suggestedAssignee": "either",
+      "tags": ["communication"]
+    },
+    {
+      "key": "i-noticed-i-felt",
+      "title": "I noticed, I felt",
+      "body": "Take turns: 'I noticed ____, and I felt ____.' Stay in observation + feeling, not story. Three rounds each.",
+      "suggestedAssignee": "either",
+      "tags": ["communication"]
+    },
+    {
+      "key": "favorite-thing-about-today",
+      "title": "Favorite thing about today",
+      "body": "Trade favorite small things about today. Not the highlight reel — the moment between moments.",
+      "suggestedAssignee": "either",
+      "tags": ["check-in"]
+    },
+    {
+      "key": "dance-one-song",
+      "title": "Dance to one song",
+      "body": "Pick a song. Dance to it in the kitchen, the living room, wherever. No phones, no audience. One song, all the way through.",
+      "suggestedAssignee": "either",
+      "tags": ["play", "touch"]
+    },
+    {
+      "key": "imagine-old-together",
+      "title": "Imagine being old together",
+      "body": "Each describe one small detail of the life you imagine sharing decades from now. Don't argue the details; collect them.",
+      "suggestedAssignee": "either",
+      "tags": ["imagination"]
+    },
+    {
+      "key": "trade-a-massage",
+      "title": "Trade a five-minute massage",
+      "body": "Trade five-minute shoulder or hand massages. Time it. The receiver only says what feels good and what doesn't.",
+      "suggestedAssignee": "either",
+      "tags": ["touch"]
+    },
+    {
+      "key": "what-i-trust-about-you",
+      "title": "What I trust about you",
+      "body": "Tell your partner one specific thing you trust about them. Wait for them to do the same. Don't reciprocate immediately — let the first sit.",
+      "suggestedAssignee": "either",
+      "tags": ["appreciation"]
+    }
+  ]
+}
