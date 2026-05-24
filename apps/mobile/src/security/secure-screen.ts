@@ -16,7 +16,7 @@ export {
 /**
  * Hook that pins Android FLAG_SECURE on for the lifetime of the
  * mounting component. Call once from the root of any phase that
- * displays couple-content (RootStack covers Main + Gate; Onboarding
+ * displays connection-content (RootStack covers Main + Gate; Onboarding
  * also shows the Safe Word during definition so it's worth keeping on
  * app-wide).
  *

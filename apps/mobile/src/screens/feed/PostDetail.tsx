@@ -8,13 +8,6 @@ export interface PostDetailProps {
   readonly isLoading: boolean;
   readonly error: Error | null;
   readonly onBack: () => void;
-  /** Wired by the route iff the SyncEngine is ready (couple paired +
-   *  couple_ratchet seeded + ApiClient live). Hidden on unpaired
-   *  devices so users don't see a Save action that can't do anything. */
-  readonly onSaveForPartner?: () => void | Promise<void>;
-  /** Optional inline status line after a save attempt — error or
-   *  success. Cleared by the route on the next render once relevant. */
-  readonly saveNotice?: string | null;
 }
 
 function isLinkLike(body: string): boolean {
@@ -65,22 +58,6 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
             </Text>
           )}
           <Text style={styles.author}>by {props.post.anonAuthor.slice(0, 16)}…</Text>
-
-          {props.onSaveForPartner ? (
-            <Pressable
-              accessibilityRole="button"
-              testID="post-detail.save-for-partner"
-              onPress={props.onSaveForPartner}
-              style={styles.saveButton}
-            >
-              <Text style={styles.saveButtonText}>Save for partner</Text>
-            </Pressable>
-          ) : null}
-          {props.saveNotice ? (
-            <Text style={styles.saveNotice} testID="post-detail.save-notice">
-              {props.saveNotice}
-            </Text>
-          ) : null}
         </View>
       ) : null}
     </SafeAreaView>
@@ -101,16 +78,6 @@ const styles = StyleSheet.create({
   },
   linkText: { color: '#9ec5ff', fontSize: 15 },
   author: { color: '#5e5e5e', fontSize: 12 },
-  saveButton: {
-    marginTop: 8,
-    backgroundColor: '#2a2a2a',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  saveButtonText: { color: '#f5f5f5', fontWeight: '600' },
-  saveNotice: { color: '#9e9e9e', fontSize: 13, textAlign: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   errorText: { color: '#ffb4b4', fontSize: 14, textAlign: 'center' },
 });

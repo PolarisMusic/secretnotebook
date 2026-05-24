@@ -3,7 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { DefineSafeWordRoute } from '../screens/onboarding/DefineSafeWordRoute';
 import { PairWithPartnerRoute } from '../screens/onboarding/PairWithPartnerRoute';
 import { WelcomeScreen } from '../screens/onboarding/WelcomeScreen';
-import { useCoupleStore } from '../state/couple';
+import { useConnectionStore } from '../state/connection';
 
 export type OnboardingParamList = {
   Welcome: undefined;
@@ -14,8 +14,8 @@ export type OnboardingParamList = {
 const Stack = createNativeStackNavigator<OnboardingParamList>();
 
 export function OnboardingStack(): JSX.Element {
-  const status = useCoupleStore((s) => s.status);
-  // Initial route is chosen from the persisted couple status so that a
+  const status = useConnectionStore((s) => s.status);
+  // Initial route is chosen from the persisted connection status so that a
   // cold launch into 'awaiting_safeword' jumps straight to DefineSafeWord
   // without re-pairing.
   const initial: keyof OnboardingParamList =

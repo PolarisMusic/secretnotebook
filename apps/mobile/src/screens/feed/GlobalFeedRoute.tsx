@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
 import { usePostsFeed } from '../../features/api/queries';
-import { useSyncEngineStore } from '../../features/couple-channel/store';
+import { useSyncEngineStore } from '../../features/connection-channel/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { GlobalFeed } from './GlobalFeed';
 
@@ -63,8 +63,7 @@ export function GlobalFeedRoute(): JSX.Element {
         onSelectPost={(id) => navigation.navigate('PostDetail', { id })}
         onCompose={() => navigation.navigate('SubmitPost')}
         onOpenSaved={engine ? () => navigation.navigate('SavedByYou') : undefined}
-        onOpenPrompts={engine ? () => navigation.navigate('PromptList') : undefined}
-        onOpenCouple={engine ? () => navigation.navigate('CoupleHome') : undefined}
+        onOpenConnection={engine ? () => navigation.navigate('ConnectionHome') : undefined}
       />
     </View>
   );

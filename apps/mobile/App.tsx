@@ -6,8 +6,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { runBoot } from './src/features/boot/run';
 import { useBootStore } from './src/features/boot/store';
-import { useSyncEngineStore } from './src/features/couple-channel/store';
-import { useSyncTicker } from './src/features/couple-channel/ticker';
+import { useSyncEngineStore } from './src/features/connection-channel/store';
+import { useSyncTicker } from './src/features/connection-channel/ticker';
 import { RootStack } from './src/navigation/RootStack';
 import { queryClient } from './src/query/client';
 import { BootScreen } from './src/screens/boot/BootScreen';

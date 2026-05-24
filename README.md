@@ -2,7 +2,14 @@
 
 > A decentralized couple-centric mobile app for two paired partners to share intimate content, complete relationship-deepening prompts, earn shared points, and (eventually) anchor non-sensitive events on a blockchain.
 
-**Status:** Phase 1 in progress. Foundation (F0–F3c) + slices S1–S5 are shipped and CI is green. See [Phased plan](#phased-plan) for the rest.
+**Status:** Phase 1.5 in progress. Foundation (F0–F3c) + the pairing / Safe Word / global-feed / connection-channel-sync slices are shipped. The Phase-1 role-play / prompts / save-for-partner / unlocked-saved loop has been retired (R0); the connection-channel surface is now shared + secret **notes** (R2), per-note **publish** (R3), per-partner **role** on the connection (R4), and **IAP-gated publish** (R5). See [Phased plan](#phased-plan) for the rest, and [`apps/mobile/RUNBOOK.md`](./apps/mobile/RUNBOOK.md) for the current end-to-end verification walk.
+
+> **Note on staleness in this README:** the "How it works" + "Sync model" sections below describe the Phase-1 vision and are accurate for pairing / Safe Word / global feed / connection-channel transport. The Phase-1.5 refactor (R0–R5) replaced what used to come after "save a post for your partner" — those sections still reference the deleted surface. The sources of truth for the current model are:
+>
+> - **Schema:** `apps/mobile/src/db/migrations/` (migrations 001–009)
+> - **CRDT ops:** `packages/connection-protocol/src/crdt/op.ts`
+> - **End-to-end acceptance:** `apps/mobile/tests/full-loop.test.ts`
+> - **Operator walk:** `apps/mobile/RUNBOOK.md`
 
 ---
 
@@ -103,13 +110,16 @@ secretnotebook/
 │   │   │   ├── features/
 │   │   │   │   ├── api/         # signed fetch wrapper, TanStack Query hooks, post cache
 │   │   │   │   ├── boot/        # boot pipeline + Zustand boot store
-│   │   │   │   ├── couple-channel/  # sync engine, ratchet store, CRDT projector, save action
-│   │   │   │   ├── pairing/     # BLE state machine, X3DH orchestrator, couple-row persistence
+│   │   │   │   ├── connection-channel/  # sync engine, ratchet store, CRDT projector
+│   │   │   │   ├── connection/  # per-partner role store (R4)
+│   │   │   │   ├── iap/         # entitlement cache + receipt validator (R5)
+│   │   │   │   ├── notes/       # shared + secret notes, publish (R2 + R3)
+│   │   │   │   ├── pairing/     # BLE state machine, X3DH orchestrator, connection-row persistence
 │   │   │   │   └── safeword/    # Argon2id verifier, session, lockout, background-lock policy
 │   │   │   ├── navigation/      # RootStack / OnboardingStack / MainStack
 │   │   │   ├── screens/         # presentational screens + *Route.tsx wiring
 │   │   │   ├── security/        # keychain wrapper, device_master + SQLCipher key derivation
-│   │   │   └── state/           # couple status, session, etc. (Zustand)
+│   │   │   └── state/           # connection status, session, etc. (Zustand)
 │   │   └── tests/               # Jest, includes two-device integration tests
 │   └── api/                     # Fastify 4 + Drizzle + Postgres 16
 │       ├── src/
@@ -120,9 +130,9 @@ secretnotebook/
 │       └── tests/               # Integration tests with in-memory stores via app.inject()
 ├── packages/
 │   ├── crypto/                  # libsodium wrappers: X25519/Ed25519/AEAD/Argon2id/HKDF/HMAC/SHA-256/base64
-│   ├── couple-protocol/         # CRDT op shapes, ratchet, blinded ID, pairing transport interface
+│   ├── connection-protocol/     # CRDT op shapes, ratchet, blinded ID, pairing transport interface
 │   ├── shared-types/            # Zod schemas (Post, SyncEnvelope, Device, relay request/response)
-│   ├── prompt-library/          # Seed JSON of relationship-deepening prompts (S6)
+│   ├── prompt-library/          # Seed JSON of relationship-deepening prompts (stranded — Phase-1 surface deleted in R0; kept for reference until a R6+ replacement lands)
 │   ├── config-eslint/           # Shared flat ESLint preset
 │   └── config-tsconfig/         # Shared base / node / react-native tsconfig presets
 └── infra/

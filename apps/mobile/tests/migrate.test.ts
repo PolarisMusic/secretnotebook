@@ -8,16 +8,15 @@ import { nodeExecutor } from './helpers/sqlite-executor';
 
 const EXPECTED_TABLES = [
   'profiles',
-  'couple',
+  'connection',
   'session',
   'post_cache',
   'saved_post',
   'prompt',
   'ledger_entry',
-  'roleplay_session',
   'sync_outbox',
   'sync_seen',
-  'couple_ratchet',
+  'connection_ratchet',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -34,8 +33,13 @@ describe('runMigrations', () => {
 
     expect(result.applied.map((m) => m.name)).toEqual([
       'init',
-      'couple-ratchet',
-      'roleplay-session-extra',
+      'connection-ratchet',
+      'drop-couple-loop',
+      'rename-couple-to-connection',
+      'notes',
+      'note-publish-cols',
+      'connection-roles',
+      'entitlement',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -44,6 +48,14 @@ describe('runMigrations', () => {
       expect(names).toContain(t);
     }
     expect(names).toContain('schema_migrations');
+    // Phase-1.5 R0 dropped this table — confirm it's gone.
+    expect(names).not.toContain('roleplay_session');
+    // Phase-1.5 R1 renamed couple → connection — confirm both
+    // pre-rename names are gone.
+    expect(names).not.toContain('couple');
+    expect(names).not.toContain('couple_ratchet');
+    // Phase-1.5 R2 added the notes carrier.
+    expect(names).toContain('note');
   });
 
   it('is idempotent: re-running applies nothing', async () => {
@@ -53,8 +65,13 @@ describe('runMigrations', () => {
     expect(second.applied).toEqual([]);
     expect(second.alreadyApplied.map((m) => m.name)).toEqual([
       'init',
-      'couple-ratchet',
-      'roleplay-session-extra',
+      'connection-ratchet',
+      'drop-couple-loop',
+      'rename-couple-to-connection',
+      'notes',
+      'note-publish-cols',
+      'connection-roles',
+      'entitlement',
     ]);
   });
 
@@ -106,13 +123,13 @@ describe('runMigrations', () => {
     expect(recorded.map((r) => r.id)).toEqual([1]);
   });
 
-  it('enforces the couple.status CHECK constraint', async () => {
+  it('enforces the connection.status CHECK constraint', async () => {
     const db = new Database(':memory:');
     await runMigrations(nodeExecutor(db), MIGRATIONS);
     expect(() =>
       db
         .prepare(
-          `INSERT INTO couple (id, partner_a_pubkey, partner_b_pubkey,
+          `INSERT INTO connection (id, partner_a_pubkey, partner_b_pubkey,
               channel_root_key_wrapped, paired_at, status)
            VALUES ('c', X'01', X'02', X'03', 0, 'gibberish')`,
         )
@@ -156,11 +173,12 @@ describe('runMigrations', () => {
       .map((r) => (r as { name: string }).name);
     expect(indexes).toEqual(
       expect.arrayContaining([
-        'saved_post_for_pubkey_idx',
         'prompt_assigned_to_idx',
         'ledger_entry_kind_idx',
         'sync_outbox_next_attempt_idx',
       ]),
     );
+    // Phase-1.5 R0 dropped this index along with the unlocked_at column.
+    expect(indexes).not.toContain('saved_post_for_pubkey_idx');
   });
 });

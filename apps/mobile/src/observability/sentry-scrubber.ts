@@ -1,6 +1,6 @@
 /**
  * `beforeSend`-shaped Sentry hook: walks an event payload and redacts
- * anything that could carry couple-private content before it leaves
+ * anything that could carry connection-private content before it leaves
  * the device.
  *
  * The Phase-1 stance is "the server cannot decrypt", so Sentry — a
@@ -12,7 +12,7 @@
  *
  * Strategy:
  *   1. Whole-field redaction for any object key that names a
- *      couple-content surface (prompt body, rating, safe word, etc).
+ *      connection-content surface (prompt body, rating, safe word, etc).
  *   2. Pattern-based redaction inside free-text values — emails,
  *      64-hex pubkeys, UUIDs.
  *   3. Recurse through nested objects, arrays, and breadcrumbs.

@@ -24,10 +24,8 @@ export interface GlobalFeedProps {
   readonly onCompose: () => void;
   /** Optional — hidden on unpaired devices (no Saved area to navigate to). */
   readonly onOpenSaved?: () => void;
-  /** Optional — hidden on unpaired devices. Opens PromptList. */
-  readonly onOpenPrompts?: () => void;
-  /** Optional — hidden on unpaired devices. Opens CoupleHome. */
-  readonly onOpenCouple?: () => void;
+  /** Optional — hidden on unpaired devices. Opens ConnectionHome. */
+  readonly onOpenConnection?: () => void;
 }
 
 /**
@@ -66,24 +64,14 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
       <View style={styles.header}>
         <Text style={styles.title}>Global feed</Text>
         <View style={styles.headerActions}>
-          {props.onOpenCouple ? (
+          {props.onOpenConnection ? (
             <Pressable
               accessibilityRole="button"
-              testID="feed.open-couple"
-              onPress={props.onOpenCouple}
+              testID="feed.open-connection"
+              onPress={props.onOpenConnection}
               style={styles.savedButton}
             >
-              <Text style={styles.savedButtonText}>Couple</Text>
-            </Pressable>
-          ) : null}
-          {props.onOpenPrompts ? (
-            <Pressable
-              accessibilityRole="button"
-              testID="feed.open-prompts"
-              onPress={props.onOpenPrompts}
-              style={styles.savedButton}
-            >
-              <Text style={styles.savedButtonText}>Prompts</Text>
+              <Text style={styles.savedButtonText}>Connection</Text>
             </Pressable>
           ) : null}
           {props.onOpenSaved ? (

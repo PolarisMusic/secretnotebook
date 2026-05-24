@@ -11,7 +11,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.secretnotebook.app",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Face ID unlocks your couple notebook and confirms pairing.",
+        "NSFaceIDUsageDescription": "Face ID unlocks your connection notebook and confirms pairing.",
         "NSBluetoothAlwaysUsageDescription": "Bluetooth is used briefly to pair with your partner's device.",
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -30,7 +30,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Face ID unlocks your couple notebook and confirms pairing."
+          "faceIDPermission": "Face ID unlocks your connection notebook and confirms pairing."
         }
       ],
       [

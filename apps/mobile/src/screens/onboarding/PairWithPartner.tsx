@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { PairingTransport } from '@secretnotebook/couple-protocol';
+import type { PairingTransport } from '@secretnotebook/connection-protocol';
 import { generateX25519KeyPair } from '@secretnotebook/crypto';
 
 import type { BiometricPrompt } from '../../features/pairing/biometric';
@@ -19,8 +19,8 @@ export interface PairWithPartnerProps {
   readonly transportFactory: () => PairingTransport;
   readonly biometric: BiometricPrompt;
   /** Called once both sides reach safeword_required with the matching
-   *  root_key. The caller is responsible for writing the couple row,
-   *  updating the couple-status store, and advancing to S2. */
+   *  root_key. The caller is responsible for writing the connection row,
+   *  updating the connection-status store, and advancing to S2. */
   readonly onPaired: (result: {
     rootKey: Uint8Array;
     selfPub: Uint8Array;
@@ -71,7 +71,7 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
 
     const final = await run.result;
     if (final.name === 'safeword_required') {
-      // onPaired persists the couple row and advances couple.status
+      // onPaired persists the connection row and advances connection.status
       // via the store. The screen itself no longer touches status.
       await props.onPaired({
         rootKey: final.rootKey,
@@ -124,7 +124,7 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
         {state.name === 'handshake' && (
           <>
             <ActivityIndicator />
-            <Text style={styles.body}>Setting up your couple channel…</Text>
+            <Text style={styles.body}>Setting up your connection channel…</Text>
           </>
         )}
         {state.name === 'safeword_required' && (

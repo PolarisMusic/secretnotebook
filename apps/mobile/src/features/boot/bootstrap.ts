@@ -4,7 +4,7 @@ import { deriveDeviceSigningKey } from '../api/device-key';
 import { getOrCreateDeviceMaster, type RandomBytes } from '../../security/device-master';
 import type { KeychainAdapter } from '../../security/keychain';
 import { deriveSqlcipherKey } from '../../security/sqlcipher-key';
-import { type ActiveCouple, loadActiveCouple } from './couple-load';
+import { type ActiveConnection, loadActiveConnection } from './connection-load';
 
 /**
  * Pure boot pipeline — no React, no globals. Dependencies are injected so
@@ -19,7 +19,7 @@ import { type ActiveCouple, loadActiveCouple } from './couple-load';
  *   2. HKDF-derive the 32-byte SQLCipher master key from device_master.
  *   3. open the encrypted database (op-sqlite + SQLCipher on device).
  *   4. apply any pending migrations idempotently.
- *   5. read the single Phase-1 couple row (if any) so the navigator can
+ *   5. read the single Phase-1 connection row (if any) so the navigator can
  *      pick the right phase on first render.
  */
 export interface OpenDatabaseResult {
@@ -37,7 +37,7 @@ export interface BootDeps {
 
 export interface BootResult {
   readonly executor: SqlExecutor;
-  readonly couple: ActiveCouple | null;
+  readonly connection: ActiveConnection | null;
   readonly deviceSigningKey: Ed25519KeyPair;
 }
 
@@ -46,7 +46,7 @@ export async function bootstrap(deps: BootDeps): Promise<BootResult> {
   const sqlcipherKey = await deriveSqlcipherKey(deviceMaster);
   const { executor } = await deps.openDatabase(sqlcipherKey);
   await deps.runMigrations(executor);
-  const couple = await loadActiveCouple(executor);
+  const connection = await loadActiveConnection(executor);
   const deviceSigningKey = await deriveDeviceSigningKey(deviceMaster);
-  return { executor, couple, deviceSigningKey };
+  return { executor, connection, deviceSigningKey };
 }

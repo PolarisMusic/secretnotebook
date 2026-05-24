@@ -1,8 +1,8 @@
 import { bytesToHex, hmacSha256 } from '@secretnotebook/crypto';
-import type { CoupleSide } from '@secretnotebook/couple-protocol';
+import type { ConnectionSide } from '@secretnotebook/connection-protocol';
 
 import type { SqlExecutor } from '../../db/executor';
-import { initAndSaveRatchet } from '../couple-channel/ratchet-store';
+import { initAndSaveRatchet } from '../connection-channel/ratchet-store';
 
 export interface CompletedPairing {
   readonly rootKey: Uint8Array;
@@ -10,18 +10,18 @@ export interface CompletedPairing {
   readonly peerPub: Uint8Array;
 }
 
-export interface PersistedCouple {
-  readonly coupleId: string;
+export interface PersistedConnection {
+  readonly connectionId: string;
   /** Which side of the channel this device is. Stable across cold starts. */
-  readonly selfSide: CoupleSide;
+  readonly selfSide: ConnectionSide;
 }
 
 /**
- * Persist a freshly paired couple row with status='awaiting_safeword'.
+ * Persist a freshly paired connection row with status='awaiting_safeword'.
  *
  * The id is derived deterministically so both devices compute the same
  * value without an extra exchange:
- *   couple.id = HMAC-SHA256(root_key, partner_a_pub || partner_b_pub)
+ *   connection.id = HMAC-SHA256(root_key, partner_a_pub || partner_b_pub)
  *     truncated to 16 bytes (32 hex chars)
  * where partner_a is the lexicographically smaller of the two pubkeys.
  *
@@ -32,35 +32,35 @@ export interface PersistedCouple {
  * already satisfied and the migration to wrapped storage in S2 is local
  * to this file.
  */
-export async function persistCouple(
+export async function persistConnection(
   exec: SqlExecutor,
   pairing: CompletedPairing,
   now: () => number = Date.now,
-): Promise<PersistedCouple> {
+): Promise<PersistedConnection> {
   if (pairing.rootKey.length !== 32) throw new Error('rootKey must be 32 bytes');
   if (pairing.selfPub.length !== 32) throw new Error('selfPub must be 32 bytes');
   if (pairing.peerPub.length !== 32) throw new Error('peerPub must be 32 bytes');
 
   const [partnerA, partnerB] = canonicalOrder(pairing.selfPub, pairing.peerPub);
-  const coupleId = await deriveCoupleId(pairing.rootKey, partnerA, partnerB);
+  const connectionId = await deriveConnectionId(pairing.rootKey, partnerA, partnerB);
   const pairedAt = Math.floor(now() / 1000);
 
   await exec.execute(
-    `INSERT INTO couple (
+    `INSERT INTO connection (
        id, partner_a_pubkey, partner_b_pubkey,
        channel_root_key_wrapped, paired_at, status
      ) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`,
-    [coupleId, partnerA, partnerB, pairing.rootKey, pairedAt, 'awaiting_safeword'],
+    [connectionId, partnerA, partnerB, pairing.rootKey, pairedAt, 'awaiting_safeword'],
   );
 
-  // Seed the couple_ratchet row in the same logical step. Idempotent
-  // through ON CONFLICT, so re-running persistCouple after a partial
+  // Seed the connection_ratchet row in the same logical step. Idempotent
+  // through ON CONFLICT, so re-running persistConnection after a partial
   // failure picks up where it left off rather than blowing up.
   const { side } = await initAndSaveRatchet(
     exec,
     {
-      coupleId,
+      connectionId,
       rootKey: pairing.rootKey,
       selfPub: pairing.selfPub,
       peerPub: pairing.peerPub,
@@ -68,7 +68,7 @@ export async function persistCouple(
     now,
   );
 
-  return { coupleId, selfSide: side };
+  return { connectionId, selfSide: side };
 }
 
 function canonicalOrder(a: Uint8Array, b: Uint8Array): [Uint8Array, Uint8Array] {
@@ -81,7 +81,7 @@ function canonicalOrder(a: Uint8Array, b: Uint8Array): [Uint8Array, Uint8Array] 
   return a.length <= b.length ? [a, b] : [b, a];
 }
 
-async function deriveCoupleId(
+async function deriveConnectionId(
   rootKey: Uint8Array,
   partnerA: Uint8Array,
   partnerB: Uint8Array,

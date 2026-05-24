@@ -3,7 +3,7 @@ import {
   computeBlindedRecipientIdHex,
   type CrdtOp,
   type SavedPostAddOp,
-} from '@secretnotebook/couple-protocol';
+} from '@secretnotebook/connection-protocol';
 import { bytesToHex } from '@secretnotebook/crypto';
 import type {
   RelayDeleteResponse,
@@ -17,15 +17,15 @@ import Database from 'better-sqlite3';
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import type { ApiClient } from '../src/features/api/client';
-import { initAndSaveRatchet } from '../src/features/couple-channel/ratchet-store';
-import { SyncEngine } from '../src/features/couple-channel/sync-engine';
+import { initAndSaveRatchet } from '../src/features/connection-channel/ratchet-store';
+import { SyncEngine } from '../src/features/connection-channel/sync-engine';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 // --- shared fixtures ---------------------------------------------------------
 
 const FIXED_NOW = new Date('2026-05-20T12:00:00.000Z');
 const ROOT_KEY = new Uint8Array(32).fill(0xab);
-const COUPLE_ID = '11111111-1111-1111-1111-111111111111';
+const CONNECTION_ID = '11111111-1111-1111-1111-111111111111';
 // A's pubkey sorts lex-lower than B's → A is side 'a'.
 const A_PUB = new Uint8Array(32).fill(0x10);
 const B_PUB = new Uint8Array(32).fill(0x20);
@@ -124,13 +124,13 @@ async function freshDb(): Promise<ReturnType<typeof nodeExecutor>> {
   const db = new Database(':memory:');
   const exec = nodeExecutor(db);
   await runMigrations(exec, MIGRATIONS);
-  // Couple row keyed on the canonical id so the ratchet FK is satisfied.
+  // Connection row keyed on the canonical id so the ratchet FK is satisfied.
   await exec.execute(
-    `INSERT INTO couple (
+    `INSERT INTO connection (
        id, partner_a_pubkey, partner_b_pubkey,
        channel_root_key_wrapped, paired_at, status
      ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [COUPLE_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, 'paired'],
+    [CONNECTION_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, 'paired'],
   );
   return exec;
 }
@@ -143,14 +143,19 @@ async function makeSide(args: {
   const exec = await freshDb();
   await initAndSaveRatchet(
     exec,
-    { coupleId: COUPLE_ID, rootKey: ROOT_KEY, selfPub: args.selfPub, peerPub: args.peerPub },
+    {
+      connectionId: CONNECTION_ID,
+      rootKey: ROOT_KEY,
+      selfPub: args.selfPub,
+      peerPub: args.peerPub,
+    },
     () => FIXED_NOW.getTime(),
   );
   const engine = new SyncEngine({
     exec,
     api: args.relay.apiFor() as unknown as ApiClient,
-    coupleId: COUPLE_ID,
-    coupleRoot: ROOT_KEY,
+    connectionId: CONNECTION_ID,
+    connectionRoot: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
     side: bytesToHex(args.selfPub) < bytesToHex(args.peerPub) ? 'a' : 'b',
@@ -260,7 +265,7 @@ describe('SyncEngine — idempotency and replay', () => {
 
     // Snapshot the on-wire envelope so we can replay it byte-for-byte.
     const blindedB = await computeBlindedRecipientIdHex({
-      coupleRoot: ROOT_KEY,
+      connectionRoot: ROOT_KEY,
       recipientPubkey: B_PUB,
       date: FIXED_NOW,
     });
@@ -301,7 +306,7 @@ describe('SyncEngine — out-of-order delivery', () => {
     // order so B sees counter 2 first, then 1, then 0. The ratchet's
     // skipped-key cache must keep them all decryptable.
     const blindedB = await computeBlindedRecipientIdHex({
-      coupleRoot: ROOT_KEY,
+      connectionRoot: ROOT_KEY,
       recipientPubkey: B_PUB,
       date: FIXED_NOW,
     });
@@ -318,8 +323,8 @@ describe('SyncEngine — out-of-order delivery', () => {
     const flippedEngine = new SyncEngine({
       exec: b.exec,
       api: flippedApi as unknown as ApiClient,
-      coupleId: COUPLE_ID,
-      coupleRoot: ROOT_KEY,
+      connectionId: CONNECTION_ID,
+      connectionRoot: ROOT_KEY,
       selfPub: B_PUB,
       peerPub: A_PUB,
       side: 'b',
@@ -401,7 +406,7 @@ describe('SyncEngine — outbox retry on POST failure', () => {
     const exec = await freshDb();
     await initAndSaveRatchet(
       exec,
-      { coupleId: COUPLE_ID, rootKey: ROOT_KEY, selfPub: A_PUB, peerPub: B_PUB },
+      { connectionId: CONNECTION_ID, rootKey: ROOT_KEY, selfPub: A_PUB, peerPub: B_PUB },
       () => FIXED_NOW.getTime(),
     );
     const flakyApi = {
@@ -413,8 +418,8 @@ describe('SyncEngine — outbox retry on POST failure', () => {
     const engine = new SyncEngine({
       exec,
       api: flakyApi as unknown as ApiClient,
-      coupleId: COUPLE_ID,
-      coupleRoot: ROOT_KEY,
+      connectionId: CONNECTION_ID,
+      connectionRoot: ROOT_KEY,
       selfPub: A_PUB,
       peerPub: B_PUB,
       side: 'a',

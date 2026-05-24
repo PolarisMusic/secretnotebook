@@ -4,19 +4,14 @@ import type {
   FlushResult,
   PullResult,
   SyncEngine,
-} from '../src/features/couple-channel/sync-engine';
-import { runSyncCycle } from '../src/features/couple-channel/ticker';
+} from '../src/features/connection-channel/sync-engine';
+import { runSyncCycle } from '../src/features/connection-channel/ticker';
 
 interface MockEngine {
   flush: jest.Mock<() => Promise<FlushResult>>;
   pull: jest.Mock<() => Promise<PullResult>>;
 }
 
-/**
- * Minimal SqlExecutor stub — the runSyncCycle sweeper step queries
- * roleplay_session + ledger_entry; we return [] for the sweep query
- * so no real DB is involved in these unit tests.
- */
 function noopExec(): SqlExecutor {
   return {
     executeBatch: async () => undefined,
@@ -83,12 +78,9 @@ describe('runSyncCycle', () => {
     const { engine } = mockEngine({ pullError });
     const onError = jest.fn();
     const out = await runSyncCycle(engine, { onError });
-    // No throw, defaults returned. The sweep step also runs against
-    // the no-op exec and finds no candidates → awardedSessionIds=[].
     expect(out).toEqual({
       flushed: { attempted: 0, delivered: 0, failed: 0 },
       pulled: { fetched: 0, applied: 0, duplicates: 0 },
-      awardedSessionIds: [],
     });
     expect(onError).toHaveBeenCalledWith(pullError, 'pull');
   });
@@ -112,7 +104,6 @@ describe('runSyncCycle', () => {
     await expect(runSyncCycle(engine)).resolves.toEqual({
       flushed: { attempted: 0, delivered: 0, failed: 0 },
       pulled: { fetched: 0, applied: 0, duplicates: 0 },
-      awardedSessionIds: [],
     });
   });
 });

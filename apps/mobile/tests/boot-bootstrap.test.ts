@@ -6,7 +6,7 @@ import type { SqlExecutor } from '../src/db/executor';
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import { bootstrap, type BootDeps } from '../src/features/boot/bootstrap';
-import { persistCouple } from '../src/features/pairing/persistence';
+import { persistConnection } from '../src/features/pairing/persistence';
 import type { KeychainAdapter } from '../src/security/keychain';
 import { deriveSqlcipherKey } from '../src/security/sqlcipher-key';
 import { nodeExecutor } from './helpers/sqlite-executor';
@@ -72,7 +72,7 @@ describe('bootstrap', () => {
     const h = harness(kc);
 
     const result = await bootstrap(h.deps);
-    expect(result.couple).toBeNull();
+    expect(result.connection).toBeNull();
     expect(kc.peek()).not.toBeNull();
 
     const master = kc.peek() as Uint8Array;
@@ -96,19 +96,19 @@ describe('bootstrap', () => {
     );
   });
 
-  it('exposes the couple row once one exists', async () => {
+  it('exposes the connection row once one exists', async () => {
     const kc = inMemoryKeychain();
     const h = harness(kc);
-    // Pre-seed a couple in the very executor the harness will return.
+    // Pre-seed a connection in the very executor the harness will return.
     await runMigrations(h.executor, MIGRATIONS);
     const rootKey = new Uint8Array(32).fill(0xcd);
     const selfPub = new Uint8Array(32).fill(0x10);
     const peerPub = new Uint8Array(32).fill(0x20);
-    const { coupleId } = await persistCouple(h.executor, { rootKey, selfPub, peerPub });
+    const { connectionId } = await persistConnection(h.executor, { rootKey, selfPub, peerPub });
 
     const result = await bootstrap(h.deps);
-    expect(result.couple?.coupleId).toBe(coupleId);
-    expect(result.couple?.status).toBe('awaiting_safeword');
+    expect(result.connection?.connectionId).toBe(connectionId);
+    expect(result.connection?.status).toBe('awaiting_safeword');
   });
 
   it('derives a stable device signing keypair from the same device_master across boots', async () => {

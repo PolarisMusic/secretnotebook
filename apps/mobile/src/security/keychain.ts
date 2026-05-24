@@ -35,7 +35,7 @@ export function createKeychainAdapter(): KeychainAdapter {
     service: SERVICE,
     accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
     authenticationPrompt: {
-      title: 'Unlock your couple notebook',
+      title: 'Unlock your connection notebook',
       cancel: 'Cancel',
     },
   };

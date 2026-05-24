@@ -1,6 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { bytesToHex } from '@secretnotebook/crypto';
-import { GRATITUDE_LIBRARY, pickPromptWeighted } from '@secretnotebook/prompt-library';
+import { base64ToBytes, bytesToHex } from '@secretnotebook/crypto';
 import type {
   ReceivedSyncEnvelope,
   RelayDeleteResponse,
@@ -13,38 +12,34 @@ import Database from 'better-sqlite3';
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import type { ApiClient } from '../src/features/api/client';
-import { initAndSaveRatchet } from '../src/features/couple-channel/ratchet-store';
-import { saveForPartner } from '../src/features/couple-channel/save-for-partner';
-import { findPromptById } from '../src/features/prompts/store';
-import { listUnlockedForMe } from '../src/features/couple-channel/saved-post-store';
-import { SyncEngine } from '../src/features/couple-channel/sync-engine';
-import { runSyncCycle } from '../src/features/couple-channel/ticker';
+import { initAndSaveRatchet, loadRatchet } from '../src/features/connection-channel/ratchet-store';
+import { listSavedByMe } from '../src/features/connection-channel/saved-post-store';
+import { SyncEngine } from '../src/features/connection-channel/sync-engine';
+import { sumConnectionPoints } from '../src/features/ledger/store';
 import {
-  LEDGER_REASON,
-  POINTS_LOOP_COMPLETED,
-  POINTS_PROMPT_CERTIFIED,
-  POINTS_SAVE_FOR_PARTNER,
-  awardCouplePoints,
-} from '../src/features/ledger/couple-points';
-import { sumCouplePoints } from '../src/features/ledger/store';
-import { assignPromptForPartner } from '../src/features/prompts/assigner';
-import { certifyPromptCompletion, markPromptCompleted } from '../src/features/prompts/transitions';
+  getNote,
+  listNotes,
+  publishNote,
+  revealSecretNote,
+  writeSecretNote,
+  writeSharedNote,
+  type NoteStoreDeps,
+  type PublishToGlobalFeed,
+} from '../src/features/notes/store';
 import {
-  markGratitudeStep,
-  setRoleplayRating,
-  startRoleplay,
-} from '../src/features/roleplay/actions';
-import { findRoleplaySession } from '../src/features/roleplay/store';
-import { unlockOneRandomFor } from '../src/features/saved-posts/random-unlocker';
+  getConnectionRoles,
+  setMyRole,
+  type RoleStoreDeps,
+} from '../src/features/connection/role-store';
+import { cacheReceipt, requireCurrentEntitlement } from '../src/features/iap/store';
+import { fixedValidator } from './helpers/iap-validators';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 const ROOT_KEY = new Uint8Array(32).fill(0xab);
-const COUPLE_ID = '11111111-1111-1111-1111-111111111111';
+const CONNECTION_ID = '11111111-1111-1111-1111-111111111111';
 const A_PUB = new Uint8Array(32).fill(0x10);
 const B_PUB = new Uint8Array(32).fill(0x20);
 const FIXED_NOW = new Date('2026-05-20T12:00:00.000Z');
-
-const GLOBAL_POST_ID = 'cafef00d-cafe-f00d-cafe-cafef00dcafe';
 
 interface Stored {
   id: string;
@@ -106,14 +101,14 @@ async function freshSide(args: {
   const exec = nodeExecutor(db);
   await runMigrations(exec, MIGRATIONS);
   await exec.execute(
-    `INSERT INTO couple (
+    `INSERT INTO connection (
        id, partner_a_pubkey, partner_b_pubkey,
        channel_root_key_wrapped, paired_at, status
      ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [COUPLE_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, 'paired'],
+    [CONNECTION_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, 'paired'],
   );
   await initAndSaveRatchet(exec, {
-    coupleId: COUPLE_ID,
+    connectionId: CONNECTION_ID,
     rootKey: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
@@ -121,8 +116,8 @@ async function freshSide(args: {
   const engine = new SyncEngine({
     exec,
     api: args.relay.apiFor() as unknown as ApiClient,
-    coupleId: COUPLE_ID,
-    coupleRoot: ROOT_KEY,
+    connectionId: CONNECTION_ID,
+    connectionRoot: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
     side: bytesToHex(args.selfPub) < bytesToHex(args.peerPub) ? 'a' : 'b',
@@ -138,255 +133,596 @@ async function syncBoth(a: Side, b: Side): Promise<void> {
   await b.engine.pull();
 }
 
+function noteDeps(side: Side, selfPub: Uint8Array): NoteStoreDeps {
+  return {
+    exec: side.exec,
+    selfPubkey: selfPub,
+    now: () => FIXED_NOW,
+    enqueue: (op) => side.engine.enqueue(op),
+  };
+}
+
+function roleDeps(side: Side, selfPub: Uint8Array): RoleStoreDeps {
+  return {
+    exec: side.exec,
+    selfPubkey: selfPub,
+    now: () => FIXED_NOW,
+    enqueue: (op) => side.engine.enqueue(op),
+  };
+}
+
+interface RawOutboxEnvelope {
+  envelope: string;
+}
+
+async function outboxPlaintext(side: Side): Promise<string> {
+  const rows = await side.exec.query<RawOutboxEnvelope>(
+    `SELECT envelope FROM sync_outbox ORDER BY id ASC`,
+  );
+  return rows.map((r) => r.envelope).join('\n');
+}
+
+function relayCiphertextBlob(relay: FakeRelay): Uint8Array {
+  // Concatenate header + ciphertext bytes across every envelope so a
+  // single .includes() check can rule the marker out of the whole
+  // current wire image.
+  const chunks: Uint8Array[] = [];
+  for (const r of relay.rows) {
+    chunks.push(base64ToBytes(r.envelope.header));
+    chunks.push(base64ToBytes(r.envelope.ciphertext));
+  }
+  let total = 0;
+  for (const c of chunks) total += c.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out;
+}
+
+function bytesInclude(haystack: Uint8Array, needle: Uint8Array): boolean {
+  if (needle.length === 0) return true;
+  outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (haystack[i + j] !== needle[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
 /**
- * The pre-S9 in-process acceptance harness. Walks the full Phase-1
- * happy path through two SQLCipher-backed sides connected by a fake
- * relay, asserting that the end state matches the spec's acceptance
- * for every slice that has one. Anything that breaks the data plumbing
- * downstream of these assertions blows up CI, even if no Detox spec
- * has run yet.
+ * Phase-1.5 R0.5 acceptance harness — the minimal integration backbone
+ * the rest of the refactor builds on. The pre-S9 harness drove the
+ * full save → assign → certify → unlock → rate → gratitude → +37 loop;
+ * everything past "two paired devices that can sync" was deleted in
+ * R0 and gets layered back in by:
  *
- * Walks: save (+2) → assign → complete → certify (+10 + unlock) →
- * "I tried it" → rate → both gratitude → +25 → final ledger.
+ *   R2 — shared-note round-trip, secret-note announce + reveal,
+ *        and the secret-body-never-on-wire invariant
+ *   R3 — publish-from-note → server post → delete
+ *   R5 — IAP-gated publish + receipt-validation harness
  *
- * Acceptance per slice:
- *   - S5: locked count on B → 1 (then 0 unlocked) after sync.
- *   - S6: prompt cannot reach 'certified' without both sides' actions
- *         — the test only flips to certified after A's CertifyCompletion
- *         action runs; both sides converge to 'certified' after sync.
- *   - S7: exactly-one-unlock invariant — one row unlocked, unlocking
- *         prompt id linked. (Concurrent unlocks across two prompts
- *         already covered by random-unlocker.test.ts.)
- *   - S8: full loop completion adds the same point totals on both
- *         devices — 2+10+25 = 37 on each side.
+ * The harness here just asserts the empty starting position: both
+ * sides migrate, persist a connection row, init their ratchet, build a
+ * SyncEngine, and report zero rows everywhere + zero envelopes on
+ * the wire after a no-op sync cycle. If any future change to the
+ * boot pipeline breaks this floor, CI catches it before R2 even
+ * tries to write a note.
  */
-describe('Phase-1 happy path — in-process two-device acceptance', () => {
-  it('walks save → assign → certify → unlock → try → rate → gratitude → +37', async () => {
+describe('Phase-1.5 acceptance harness — empty-state floor', () => {
+  it('two devices migrate, persist a paired connection + ratchet, and start clean', async () => {
     const relay = new FakeRelay();
     const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
     const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
 
-    // Step 1 — A saves a global post for B.  (S5: +2 lands on A
-    // immediately; on B after the next sync.)
-    const { savedPostId } = await saveForPartner({
-      exec: a.exec,
-      engine: a.engine,
-      globalPostId: GLOBAL_POST_ID,
-      savedByPubkey: A_PUB,
-      savedForPubkey: B_PUB,
-    });
-    expect(await sumCouplePoints(a.exec)).toBe(POINTS_SAVE_FOR_PARTNER);
-    await syncBoth(a, b);
-    expect(await sumCouplePoints(b.exec)).toBe(POINTS_SAVE_FOR_PARTNER);
+    // Both ratchets land healthy with the correct side assignment
+    // (lexicographic order on pubkey hex determines a/b).
+    const aRatchet = await loadRatchet(a.exec, CONNECTION_ID);
+    const bRatchet = await loadRatchet(b.exec, CONNECTION_ID);
+    expect(aRatchet?.side).toBe('a');
+    expect(bRatchet?.side).toBe('b');
 
-    // Step 2 — A assigns a prompt to B.
-    const { promptId } = await assignPromptForPartner({
-      exec: a.exec,
-      engine: a.engine,
-      assignedToPubkey: B_PUB,
-      assignedByPubkey: A_PUB,
-      random: () => 0,
-    });
-    await syncBoth(a, b);
-    expect((await findPromptById(a.exec, promptId))!.state).toBe('assigned');
-    expect((await findPromptById(b.exec, promptId))!.state).toBe('assigned');
-
-    // Step 3 — B marks the prompt completed (assignee-only).
-    await markPromptCompleted({
-      exec: b.exec,
-      engine: b.engine,
-      promptId,
-      actorPubkey: B_PUB,
-      now: () => 1_700_000_500,
-    });
-    expect((await findPromptById(b.exec, promptId))!.state).toBe('completed');
-    await syncBoth(a, b);
-    // A sees completed too — but NOT yet certified (S6 acceptance).
-    expect((await findPromptById(a.exec, promptId))!.state).toBe('completed');
-
-    // Step 4 — A certifies + fires +10 + picks one of B's locked
-    // saved_posts to unlock (S7).
-    await certifyPromptCompletion({
-      exec: a.exec,
-      engine: a.engine,
-      promptId,
-      actorPubkey: A_PUB,
-      now: () => 1_700_000_700,
-    });
-    const unlock = await unlockOneRandomFor({
-      exec: a.exec,
-      engine: a.engine,
-      assigneePubkey: B_PUB,
-      unlockPromptId: promptId,
-      random: () => 0,
-      now: () => 1_700_000_701,
-    });
-    expect(unlock).not.toBeNull();
-    await awardCouplePoints({
-      exec: a.exec,
-      engine: a.engine,
-      delta: POINTS_PROMPT_CERTIFIED,
-      reason: LEDGER_REASON.promptCertified,
-      refId: promptId,
-    });
-    await syncBoth(a, b);
-
-    // Both sides see certified + the saved_post unlocked + +10 in the
-    // ledger (so total now 2+10=12).
-    expect((await findPromptById(a.exec, promptId))!.state).toBe('certified');
-    expect((await findPromptById(b.exec, promptId))!.state).toBe('certified');
-    const unlockedForB = await listUnlockedForMe(b.exec, B_PUB);
-    expect(unlockedForB).toHaveLength(1);
-    expect(unlockedForB[0]!.id).toBe(savedPostId);
-    expect(unlockedForB[0]!.unlockPromptId).toBe(promptId);
-    expect(await sumCouplePoints(a.exec)).toBe(POINTS_SAVE_FOR_PARTNER + POINTS_PROMPT_CERTIFIED);
-    expect(await sumCouplePoints(b.exec)).toBe(POINTS_SAVE_FOR_PARTNER + POINTS_PROMPT_CERTIFIED);
-
-    // Step 5 — B taps "I tried it" → startRoleplay. Picks a gratitude
-    // prompt via the same library the UI would use.
-    const picked = pickPromptWeighted(GRATITUDE_LIBRARY, { random: () => 0 });
-    const { sessionId } = await startRoleplay({
-      exec: b.exec,
-      engine: b.engine,
-      enactorPubkey: B_PUB,
-      curatorPubkey: A_PUB,
-      savedPostId: unlock!.savedPostId,
-      gratitudePromptKey: picked.prompt.key,
-      gratitudePromptTitle: picked.prompt.title,
-      gratitudePromptBody: picked.prompt.body,
-    });
-    await syncBoth(a, b);
-
-    // Step 6 — A (curator) submits the private rating.
-    await setRoleplayRating({
-      exec: a.exec,
-      engine: a.engine,
-      sessionId,
-      actorPubkey: A_PUB,
-      rating: 9,
-    });
-    await syncBoth(a, b);
-    expect((await findRoleplaySession(a.exec, sessionId))!.rating).toBe(9);
-    expect((await findRoleplaySession(b.exec, sessionId))!.rating).toBe(9);
-
-    // Step 7 — Each side marks their own gratitude step. We do them
-    // before sync so each side only has its own done_at locally — the
-    // sweeper has to close the loop on the next sync cycle (the
-    // markGratitudeStep call won't see "both done" locally yet).
-    await markGratitudeStep({
-      exec: a.exec,
-      engine: a.engine,
-      sessionId,
-      side: 'curator',
-      actorPubkey: A_PUB,
-    });
-    await markGratitudeStep({
-      exec: b.exec,
-      engine: b.engine,
-      sessionId,
-      side: 'enactor',
-      actorPubkey: B_PUB,
-    });
-
-    // Step 8 — Sync. The runSyncCycle includes sweepCompletedLoops, so
-    // the +25 lands on whichever side(s) the closed loop becomes
-    // visible to first. Two cycles each to catch the case where the
-    // sweeper sees the closed loop on the second pass.
-    await runSyncCycle(a.engine);
-    await runSyncCycle(b.engine);
-    await runSyncCycle(a.engine);
-    await runSyncCycle(b.engine);
-
-    // Step 9 — Final acceptance. Both sides land at +37, the role-play
-    // session shows rating=9 + both gratitude done, and the unlocked
-    // saved_post is linked to the certified prompt.
-    const expected = POINTS_SAVE_FOR_PARTNER + POINTS_PROMPT_CERTIFIED + POINTS_LOOP_COMPLETED;
-    expect(await sumCouplePoints(a.exec)).toBe(expected);
-    expect(await sumCouplePoints(b.exec)).toBe(expected);
-
-    const sessionA = await findRoleplaySession(a.exec, sessionId);
-    const sessionB = await findRoleplaySession(b.exec, sessionId);
-    expect(sessionA!.rating).toBe(9);
-    expect(sessionB!.rating).toBe(9);
-    expect(sessionA!.gratitudeEnactorDoneAt).not.toBeNull();
-    expect(sessionA!.gratitudeCuratorDoneAt).not.toBeNull();
-    expect(sessionB!.gratitudeEnactorDoneAt).not.toBeNull();
-    expect(sessionB!.gratitudeCuratorDoneAt).not.toBeNull();
+    // Data tables empty on both sides.
+    expect(await listSavedByMe(a.exec, A_PUB)).toEqual([]);
+    expect(await listSavedByMe(b.exec, B_PUB)).toEqual([]);
+    expect(await sumConnectionPoints(a.exec)).toBe(0);
+    expect(await sumConnectionPoints(b.exec)).toBe(0);
   });
 
-  it('rating plaintext never appears in any relay envelope (server-cannot-decrypt invariant)', async () => {
+  it('a no-op sync cycle puts nothing on the wire and pulls nothing back', async () => {
     const relay = new FakeRelay();
     const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
     const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
 
-    // Drive enough of the loop to put a rating onto the wire.
-    await saveForPartner({
-      exec: a.exec,
-      engine: a.engine,
-      globalPostId: GLOBAL_POST_ID,
-      savedByPubkey: A_PUB,
-      savedForPubkey: B_PUB,
-    });
-    const { promptId } = await assignPromptForPartner({
-      exec: a.exec,
-      engine: a.engine,
-      assignedToPubkey: B_PUB,
-      assignedByPubkey: A_PUB,
-      random: () => 0,
-    });
     await syncBoth(a, b);
-    await markPromptCompleted({
-      exec: b.exec,
-      engine: b.engine,
-      promptId,
-      actorPubkey: B_PUB,
-    });
+
+    // Relay never saw an envelope (nothing to flush, no spurious posts).
+    expect(relay.rows).toEqual([]);
+
+    // Data tables are still empty (pull didn't materialise anything).
+    expect(await listSavedByMe(a.exec, A_PUB)).toEqual([]);
+    expect(await listSavedByMe(b.exec, B_PUB)).toEqual([]);
+    expect(await sumConnectionPoints(a.exec)).toBe(0);
+    expect(await sumConnectionPoints(b.exec)).toBe(0);
+
+    // Second cycle is also a no-op — guards against an
+    // accidental-keepalive regression where the engine pings the
+    // relay on every cycle for no reason.
     await syncBoth(a, b);
-    await certifyPromptCompletion({
-      exec: a.exec,
-      engine: a.engine,
-      promptId,
-      actorPubkey: A_PUB,
-    });
-    const unlock = await unlockOneRandomFor({
-      exec: a.exec,
-      engine: a.engine,
-      assigneePubkey: B_PUB,
-      unlockPromptId: promptId,
-      random: () => 0,
-    });
+    expect(relay.rows).toEqual([]);
+  });
+});
+
+/**
+ * R2 layers the notes model on top of the empty-state floor:
+ *   - shared notes round-trip body across the connection
+ *   - secret notes split announce + reveal so the body stays off
+ *     the wire until the author chooses to publish it
+ *   - the invariant test makes the second guarantee mechanical,
+ *     not "trust the schema"
+ */
+describe('Phase-1.5 R2 — notes round-trip', () => {
+  it('A writes a shared note; after one sync cycle B sees the body', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const written = await writeSharedNote(noteDeps(a, A_PUB), 'hello from A');
+    // Locally A has it immediately.
+    expect((await getNote(a.exec, written.id))?.body).toBe('hello from A');
+    // B doesn't yet — sync hasn't run.
+    expect(await getNote(b.exec, written.id)).toBeNull();
+
     await syncBoth(a, b);
-    const picked = pickPromptWeighted(GRATITUDE_LIBRARY, { random: () => 0 });
-    const { sessionId } = await startRoleplay({
-      exec: b.exec,
-      engine: b.engine,
-      enactorPubkey: B_PUB,
-      curatorPubkey: A_PUB,
-      savedPostId: unlock!.savedPostId,
-      gratitudePromptKey: picked.prompt.key,
-      gratitudePromptTitle: picked.prompt.title,
-      gratitudePromptBody: picked.prompt.body,
-    });
+
+    const onB = await getNote(b.exec, written.id);
+    expect(onB).not.toBeNull();
+    expect(onB?.kind).toBe('shared');
+    expect(onB?.body).toBe('hello from A');
+    expect(bytesToHex(onB!.authorPubkey)).toBe(bytesToHex(A_PUB));
+  });
+
+  it('A announces a secret; B sees the row with body=NULL; A reveals; B then sees the body', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const written = await writeSecretNote(noteDeps(a, A_PUB), 'private thoughts');
+    expect((await getNote(a.exec, written.id))?.body).toBe('private thoughts');
+
     await syncBoth(a, b);
-    await setRoleplayRating({
-      exec: a.exec,
-      engine: a.engine,
-      sessionId,
-      actorPubkey: A_PUB,
-      rating: 7,
-    });
+
+    const announced = await getNote(b.exec, written.id);
+    expect(announced).not.toBeNull();
+    expect(announced?.kind).toBe('secret');
+    expect(announced?.body).toBeNull(); // partner sees existence, not substance
+    expect(announced?.revealedAt).toBeNull();
+    expect(bytesToHex(announced!.authorPubkey)).toBe(bytesToHex(A_PUB));
+
+    await revealSecretNote(noteDeps(a, A_PUB), written.id);
+    await syncBoth(a, b);
+
+    const revealed = await getNote(b.exec, written.id);
+    expect(revealed?.body).toBe('private thoughts');
+    expect(revealed?.revealedAt).not.toBeNull();
+  });
+
+  it('secret bodies never appear on the wire before reveal — protocol- and byte-level checks', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const MARKER = 'SECRET_BODY_MARKER_xyzzy_42';
+    const MARKER_BYTES = new TextEncoder().encode(MARKER);
+    const written = await writeSecretNote(noteDeps(a, A_PUB), MARKER);
+
+    // Protocol-level: the outbox row carries the announce op as
+    // plaintext JSON. The marker must not be there.
+    const preFlushOutbox = await outboxPlaintext(a);
+    expect(preFlushOutbox).toContain(written.id); // sanity: the op IS there
+    expect(preFlushOutbox).not.toContain(MARKER);
+
     await a.engine.flush();
 
-    // The relay sees only ratchet ciphertext + headers. The plaintext
-    // op (which carries "rating":7) must not appear anywhere in the
-    // base64 fields. The ratchet test in couple-protocol covers the
-    // same invariant from the crypto side; we re-verify here from the
-    // mobile side after the whole loop has run so a regression
-    // anywhere in the projector → engine → relay stack still surfaces.
-    for (const env of relay.rows) {
-      expect(env.envelope.ciphertext).not.toContain('rating');
-      expect(env.envelope.ciphertext).not.toContain('"7"');
-      expect(env.envelope.header).not.toContain('rating');
-    }
+    // Byte-level: the relay has the encrypted envelope. The marker
+    // bytes must not appear anywhere in header || ciphertext.
+    expect(relay.rows).toHaveLength(1);
+    expect(bytesInclude(relayCiphertextBlob(relay), MARKER_BYTES)).toBe(false);
+
+    await b.engine.pull();
+    // B has the announce — no body yet.
+    expect((await getNote(b.exec, written.id))?.body).toBeNull();
+
+    // Reveal: now the body legitimately rides the next op. Sanity-
+    // check that it DOES appear in the outbox plaintext after the
+    // reveal call so we know the negative checks above weren't just
+    // missing it for some other reason.
+    await revealSecretNote(noteDeps(a, A_PUB), written.id);
+    const postRevealOutbox = await outboxPlaintext(a);
+    expect(postRevealOutbox).toContain(MARKER);
+
+    await syncBoth(a, b);
+    expect((await getNote(b.exec, written.id))?.body).toBe(MARKER);
+  });
+
+  it('a replayed reveal op is a no-op (does not overwrite already-revealed body)', async () => {
+    // Idempotency cover: if the same reveal op gets applied twice
+    // (e.g. envelope re-delivered for any reason), the projector
+    // WHERE clause filters it out and the body + revealed_at stay
+    // pinned to the first reveal.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const written = await writeSecretNote(noteDeps(a, A_PUB), 'first body');
+    await syncBoth(a, b);
+    await revealSecretNote(noteDeps(a, A_PUB), written.id);
+    await syncBoth(a, b);
+
+    const beforeReplay = await getNote(b.exec, written.id);
+    expect(beforeReplay?.body).toBe('first body');
+    const firstRevealedAt = beforeReplay?.revealedAt;
+    expect(firstRevealedAt).not.toBeNull();
+
+    // Re-apply the projector directly with a tampered body to prove
+    // the WHERE-clause guard holds even against a hostile op (i.e.
+    // the receiver's invariant doesn't depend on the sender behaving).
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await applyCrdtOp(b.exec, {
+      v: 1,
+      kind: 'note.secret.reveal',
+      id: written.id,
+      body: 'tampered body',
+      revealedAt: 1_900_000_000,
+    });
+
+    const afterReplay = await getNote(b.exec, written.id);
+    expect(afterReplay?.body).toBe('first body'); // unchanged
+    expect(afterReplay?.revealedAt).toBe(firstRevealedAt);
+  });
+
+  it('listNotes on B reflects both kinds after a round-trip', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await writeSharedNote(noteDeps(a, A_PUB), 'shared from A');
+    await writeSecretNote(noteDeps(a, A_PUB), 'secret from A');
+    await syncBoth(a, b);
+
+    const onB = await listNotes(b.exec);
+    expect(onB).toHaveLength(2);
+    const kinds = onB.map((n) => n.kind).sort();
+    expect(kinds).toEqual(['secret', 'shared']);
+  });
+});
+
+/**
+ * R3 layers the publish flow on top of R2's notes carrier:
+ *   - publishNote calls a server-shaped capability, stamps the
+ *     local row's published_*, and emits a note.publish CRDT op
+ *   - the partner's projector mirrors the stamping on apply
+ *   - server failures roll back cleanly; published rows are
+ *     stable against hostile re-publish ops
+ */
+describe('Phase-1.5 R3 — publish-from-note', () => {
+  const PUBLIC_POST_ID = 'cafecafe-cafe-4afe-8afe-cafecafecafe';
+
+  function fakePublish(id = PUBLIC_POST_ID): PublishToGlobalFeed {
+    return async () => ({ id });
+  }
+
+  it('A publishes a shared note; after one sync B sees published_* mirrored', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'going public from A');
+    await syncBoth(a, b); // B receives the share
+
+    const result = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish());
+    expect(result.globalPostId).toBe(PUBLIC_POST_ID);
+
+    // A's local row stamped immediately.
+    const onA = await getNote(a.exec, note.id);
+    expect(onA?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+    expect(onA?.publishedAt).toBe(Math.floor(FIXED_NOW.getTime() / 1000));
+
+    // B doesn't know until sync.
+    expect((await getNote(b.exec, note.id))?.publishedGlobalPostId).toBeNull();
+
+    await syncBoth(a, b);
+    const onB = await getNote(b.exec, note.id);
+    expect(onB?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+    expect(onB?.publishedAt).toBe(onA?.publishedAt);
+  });
+
+  it('A publishes a secret note after reveal; the body goes both to the relay (reveal op) and to the server (publish call)', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSecretNote(noteDeps(a, A_PUB), 'thoughts to publish');
+    await syncBoth(a, b); // B sees announce, body still NULL
+    await revealSecretNote(noteDeps(a, A_PUB), note.id);
+    await syncBoth(a, b); // B now has body
+
+    let sentBody: string | null = null;
+    const publish: PublishToGlobalFeed = async (input) => {
+      sentBody = input.body;
+      return { id: PUBLIC_POST_ID };
+    };
+    await publishNote(noteDeps(a, A_PUB), note.id, publish);
+    expect(sentBody).toBe('thoughts to publish');
+
+    await syncBoth(a, b);
+    const onB = await getNote(b.exec, note.id);
+    expect(onB?.body).toBe('thoughts to publish');
+    expect(onB?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+  });
+
+  it("when the server POST fails, neither A's row nor B's row gets the published marker", async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'doomed to fail');
+    await syncBoth(a, b);
+
+    const publishBoom: PublishToGlobalFeed = async () => {
+      throw new Error('relay 503');
+    };
+    await expect(publishNote(noteDeps(a, A_PUB), note.id, publishBoom)).rejects.toThrow(
+      /relay 503/,
+    );
+
+    await syncBoth(a, b);
+    expect((await getNote(a.exec, note.id))?.publishedAt).toBeNull();
+    expect((await getNote(b.exec, note.id))?.publishedAt).toBeNull();
+  });
+
+  it("a replayed publish op cannot overwrite an already-published row (B's pinned values survive)", async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'first-publish wins');
+    await syncBoth(a, b);
+    await publishNote(noteDeps(a, A_PUB), note.id, fakePublish());
+    await syncBoth(a, b);
+
+    const before = await getNote(b.exec, note.id);
+    expect(before?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await applyCrdtOp(b.exec, {
+      v: 1,
+      kind: 'note.publish',
+      id: note.id,
+      publishedGlobalPostId: 'deadbeef-dead-4eef-8eef-deadbeefdead',
+      publishedAt: 1_900_000_000,
+    });
+
+    const after = await getNote(b.exec, note.id);
+    expect(after?.publishedGlobalPostId).toBe(PUBLIC_POST_ID); // pinned
+    expect(after?.publishedAt).toBe(before?.publishedAt); // pinned
+  });
+});
+
+/**
+ * R4 layers connection roles on top of R3:
+ *   - each partner self-declares (masculine / feminine / neutral)
+ *   - their value rounds through the ratchet to the other side
+ *   - both sides converge on the same { partnerARole, partnerBRole }
+ *   - last-write-wins by ratchet order; hostile ops with non-
+ *     matching pubkeys touch nothing
+ */
+describe('Phase-1.5 R4 — connection roles', () => {
+  it('A sets a role; B sees it on the partner_a side after one sync', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+
+    const onAImmediately = await getConnectionRoles(a.exec);
+    expect(onAImmediately?.partnerARole).toBe('masculine');
+    expect((await getConnectionRoles(b.exec))?.partnerARole).toBeNull();
+
+    await syncBoth(a, b);
+
+    const onB = await getConnectionRoles(b.exec);
+    expect(onB?.partnerARole).toBe('masculine');
+    expect(onB?.partnerBRole).toBeNull();
+  });
+
+  it('both partners set their roles; both sides converge on the same snapshot', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+    await setMyRole(roleDeps(b, B_PUB), 'feminine');
+    await syncBoth(a, b);
+
+    const onA = await getConnectionRoles(a.exec);
+    const onB = await getConnectionRoles(b.exec);
+    expect(onA).toEqual(onB);
+    expect(onA?.partnerARole).toBe('masculine');
+    expect(onA?.partnerBRole).toBe('feminine');
+  });
+
+  it('a setter can change their mind; the partner converges on the latest value', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+    await syncBoth(a, b);
+    expect((await getConnectionRoles(b.exec))?.partnerARole).toBe('masculine');
+
+    await setMyRole(roleDeps(a, A_PUB), 'neutral');
+    await syncBoth(a, b);
+    expect((await getConnectionRoles(b.exec))?.partnerARole).toBe('neutral');
+    expect((await getConnectionRoles(a.exec))?.partnerARole).toBe('neutral');
+  });
+
+  it('a hostile role.set with a non-matching setterPubkey touches nothing', async () => {
+    // Apply the op directly through the projector — bypassing the
+    // store guards — to confirm the WHERE pubkey clause is what
+    // actually keeps a stranger's role off this connection's row.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const _b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+    void _b;
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+    const before = await getConnectionRoles(a.exec);
+
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await applyCrdtOp(a.exec, {
+      v: 1,
+      kind: 'connection.role.set',
+      setterPubkey: 'ee'.repeat(32), // stranger
+      role: 'feminine',
+      setAt: 1_900_000_000,
+    });
+
+    const after = await getConnectionRoles(a.exec);
+    expect(after).toEqual(before); // unchanged
+  });
+});
+
+/**
+ * R5 layers IAP gating on top of R3's publish flow:
+ *   - publish without a current entitlement throws BEFORE the
+ *     network call; no public post is created, no local state
+ *     changes, no op is enqueued
+ *   - publish with a valid entitlement walks the full R3 path
+ *   - the gate is a callback so unit tests stay shallow; the
+ *     production wiring threads `() => requireCurrentEntitlement(exec)`
+ */
+describe('Phase-1.5 R5 — publish is IAP-gated', () => {
+  const PUBLIC_POST_ID = 'feedface-feed-4ace-8ace-feedfacefeed';
+  const PRODUCT = 'sn.publish.monthly';
+  const NOW_SEC = Math.floor(FIXED_NOW.getTime() / 1000);
+
+  function fakePublish(id = PUBLIC_POST_ID): PublishToGlobalFeed {
+    return async () => ({ id });
+  }
+
+  async function seedEntitlement(side: Side, expiresAt: number): Promise<void> {
+    await cacheReceipt(
+      {
+        exec: side.exec,
+        validator: fixedValidator({ productId: PRODUCT, expiresAt }),
+        now: () => FIXED_NOW,
+      },
+      new Uint8Array([0x01, 0x02, 0x03]),
+      'ios',
+    );
+  }
+
+  function entitlementGate(side: Side): () => Promise<void> {
+    return async () => {
+      await requireCurrentEntitlement(side.exec, () => FIXED_NOW);
+    };
+  }
+
+  it('blocks publish on a device with no cached entitlement; local state untouched', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'should not ship');
+    await syncBoth(a, b);
+
+    let postCalls = 0;
+    const publish: PublishToGlobalFeed = async () => {
+      postCalls += 1;
+      return { id: PUBLIC_POST_ID };
+    };
+
+    await expect(
+      publishNote(noteDeps(a, A_PUB), note.id, publish, {
+        requireEntitlement: entitlementGate(a),
+      }),
+    ).rejects.toThrow(/no entitlement cached/);
+
+    // Network never called, no op on the wire, no published_* on either side.
+    expect(postCalls).toBe(0);
+    await syncBoth(a, b);
+    expect((await getNote(a.exec, note.id))?.publishedAt).toBeNull();
+    expect((await getNote(b.exec, note.id))?.publishedAt).toBeNull();
+  });
+
+  it('blocks publish when the cached entitlement has expired', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const _b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+    void _b;
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'expired sub');
+    await seedEntitlement(a, NOW_SEC - 1);
+
+    await expect(
+      publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+        requireEntitlement: entitlementGate(a),
+      }),
+    ).rejects.toThrow(/subscription expired/);
+
+    expect((await getNote(a.exec, note.id))?.publishedAt).toBeNull();
+  });
+
+  it('lets publish through when the cached entitlement is current; full R3 round-trip lands on B', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'paid up + going public');
+    await syncBoth(a, b);
+    await seedEntitlement(a, NOW_SEC + 30 * 86_400);
+
+    const result = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+      requireEntitlement: entitlementGate(a),
+    });
+    expect(result.globalPostId).toBe(PUBLIC_POST_ID);
+
+    await syncBoth(a, b);
+    expect((await getNote(b.exec, note.id))?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+  });
+
+  it('an already-published note is idempotent and skips the entitlement check on the re-call', async () => {
+    // Republishing should not require an active subscription: the
+    // public post already exists, the gate has no work to do, and
+    // a subscriber whose plan lapsed shouldn't lose visibility
+    // into their own already-public post.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const _b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+    void _b;
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'one-time publish');
+    await seedEntitlement(a, NOW_SEC + 100);
+    const first = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+      requireEntitlement: entitlementGate(a),
+    });
+
+    // Now simulate the entitlement expiring AFTER the original
+    // publish. Re-call publishNote with a gate that would throw
+    // if consulted.
+    await seedEntitlement(a, NOW_SEC - 1);
+    const gateCalls: number[] = [];
+    const second = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+      requireEntitlement: async () => {
+        gateCalls.push(1);
+        throw new Error('gate should not have been consulted');
+      },
+    });
+    expect(gateCalls).toHaveLength(0);
+    expect(second.globalPostId).toBe(first.globalPostId);
   });
 });

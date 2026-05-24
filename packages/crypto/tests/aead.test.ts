@@ -12,13 +12,13 @@ describe('xchacha20-poly1305 aead', () => {
   it('round-trips plaintext with associated data', async () => {
     const sodium = await getSodium();
     const key = sodium.randombytes_buf(await aeadKeyBytes());
-    const pt = new TextEncoder().encode('hello couple');
+    const pt = new TextEncoder().encode('hello connection');
     const aad = new TextEncoder().encode('header-v1');
 
     const { nonce, ciphertext } = await aeadEncrypt(pt, key, aad);
     const decrypted = await aeadDecrypt(ciphertext, nonce, key, aad);
 
-    expect(new TextDecoder().decode(decrypted)).toBe('hello couple');
+    expect(new TextDecoder().decode(decrypted)).toBe('hello connection');
   });
 
   it('round-trips with null associated data', async () => {
