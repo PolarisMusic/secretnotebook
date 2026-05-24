@@ -5,6 +5,7 @@ import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import {
   cacheReceipt,
+  EntitlementError,
   getCachedEntitlement,
   requireCurrentEntitlement,
   type IapStoreDeps,
@@ -113,23 +114,23 @@ describe('IAP entitlement store', () => {
       expect(e.productId).toBe(PRODUCT);
     });
 
-    it('throws "no entitlement cached" on a fresh device', async () => {
+    it('throws EntitlementError with code "no-entitlement" on a fresh device', async () => {
       const exec = await freshExec();
-      await expect(requireCurrentEntitlement(exec, () => FIXED_NOW)).rejects.toThrow(
-        /no entitlement cached/,
-      );
+      const err = await requireCurrentEntitlement(exec, () => FIXED_NOW).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(EntitlementError);
+      expect((err as EntitlementError).code).toBe('no-entitlement');
     });
 
-    it('throws "subscription expired" when expires_at <= now', async () => {
+    it('throws EntitlementError with code "expired" when expires_at <= now', async () => {
       const exec = await freshExec();
       await cacheReceipt(
         depsWith(exec, { productId: PRODUCT, expiresAt: FIXED_NOW_SEC - 1 }),
         new Uint8Array([1]),
         'ios',
       );
-      await expect(requireCurrentEntitlement(exec, () => FIXED_NOW)).rejects.toThrow(
-        /subscription expired/,
-      );
+      const err = await requireCurrentEntitlement(exec, () => FIXED_NOW).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(EntitlementError);
+      expect((err as EntitlementError).code).toBe('expired');
     });
 
     it('treats expires_at === now as expired (strict >, not >=)', async () => {
@@ -141,9 +142,9 @@ describe('IAP entitlement store', () => {
         new Uint8Array([1]),
         'ios',
       );
-      await expect(requireCurrentEntitlement(exec, () => FIXED_NOW)).rejects.toThrow(
-        /subscription expired/,
-      );
+      const err = await requireCurrentEntitlement(exec, () => FIXED_NOW).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(EntitlementError);
+      expect((err as EntitlementError).code).toBe('expired');
     });
   });
 

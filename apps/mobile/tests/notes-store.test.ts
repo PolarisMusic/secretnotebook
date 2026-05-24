@@ -271,5 +271,52 @@ describe('notes store', () => {
         /only the author can publish/,
       );
     });
+
+    it("retry after a 'POST ok, local txn failed' gap converges via the server's body-hash dedup", async () => {
+      // Simulates the recovery story from the publishNote docstring:
+      // the first POST succeeds + returns id X, but the local
+      // transaction (UPDATE + enqueue) is killed before the row
+      // gets stamped. On retry, the server's body-hash dedup
+      // returns the SAME id X; the local UPDATE this time succeeds
+      // and the row converges.
+      const { deps } = await freshHarness();
+      const note = await writeSharedNote(deps, 'will fail mid-txn first time');
+
+      const STABLE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      const serverDedup = jest.fn(
+        async (_input: { contentType: 'text' | 'link'; body: string }) => ({ id: STABLE_ID }),
+      );
+
+      // First call: server succeeds, local txn explodes.
+      const realTxn = deps.exec.transaction.bind(deps.exec);
+      let kill = true;
+      const flakyExec = {
+        ...deps.exec,
+        transaction: async <T>(fn: () => Promise<T>): Promise<T> => {
+          if (kill) {
+            kill = false;
+            throw new Error('synthetic local-txn failure');
+          }
+          return realTxn(fn);
+        },
+      };
+      const flakyDeps = { ...deps, exec: flakyExec };
+
+      await expect(publishNote(flakyDeps, note.id, serverDedup)).rejects.toThrow(
+        /synthetic local-txn failure/,
+      );
+      // Local row still shows unpublished.
+      expect((await getNote(deps.exec, note.id))?.publishedAt).toBeNull();
+
+      // Second call: real txn. Server returns the same id; the
+      // local row converges on { publishedAt, publishedGlobalPostId: STABLE_ID }.
+      const second = await publishNote(deps, note.id, serverDedup);
+      expect(second.globalPostId).toBe(STABLE_ID);
+      const after = await getNote(deps.exec, note.id);
+      expect(after?.publishedGlobalPostId).toBe(STABLE_ID);
+      expect(after?.publishedAt).toBe(FIXED_NOW_SEC);
+      // Sanity: server was hit twice (once before crash, once on retry).
+      expect(serverDedup).toHaveBeenCalledTimes(2);
+    });
   });
 });

@@ -40,6 +40,7 @@ module.exports = {
     'src/features/iap/store.ts',
     'src/features/ledger/store.ts',
     'src/features/notes/store.ts',
+    'src/features/notes/publish.ts',
     'src/features/pairing/state-machine.ts',
     'src/features/pairing/orchestrator.ts',
     'src/features/pairing/persistence.ts',

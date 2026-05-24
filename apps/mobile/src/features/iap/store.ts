@@ -48,6 +48,27 @@ export interface IapStoreDeps {
   readonly now?: () => Date;
 }
 
+/**
+ * Stable failure codes for the publish gate. The UI translates these
+ * to user-facing copy; tests assert on the `code` field so a change to
+ * the developer-facing `.message` text doesn't ripple through.
+ *
+ * `no-entitlement` — the device has never cached a successful receipt
+ *   (or its cache was wiped). UI: "Subscribe to publish."
+ * `expired`        — there is a cached receipt but its expires_at has
+ *   passed. UI: "Your subscription has lapsed. Renew to publish."
+ */
+export type EntitlementErrorCode = 'no-entitlement' | 'expired';
+
+export class EntitlementError extends Error {
+  readonly code: EntitlementErrorCode;
+  constructor(code: EntitlementErrorCode, message: string) {
+    super(message);
+    this.name = 'EntitlementError';
+    this.code = code;
+  }
+}
+
 function nowSec(now: (() => Date) | undefined): number {
   return Math.floor((now ?? (() => new Date()))().getTime() / 1000);
 }
@@ -110,10 +131,13 @@ export async function requireCurrentEntitlement(
 ): Promise<EntitlementRow> {
   const cached = await getCachedEntitlement(exec);
   if (!cached) {
-    throw new Error('requireCurrentEntitlement: no entitlement cached');
+    throw new EntitlementError(
+      'no-entitlement',
+      'requireCurrentEntitlement: no entitlement cached',
+    );
   }
   if (cached.expiresAt <= Math.floor(now().getTime() / 1000)) {
-    throw new Error('requireCurrentEntitlement: subscription expired');
+    throw new EntitlementError('expired', 'requireCurrentEntitlement: subscription expired');
   }
   return cached;
 }

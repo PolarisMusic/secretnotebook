@@ -241,12 +241,17 @@ export async function listNotes(exec: SqlExecutor): Promise<NoteRow[]> {
  *      consistent.
  *
  * Recovery story for the "POST succeeded but local txn failed"
- * gap: the resulting public post is still on the server and visible
- * to everyone; the local note row just won't show the "published"
- * marker. The user can re-call publishNote, which will round-trip
- * a second POST — duplicate by content but with a different
- * global_post_id. R4+ can add an idempotency token to the server
- * to suppress that; R3 accepts the duplicate as a tail-risk.
+ * gap: the resulting public post is still on the server and
+ * visible to everyone; the local note row just won't show the
+ * "published" marker. The user can re-call publishNote — the
+ * server's `posts` table has a UNIQUE constraint on `body_hash`
+ * and `insertOrGetByBodyHash` returns the existing row on
+ * conflict, so the retry round-trips to the SAME global_post_id
+ * and the local UPDATE lands cleanly. The only edge case left:
+ * if the IAP entitlement lapsed between the failed call and the
+ * retry, the gate throws and the user has a public post they
+ * can't link to locally. Fix needs a UI surface that lets the
+ * user re-stamp without re-publishing; deferred.
  *
  * Idempotent in the success path: a second call after
  * published_at is set returns the existing globalPostId without a
