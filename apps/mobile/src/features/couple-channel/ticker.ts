@@ -1,25 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { sweepCompletedLoops } from '../roleplay/loop-sweeper';
 import type { FlushResult, PullResult, SyncEngine } from './sync-engine';
 
 export interface SyncCycleResult {
   flushed: FlushResult;
   pulled: PullResult;
-  /** Session ids that newly received their +25 award in this cycle's
-   *  sweep. Empty on most ticks; non-empty exactly when a gratitude
-   *  step pulled in just closed a loop. */
-  awardedSessionIds: string[];
 }
 
-export type SyncStep = 'flush' | 'pull' | 'sweep';
+export type SyncStep = 'flush' | 'pull';
 
 /**
- * One full sync cycle: flush() → pull() → sweepCompletedLoops().
- * Pure-ish — no timers, no React. Errors thrown by any step are
- * caught and forwarded to `onError`; the cycle does not abort halfway
- * so a downstream step still runs if an earlier one failed. That
- * keeps a transient network blip from starving the read path or the
- * +25 award sweep indefinitely.
+ * One full sync cycle: flush() → pull(). Pure-ish — no timers, no React.
+ * Errors thrown by either step are caught and forwarded to `onError`;
+ * the cycle does not abort halfway so the read path still runs if a
+ * transient write blip failed.
  */
 export async function runSyncCycle(
   engine: SyncEngine,
@@ -27,7 +20,6 @@ export async function runSyncCycle(
 ): Promise<SyncCycleResult> {
   let flushed: FlushResult = { attempted: 0, delivered: 0, failed: 0 };
   let pulled: PullResult = { fetched: 0, applied: 0, duplicates: 0 };
-  let awardedSessionIds: string[] = [];
   try {
     flushed = await engine.flush();
   } catch (e) {
@@ -38,13 +30,7 @@ export async function runSyncCycle(
   } catch (e) {
     opts.onError?.(e as Error, 'pull');
   }
-  try {
-    const sweep = await sweepCompletedLoops(engine.exec, engine);
-    awardedSessionIds = sweep.awardedSessionIds;
-  } catch (e) {
-    opts.onError?.(e as Error, 'sweep');
-  }
-  return { flushed, pulled, awardedSessionIds };
+  return { flushed, pulled };
 }
 
 export const DEFAULT_SYNC_INTERVAL_MS = 15_000;

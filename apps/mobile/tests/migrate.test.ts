@@ -14,7 +14,6 @@ const EXPECTED_TABLES = [
   'saved_post',
   'prompt',
   'ledger_entry',
-  'roleplay_session',
   'sync_outbox',
   'sync_seen',
   'couple_ratchet',
@@ -35,7 +34,7 @@ describe('runMigrations', () => {
     expect(result.applied.map((m) => m.name)).toEqual([
       'init',
       'couple-ratchet',
-      'roleplay-session-extra',
+      'drop-couple-loop',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -44,6 +43,8 @@ describe('runMigrations', () => {
       expect(names).toContain(t);
     }
     expect(names).toContain('schema_migrations');
+    // Phase-1.5 R0 dropped this table — confirm it's gone.
+    expect(names).not.toContain('roleplay_session');
   });
 
   it('is idempotent: re-running applies nothing', async () => {
@@ -54,7 +55,7 @@ describe('runMigrations', () => {
     expect(second.alreadyApplied.map((m) => m.name)).toEqual([
       'init',
       'couple-ratchet',
-      'roleplay-session-extra',
+      'drop-couple-loop',
     ]);
   });
 
@@ -156,11 +157,12 @@ describe('runMigrations', () => {
       .map((r) => (r as { name: string }).name);
     expect(indexes).toEqual(
       expect.arrayContaining([
-        'saved_post_for_pubkey_idx',
         'prompt_assigned_to_idx',
         'ledger_entry_kind_idx',
         'sync_outbox_next_attempt_idx',
       ]),
     );
+    // Phase-1.5 R0 dropped this index along with the unlocked_at column.
+    expect(indexes).not.toContain('saved_post_for_pubkey_idx');
   });
 });

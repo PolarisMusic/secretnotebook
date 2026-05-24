@@ -16,8 +16,6 @@ export interface SavedByYouItem {
   readonly globalPostId: string;
   /** Unix seconds. */
   readonly createdAt: number;
-  /** Null while the partner hasn't unlocked it yet. */
-  readonly unlockedAt: number | null;
 }
 
 export interface SavedByYouProps {
@@ -27,7 +25,6 @@ export interface SavedByYouProps {
   readonly onRefresh: () => void;
   readonly onBack: () => void;
   readonly onSelect: (globalPostId: string) => void;
-  readonly onViewSavedForYou: () => void;
 }
 
 function isoDate(secs: number): string {
@@ -42,13 +39,7 @@ export function SavedByYou(props: SavedByYouProps): JSX.Element {
           <Text style={styles.back}>← Back</Text>
         </Pressable>
         <Text style={styles.title}>Saved by you</Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={props.onViewSavedForYou}
-          testID="saved-by-you.view-for-you"
-        >
-          <Text style={styles.linkRight}>For you ›</Text>
-        </Pressable>
+        <View style={styles.headerSpacer} />
       </View>
 
       {props.isLoading ? (
@@ -75,17 +66,14 @@ export function SavedByYou(props: SavedByYouProps): JSX.Element {
               style={styles.row}
             >
               <Text style={styles.rowGlobal}>{item.globalPostId.slice(0, 8)}…</Text>
-              <Text style={styles.rowMeta}>
-                saved {isoDate(item.createdAt)} ·{' '}
-                {item.unlockedAt ? `unlocked ${isoDate(item.unlockedAt)}` : 'awaiting unlock'}
-              </Text>
+              <Text style={styles.rowMeta}>saved {isoDate(item.createdAt)}</Text>
             </Pressable>
           )}
           ListEmptyComponent={
             <View testID="saved-by-you.empty" style={styles.empty}>
               <Text style={styles.emptyTitle}>Nothing saved yet</Text>
               <Text style={styles.emptyBody}>
-                Open a post from the global feed and tap “Save for partner”.
+                The save action lands when the post / pin flow comes back online.
               </Text>
             </View>
           }
@@ -107,7 +95,7 @@ const styles = StyleSheet.create({
   },
   back: { color: '#9ec5ff', fontSize: 15 },
   title: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
-  linkRight: { color: '#9ec5ff', fontSize: 15 },
+  headerSpacer: { width: 40 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   row: {
     backgroundColor: '#161616',

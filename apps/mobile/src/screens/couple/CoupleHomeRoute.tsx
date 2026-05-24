@@ -6,7 +6,8 @@ import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/couple-channel/store';
 import { listRecentLedgerEntries, sumCouplePoints } from '../../features/ledger/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
-import { CoupleHome, type ActivityRow } from './CoupleHome';
+import { CoupleHome } from './CoupleHome';
+import type { ActivityRow } from './CoupleHome';
 
 /**
  * Production wiring for CoupleHome. Sums + lists from the local
@@ -65,7 +66,6 @@ export function CoupleHomeRoute(): JSX.Element {
       onRefresh={() => void refresh()}
       onBack={() => navigation.goBack()}
       onOpenSaved={engine ? () => navigation.navigate('SavedByYou') : undefined}
-      onOpenPrompts={engine ? () => navigation.navigate('PromptList') : undefined}
     />
   );
 }

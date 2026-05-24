@@ -11,8 +11,7 @@ import { SavedByYou } from './SavedByYou';
 /**
  * Production wiring for SavedByYou. Reads the local saved_post table
  * filtered to rows this device created, refreshes via pull-down or on
- * focus. Tapping a row navigates to PostDetail; the "For you" link at
- * the top right hops over to the SavedForYou screen.
+ * focus. Tapping a row navigates to PostDetail.
  */
 export function SavedByYouRoute(): JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
@@ -47,7 +46,6 @@ export function SavedByYouRoute(): JSX.Element {
               savedPostId: r.id,
               globalPostId: r.globalPostId,
               createdAt: r.createdAt,
-              unlockedAt: r.unlockedAt,
             }))
       }
       isLoading={rows == null}
@@ -55,7 +53,6 @@ export function SavedByYouRoute(): JSX.Element {
       onRefresh={() => void refresh()}
       onBack={() => navigation.goBack()}
       onSelect={(globalPostId) => navigation.navigate('PostDetail', { id: globalPostId })}
-      onViewSavedForYou={() => navigation.navigate('SavedForYou')}
     />
   );
 }
