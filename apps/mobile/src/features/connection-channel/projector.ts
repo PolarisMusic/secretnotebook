@@ -1,4 +1,4 @@
-import type { CrdtOp } from '@secretnotebook/couple-protocol';
+import type { CrdtOp } from '@secretnotebook/connection-protocol';
 import { hexToBytes } from '@secretnotebook/crypto';
 
 import type { SqlExecutor } from '../../db/executor';

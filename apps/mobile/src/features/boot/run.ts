@@ -5,12 +5,12 @@ import { runMigrations } from '../../db/migrate';
 import { MIGRATIONS } from '../../db/migrations';
 import { useDatabaseStore } from '../../db/store';
 import { createKeychainAdapter } from '../../security/keychain';
-import { useCoupleStore } from '../../state/couple';
+import { useConnectionStore } from '../../state/connection';
 import { ApiClient } from '../api/client';
 import { DEFAULT_API_CONFIG } from '../api/config';
 import { useApiStore } from '../api/store';
-import { tryBuildSyncEngine } from '../couple-channel/build-engine';
-import { useSyncEngineStore } from '../couple-channel/store';
+import { tryBuildSyncEngine } from '../connection-channel/build-engine';
+import { useSyncEngineStore } from '../connection-channel/store';
 import { bootstrap, type BootDeps } from './bootstrap';
 import { useBootStore } from './store';
 
@@ -32,10 +32,10 @@ export async function runBoot(): Promise<void> {
   try {
     const result = await bootstrap(defaultDeps());
     useDatabaseStore.getState().setExec(result.executor);
-    if (result.couple) {
-      useCoupleStore.setState({
-        status: result.couple.status,
-        coupleId: result.couple.coupleId,
+    if (result.connection) {
+      useConnectionStore.setState({
+        status: result.connection.status,
+        connectionId: result.connection.connectionId,
       });
     }
     const apiClient = new ApiClient({
@@ -44,15 +44,15 @@ export async function runBoot(): Promise<void> {
     });
     useApiStore.getState().setClient(apiClient);
 
-    // If the device is already paired and the couple_ratchet row exists
+    // If the device is already paired and the connection_ratchet row exists
     // from a prior session, lift the SyncEngine into the store now so
     // S5 routes don't have to wait for the next post-pairing event.
     // Unpaired devices boot with engine=null; pairing wires it in.
-    if (result.couple && result.couple.status === 'paired') {
+    if (result.connection && result.connection.status === 'paired') {
       const engine = await tryBuildSyncEngine({
         exec: result.executor,
         api: apiClient,
-        coupleId: result.couple.coupleId,
+        connectionId: result.connection.connectionId,
       });
       useSyncEngineStore.getState().setEngine(engine);
     }

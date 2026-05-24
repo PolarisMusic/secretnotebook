@@ -29,8 +29,8 @@ function rowOf(r: RawLedgerRow): LedgerEntry {
   };
 }
 
-/** Phase-1 Couple Level. Derived view — just `SUM(delta)`. */
-export async function sumCouplePoints(exec: SqlExecutor): Promise<number> {
+/** Phase-1 Connection Level. Derived view — just `SUM(delta)`. */
+export async function sumConnectionPoints(exec: SqlExecutor): Promise<number> {
   const rows = await exec.query<{ total: number }>(
     `SELECT COALESCE(SUM(delta), 0) AS total
        FROM ledger_entry WHERE kind = 'couple_points'`,
@@ -38,7 +38,7 @@ export async function sumCouplePoints(exec: SqlExecutor): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
-/** Recent activity, newest first. Powers the CoupleHome activity list. */
+/** Recent activity, newest first. Powers the ConnectionHome activity list. */
 export async function listRecentLedgerEntries(
   exec: SqlExecutor,
   limit = 20,

@@ -2,13 +2,13 @@ import { aeadDecrypt, aeadEncrypt, hkdfSha256, hmacSha256 } from '@secretnoteboo
 import { decodeHeader, encodeHeader } from './header.js';
 import {
   MAX_SKIPPED_MESSAGE_KEYS,
-  type CoupleSide,
+  type ConnectionSide,
   type EncryptedEnvelope,
   type RatchetState,
 } from './types.js';
 
-const CHAIN_AB_INFO = new TextEncoder().encode('secretnotebook/couple-channel/a->b/v1');
-const CHAIN_BA_INFO = new TextEncoder().encode('secretnotebook/couple-channel/b->a/v1');
+const CHAIN_AB_INFO = new TextEncoder().encode('secretnotebook/connection-channel/a->b/v1');
+const CHAIN_BA_INFO = new TextEncoder().encode('secretnotebook/connection-channel/b->a/v1');
 
 // Inputs to the per-step HMAC. Two different constants so the chain-key
 // successor and the per-message key derived from the same chain key are
@@ -19,13 +19,13 @@ const HMAC_LABEL_MESSAGE_KEY = new TextEncoder().encode('message-key');
 // AEAD material derived from the per-message key. 32-byte XChaCha20 key +
 // 24-byte nonce — single-use because the chain ratchet never repeats a
 // message key.
-const AEAD_MATERIAL_INFO = new TextEncoder().encode('secretnotebook/couple-channel/aead/v1');
+const AEAD_MATERIAL_INFO = new TextEncoder().encode('secretnotebook/connection-channel/aead/v1');
 const AEAD_KEY_BYTES = 32;
 const AEAD_NONCE_BYTES = 24;
 const AEAD_MATERIAL_BYTES = AEAD_KEY_BYTES + AEAD_NONCE_BYTES;
 
 /**
- * Initialise both ratchets from the 32-byte couple root key. The two
+ * Initialise both ratchets from the 32-byte connection root key. The two
  * chain keys are derived with domain-separated HKDF info strings so the
  * sending and receiving chains never collide.
  *
@@ -35,12 +35,12 @@ const AEAD_MATERIAL_BYTES = AEAD_KEY_BYTES + AEAD_NONCE_BYTES;
  * Both partners must agree on the split — the pairing layer assigns the
  * sides lexicographically so the agreement is deterministic.
  */
-export async function initRatchetForCoupleSide(
+export async function initRatchetForConnectionSide(
   rootKey: Uint8Array,
-  side: CoupleSide,
+  side: ConnectionSide,
 ): Promise<RatchetState> {
   if (rootKey.length !== 32) {
-    throw new Error('couple root key must be 32 bytes');
+    throw new Error('connection root key must be 32 bytes');
   }
   const chainAB = await hkdfSha256(rootKey, null, CHAIN_AB_INFO, 32);
   const chainBA = await hkdfSha256(rootKey, null, CHAIN_BA_INFO, 32);

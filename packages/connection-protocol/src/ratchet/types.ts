@@ -1,15 +1,15 @@
 /**
- * Side identifier for the couple channel. The pairing handshake establishes
+ * Side identifier for the connection channel. The pairing handshake establishes
  * a single 32-byte root key shared by both partners; from there we derive
  * two independent symmetric ratchet chains, one per direction. Both sides
  * must agree on who is 'a' and who is 'b' so the chains line up; the
  * convention is to sort the two long-term identity pubkeys lexicographically
  * and assign 'a' to the smaller, 'b' to the larger.
  */
-export type CoupleSide = 'a' | 'b';
+export type ConnectionSide = 'a' | 'b';
 
 /**
- * In-memory state for one partner's couple channel. The two chain keys are
+ * In-memory state for one partner's connection channel. The two chain keys are
  * the load-bearing secrets — they ratchet forward on every message and
  * grant forward secrecy: compromising a chain key after the fact does not
  * reveal earlier message keys.

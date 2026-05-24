@@ -3,8 +3,8 @@ import type { SyncEngine } from './sync-engine';
 
 /**
  * Singleton holder for the active SyncEngine. Populated by runBoot once
- * the couple is paired + couple_ratchet exists, and by the pairing
- * route as soon as persistCouple + initAndSaveRatchet land. Cleared on
+ * the connection is paired + connection_ratchet exists, and by the pairing
+ * route as soon as persistConnection + initAndSaveRatchet land. Cleared on
  * severing (Phase 2).
  *
  * Separate store from the api/db ones so re-renders are tightly

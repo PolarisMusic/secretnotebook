@@ -7,8 +7,8 @@ import type { SqlExecutor } from './executor';
  * the biometric unlock → device_master → SQLCipher-key chain runs, then
  * consumed by feature routes that need to read/write the local DB.
  *
- * Lives in its own store (rather than on the couple store) so that
- * navigation logic can stay tied to couple.status without taking a hard
+ * Lives in its own store (rather than on the connection store) so that
+ * navigation logic can stay tied to connection.status without taking a hard
  * dependency on whether the DB happens to be open yet.
  */
 interface DatabaseState {

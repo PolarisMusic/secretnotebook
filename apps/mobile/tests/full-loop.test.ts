@@ -12,14 +12,14 @@ import Database from 'better-sqlite3';
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import type { ApiClient } from '../src/features/api/client';
-import { initAndSaveRatchet, loadRatchet } from '../src/features/couple-channel/ratchet-store';
-import { listSavedByMe } from '../src/features/couple-channel/saved-post-store';
-import { SyncEngine } from '../src/features/couple-channel/sync-engine';
-import { sumCouplePoints } from '../src/features/ledger/store';
+import { initAndSaveRatchet, loadRatchet } from '../src/features/connection-channel/ratchet-store';
+import { listSavedByMe } from '../src/features/connection-channel/saved-post-store';
+import { SyncEngine } from '../src/features/connection-channel/sync-engine';
+import { sumConnectionPoints } from '../src/features/ledger/store';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 const ROOT_KEY = new Uint8Array(32).fill(0xab);
-const COUPLE_ID = '11111111-1111-1111-1111-111111111111';
+const CONNECTION_ID = '11111111-1111-1111-1111-111111111111';
 const A_PUB = new Uint8Array(32).fill(0x10);
 const B_PUB = new Uint8Array(32).fill(0x20);
 const FIXED_NOW = new Date('2026-05-20T12:00:00.000Z');
@@ -84,14 +84,14 @@ async function freshSide(args: {
   const exec = nodeExecutor(db);
   await runMigrations(exec, MIGRATIONS);
   await exec.execute(
-    `INSERT INTO couple (
+    `INSERT INTO connection (
        id, partner_a_pubkey, partner_b_pubkey,
        channel_root_key_wrapped, paired_at, status
      ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [COUPLE_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, 'paired'],
+    [CONNECTION_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, 'paired'],
   );
   await initAndSaveRatchet(exec, {
-    coupleId: COUPLE_ID,
+    connectionId: CONNECTION_ID,
     rootKey: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
@@ -99,8 +99,8 @@ async function freshSide(args: {
   const engine = new SyncEngine({
     exec,
     api: args.relay.apiFor() as unknown as ApiClient,
-    coupleId: COUPLE_ID,
-    coupleRoot: ROOT_KEY,
+    connectionId: CONNECTION_ID,
+    connectionRoot: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
     side: bytesToHex(args.selfPub) < bytesToHex(args.peerPub) ? 'a' : 'b',
@@ -129,30 +129,30 @@ async function syncBoth(a: Side, b: Side): Promise<void> {
  *   R5 — IAP-gated publish + receipt-validation harness
  *
  * The harness here just asserts the empty starting position: both
- * sides migrate, persist a couple row, init their ratchet, build a
+ * sides migrate, persist a connection row, init their ratchet, build a
  * SyncEngine, and report zero rows everywhere + zero envelopes on
  * the wire after a no-op sync cycle. If any future change to the
  * boot pipeline breaks this floor, CI catches it before R2 even
  * tries to write a note.
  */
 describe('Phase-1.5 acceptance harness — empty-state floor', () => {
-  it('two devices migrate, persist a paired couple + ratchet, and start clean', async () => {
+  it('two devices migrate, persist a paired connection + ratchet, and start clean', async () => {
     const relay = new FakeRelay();
     const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
     const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
 
     // Both ratchets land healthy with the correct side assignment
     // (lexicographic order on pubkey hex determines a/b).
-    const aRatchet = await loadRatchet(a.exec, COUPLE_ID);
-    const bRatchet = await loadRatchet(b.exec, COUPLE_ID);
+    const aRatchet = await loadRatchet(a.exec, CONNECTION_ID);
+    const bRatchet = await loadRatchet(b.exec, CONNECTION_ID);
     expect(aRatchet?.side).toBe('a');
     expect(bRatchet?.side).toBe('b');
 
     // Data tables empty on both sides.
     expect(await listSavedByMe(a.exec, A_PUB)).toEqual([]);
     expect(await listSavedByMe(b.exec, B_PUB)).toEqual([]);
-    expect(await sumCouplePoints(a.exec)).toBe(0);
-    expect(await sumCouplePoints(b.exec)).toBe(0);
+    expect(await sumConnectionPoints(a.exec)).toBe(0);
+    expect(await sumConnectionPoints(b.exec)).toBe(0);
   });
 
   it('a no-op sync cycle puts nothing on the wire and pulls nothing back', async () => {
@@ -168,8 +168,8 @@ describe('Phase-1.5 acceptance harness — empty-state floor', () => {
     // Data tables are still empty (pull didn't materialise anything).
     expect(await listSavedByMe(a.exec, A_PUB)).toEqual([]);
     expect(await listSavedByMe(b.exec, B_PUB)).toEqual([]);
-    expect(await sumCouplePoints(a.exec)).toBe(0);
-    expect(await sumCouplePoints(b.exec)).toBe(0);
+    expect(await sumConnectionPoints(a.exec)).toBe(0);
+    expect(await sumConnectionPoints(b.exec)).toBe(0);
 
     // Second cycle is also a no-op — guards against an
     // accidental-keepalive regression where the engine pings the

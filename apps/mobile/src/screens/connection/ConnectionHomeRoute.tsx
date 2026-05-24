@@ -3,18 +3,18 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
 
 import { useDatabaseStore } from '../../db/store';
-import { useSyncEngineStore } from '../../features/couple-channel/store';
-import { listRecentLedgerEntries, sumCouplePoints } from '../../features/ledger/store';
+import { useSyncEngineStore } from '../../features/connection-channel/store';
+import { listRecentLedgerEntries, sumConnectionPoints } from '../../features/ledger/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
-import { CoupleHome } from './CoupleHome';
-import type { ActivityRow } from './CoupleHome';
+import { ConnectionHome } from './ConnectionHome';
+import type { ActivityRow } from './ConnectionHome';
 
 /**
- * Production wiring for CoupleHome. Sums + lists from the local
+ * Production wiring for ConnectionHome. Sums + lists from the local
  * ledger; pull-to-refresh also kicks the sync engine so the partner's
  * latest activity surfaces without waiting for the 15s ticker.
  */
-export function CoupleHomeRoute(): JSX.Element {
+export function ConnectionHomeRoute(): JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
@@ -36,7 +36,7 @@ export function CoupleHomeRoute(): JSX.Element {
         // best-effort
       }
       const [sum, entries] = await Promise.all([
-        sumCouplePoints(exec),
+        sumConnectionPoints(exec),
         listRecentLedgerEntries(exec, 30),
       ]);
       setTotalPoints(sum);
@@ -58,7 +58,7 @@ export function CoupleHomeRoute(): JSX.Element {
   }, [refresh]);
 
   return (
-    <CoupleHome
+    <ConnectionHome
       totalPoints={totalPoints ?? 0}
       activity={activity ?? []}
       isLoading={activity == null}

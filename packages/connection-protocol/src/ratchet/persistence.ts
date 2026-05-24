@@ -82,7 +82,7 @@ export function deserialiseSkippedKeys(bytes: Uint8Array): Map<number, Uint8Arra
 /**
  * Plain-data snapshot of the in-memory ratchet state, in the shape the
  * mobile SQLite layer stores it in (chain keys + counters as columns +
- * skipped-keys as a single BLOB). Couple-protocol stays free of any
+ * skipped-keys as a single BLOB). Connection-protocol stays free of any
  * persistence concern.
  */
 export interface RatchetStateSnapshot {

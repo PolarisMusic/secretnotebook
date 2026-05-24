@@ -2,9 +2,9 @@ import { describe, expect, it } from '@jest/globals';
 import { bytesToHex } from '@secretnotebook/crypto';
 import {
   compareBytes,
-  deriveCoupleSide,
+  deriveConnectionSide,
   deserialiseSkippedKeys,
-  initRatchetForCoupleSide,
+  initRatchetForConnectionSide,
   MAX_SKIPPED_MESSAGE_KEYS,
   ratchetDecrypt,
   ratchetEncrypt,
@@ -33,25 +33,25 @@ describe('compareBytes', () => {
   });
 });
 
-describe('deriveCoupleSide', () => {
+describe('deriveConnectionSide', () => {
   it("assigns 'a' to the lexicographically smaller pubkey", () => {
     const small = new Uint8Array(32).fill(0x10);
     const large = new Uint8Array(32).fill(0x20);
-    expect(deriveCoupleSide({ selfPub: small, peerPub: large })).toBe('a');
-    expect(deriveCoupleSide({ selfPub: large, peerPub: small })).toBe('b');
+    expect(deriveConnectionSide({ selfPub: small, peerPub: large })).toBe('a');
+    expect(deriveConnectionSide({ selfPub: large, peerPub: small })).toBe('b');
   });
   it('both partners agree without an extra exchange', () => {
     const a = new Uint8Array(32);
     a[0] = 0x01;
     const b = new Uint8Array(32);
     b[0] = 0x02;
-    const sideForA = deriveCoupleSide({ selfPub: a, peerPub: b });
-    const sideForB = deriveCoupleSide({ selfPub: b, peerPub: a });
+    const sideForA = deriveConnectionSide({ selfPub: a, peerPub: b });
+    const sideForB = deriveConnectionSide({ selfPub: b, peerPub: a });
     expect([sideForA, sideForB].sort()).toEqual(['a', 'b']);
   });
   it('throws when the two pubkeys are equal — pairing should have caught this', () => {
     const same = new Uint8Array(32).fill(0x42);
-    expect(() => deriveCoupleSide({ selfPub: same, peerPub: same })).toThrow(/equal/);
+    expect(() => deriveConnectionSide({ selfPub: same, peerPub: same })).toThrow(/equal/);
   });
 });
 
@@ -116,7 +116,7 @@ describe('skipped-key codec', () => {
 
 describe('snapshotRatchetState + restoreRatchetState', () => {
   it('round-trips a freshly initialised state', async () => {
-    const state = await initRatchetForCoupleSide(fixedRoot(0x11), 'a');
+    const state = await initRatchetForConnectionSide(fixedRoot(0x11), 'a');
     const snap = snapshotRatchetState(state);
     const restored = restoreRatchetState(snap);
     expect(bytesToHex(restored.sendingChainKey)).toBe(bytesToHex(state.sendingChainKey));
@@ -128,8 +128,8 @@ describe('snapshotRatchetState + restoreRatchetState', () => {
 
   it('round-trips after several encrypts + an out-of-order decrypt populates skipped', async () => {
     const root = fixedRoot(0x22);
-    const a = await initRatchetForCoupleSide(root, 'a');
-    const b = await initRatchetForCoupleSide(root, 'b');
+    const a = await initRatchetForConnectionSide(root, 'a');
+    const b = await initRatchetForConnectionSide(root, 'b');
 
     const env0 = await ratchetEncrypt(a, new TextEncoder().encode('0'));
     const env1 = await ratchetEncrypt(a, new TextEncoder().encode('1'));

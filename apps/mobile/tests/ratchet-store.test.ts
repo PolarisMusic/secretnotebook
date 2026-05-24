@@ -1,10 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
 import { bytesToHex } from '@secretnotebook/crypto';
 import {
-  initRatchetForCoupleSide,
+  initRatchetForConnectionSide,
   ratchetDecrypt,
   ratchetEncrypt,
-} from '@secretnotebook/couple-protocol';
+} from '@secretnotebook/connection-protocol';
 import Database from 'better-sqlite3';
 
 import { runMigrations } from '../src/db/migrate';
@@ -14,25 +14,25 @@ import {
   loadRatchet,
   saveInitialRatchet,
   saveRatchet,
-} from '../src/features/couple-channel/ratchet-store';
+} from '../src/features/connection-channel/ratchet-store';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 async function freshDb(): Promise<{
   exec: ReturnType<typeof nodeExecutor>;
-  coupleId: string;
+  connectionId: string;
 }> {
   const db = new Database(':memory:');
   const exec = nodeExecutor(db);
   await runMigrations(exec, MIGRATIONS);
-  // Seed a couple row so the FK reference in couple_ratchet is valid.
-  const coupleId = '11111111-1111-1111-1111-111111111111';
+  // Seed a connection row so the FK reference in connection_ratchet is valid.
+  const connectionId = '11111111-1111-1111-1111-111111111111';
   await exec.execute(
-    `INSERT INTO couple (
+    `INSERT INTO connection (
        id, partner_a_pubkey, partner_b_pubkey,
        channel_root_key_wrapped, paired_at, status
      ) VALUES (?, ?, ?, ?, ?, ?)`,
     [
-      coupleId,
+      connectionId,
       new Uint8Array(32).fill(0x10),
       new Uint8Array(32).fill(0x20),
       new Uint8Array(32).fill(0x42),
@@ -40,18 +40,18 @@ async function freshDb(): Promise<{
       'awaiting_safeword',
     ],
   );
-  return { exec, coupleId };
+  return { exec, connectionId };
 }
 
 describe('initAndSaveRatchet', () => {
   it('derives the side from the two pubkeys and persists a row', async () => {
-    const { exec, coupleId } = await freshDb();
+    const { exec, connectionId } = await freshDb();
     const smaller = new Uint8Array(32).fill(0x10);
     const larger = new Uint8Array(32).fill(0x20);
     const { side, state } = await initAndSaveRatchet(
       exec,
       {
-        coupleId,
+        connectionId,
         rootKey: new Uint8Array(32).fill(0x42),
         selfPub: smaller,
         peerPub: larger,
@@ -61,7 +61,7 @@ describe('initAndSaveRatchet', () => {
     expect(side).toBe('a');
     expect(state.sendingCounter).toBe(0);
 
-    const loaded = await loadRatchet(exec, coupleId);
+    const loaded = await loadRatchet(exec, connectionId);
     expect(loaded).not.toBeNull();
     expect(loaded!.side).toBe('a');
     expect(bytesToHex(loaded!.state.sendingChainKey)).toBe(bytesToHex(state.sendingChainKey));
@@ -70,7 +70,7 @@ describe('initAndSaveRatchet', () => {
   });
 
   it("the other partner derives side 'b' from the same root, mirror chains", async () => {
-    const { exec, coupleId } = await freshDb();
+    const { exec, connectionId } = await freshDb();
     const smaller = new Uint8Array(32).fill(0x10);
     const larger = new Uint8Array(32).fill(0x20);
     const root = new Uint8Array(32).fill(0x42);
@@ -78,14 +78,14 @@ describe('initAndSaveRatchet', () => {
     // Two devices, two separate DBs.
     const { side: sideA, state: stateA } = await initAndSaveRatchet(
       exec,
-      { coupleId, rootKey: root, selfPub: smaller, peerPub: larger },
+      { connectionId, rootKey: root, selfPub: smaller, peerPub: larger },
       () => 1_700_000_000_000,
     );
 
-    const { exec: execB, coupleId: cid2 } = await freshDb();
+    const { exec: execB, connectionId: cid2 } = await freshDb();
     const { side: sideB, state: stateB } = await initAndSaveRatchet(
       execB,
-      { coupleId: cid2, rootKey: root, selfPub: larger, peerPub: smaller },
+      { connectionId: cid2, rootKey: root, selfPub: larger, peerPub: smaller },
       () => 1_700_000_000_000,
     );
     expect(sideA).toBe('a');
@@ -96,13 +96,13 @@ describe('initAndSaveRatchet', () => {
   });
 
   it('is idempotent — a second call does not replace the first row', async () => {
-    const { exec, coupleId } = await freshDb();
+    const { exec, connectionId } = await freshDb();
     const root = new Uint8Array(32).fill(0x42);
     const self = new Uint8Array(32).fill(0x10);
     const peer = new Uint8Array(32).fill(0x20);
 
     const first = await initAndSaveRatchet(exec, {
-      coupleId,
+      connectionId,
       rootKey: root,
       selfPub: self,
       peerPub: peer,
@@ -110,16 +110,16 @@ describe('initAndSaveRatchet', () => {
     // Advance the in-memory state to make sure a re-init doesn't roll it back.
     const env = await ratchetEncrypt(first.state, new TextEncoder().encode('hi'));
     void env;
-    await saveRatchet(exec, coupleId, first.state, () => 2_000_000_000_000);
+    await saveRatchet(exec, connectionId, first.state, () => 2_000_000_000_000);
 
     const second = await initAndSaveRatchet(exec, {
-      coupleId,
+      connectionId,
       rootKey: root,
       selfPub: self,
       peerPub: peer,
     });
     expect(second.side).toBe('a');
-    const loaded = await loadRatchet(exec, coupleId);
+    const loaded = await loadRatchet(exec, connectionId);
     // The previously-bumped sendingCounter wins because ON CONFLICT
     // DO NOTHING preserved the existing row.
     expect(loaded!.state.sendingCounter).toBe(first.state.sendingCounter);
@@ -132,16 +132,16 @@ describe('saveRatchet / loadRatchet round-trip after encrypt', () => {
     const aSelf = new Uint8Array(32).fill(0x10);
     const bSelf = new Uint8Array(32).fill(0x20);
 
-    const { exec: execA, coupleId: cidA } = await freshDb();
-    const { exec: execB, coupleId: cidB } = await freshDb();
+    const { exec: execA, connectionId: cidA } = await freshDb();
+    const { exec: execB, connectionId: cidB } = await freshDb();
     const { state: aState } = await initAndSaveRatchet(execA, {
-      coupleId: cidA,
+      connectionId: cidA,
       rootKey: root,
       selfPub: aSelf,
       peerPub: bSelf,
     });
     await initAndSaveRatchet(execB, {
-      coupleId: cidB,
+      connectionId: cidB,
       rootKey: root,
       selfPub: bSelf,
       peerPub: aSelf,
@@ -178,16 +178,16 @@ describe('saveRatchet / loadRatchet round-trip after encrypt', () => {
     const root = new Uint8Array(32).fill(0xab);
     const aSelf = new Uint8Array(32).fill(0x10);
     const bSelf = new Uint8Array(32).fill(0x20);
-    const { exec: execA, coupleId: cidA } = await freshDb();
-    const { exec: execB, coupleId: cidB } = await freshDb();
+    const { exec: execA, connectionId: cidA } = await freshDb();
+    const { exec: execB, connectionId: cidB } = await freshDb();
     const { state: aState } = await initAndSaveRatchet(execA, {
-      coupleId: cidA,
+      connectionId: cidA,
       rootKey: root,
       selfPub: aSelf,
       peerPub: bSelf,
     });
     const { state: bState } = await initAndSaveRatchet(execB, {
-      coupleId: cidB,
+      connectionId: cidB,
       rootKey: root,
       selfPub: bSelf,
       peerPub: aSelf,
@@ -216,21 +216,21 @@ describe('saveRatchet / loadRatchet round-trip after encrypt', () => {
 });
 
 describe('saveInitialRatchet edge cases', () => {
-  it('refuses to insert against a missing couple row (FK violation)', async () => {
+  it('refuses to insert against a missing connection row (FK violation)', async () => {
     const db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
     const exec = nodeExecutor(db);
     await runMigrations(exec, MIGRATIONS);
-    const state = await initRatchetForCoupleSide(new Uint8Array(32).fill(0x01), 'a');
+    const state = await initRatchetForConnectionSide(new Uint8Array(32).fill(0x01), 'a');
     await expect(
-      saveInitialRatchet(exec, { coupleId: 'no-such-couple', side: 'a', state }),
+      saveInitialRatchet(exec, { connectionId: 'no-such-connection', side: 'a', state }),
     ).rejects.toBeTruthy();
   });
 });
 
 describe('loadRatchet on missing row', () => {
-  it('returns null when no row exists for the couple', async () => {
+  it('returns null when no row exists for the connection', async () => {
     const { exec } = await freshDb();
-    expect(await loadRatchet(exec, 'unknown-couple-id')).toBeNull();
+    expect(await loadRatchet(exec, 'unknown-connection-id')).toBeNull();
   });
 });

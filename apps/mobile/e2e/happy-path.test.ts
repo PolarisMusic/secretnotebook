@@ -9,7 +9,7 @@
  *   save partner's post → assigned prompt completes → partner certifies
  *   → unlock one random post → view post (Safe Word gate) → enactor marks
  *   action done → curator submits private 1–10 rating → both complete
- *   gratitude prompt → Couple Points appear in both ledgers
+ *   gratitude prompt → Connection Points appear in both ledgers
  *
  * Two-device steps need both simulators on the same BLE-mocked host;
  * those live in the Mac runbook (`RUNBOOK.md`) and ship here as
@@ -101,8 +101,8 @@ describe('Phase-1 happy path — verification flow', () => {
       'A: feed.open-saved → saved-by-you.view-for-you → screen.saved-for-you → saved-for-you.locked-tile count is 1',
     );
     it.todo('A: saved-for-you.total reflects 1');
-    it.todo('A: couple-home.points-tile shows +2 (POINTS_SAVE_FOR_PARTNER)');
-    it.todo('B: couple-home.points-tile shows +2 after sync');
+    it.todo('A: connection-home.points-tile shows +2 (POINTS_SAVE_FOR_PARTNER)');
+    it.todo('B: connection-home.points-tile shows +2 after sync');
   });
 
   // ---------------------------------------------------------------
@@ -122,7 +122,9 @@ describe('Phase-1 happy path — verification flow', () => {
     it.todo(
       'A: certify-completion.already-certified visible after submit (debounce / idempotency)',
     );
-    it.todo('A & B: couple-home.points-tile shows +10 (POINTS_PROMPT_CERTIFIED) on top of the +2');
+    it.todo(
+      'A & B: connection-home.points-tile shows +10 (POINTS_PROMPT_CERTIFIED) on top of the +2',
+    );
   });
 
   // ---------------------------------------------------------------
@@ -144,7 +146,7 @@ describe('Phase-1 happy path — verification flow', () => {
   // ---------------------------------------------------------------
   // S8 — Loop close: try it → rate → gratitude → +25
   // ---------------------------------------------------------------
-  describe('S8 — Try it + rate + gratitude + Couple Points', () => {
+  describe('S8 — Try it + rate + gratitude + Connection Points', () => {
     it.todo(
       'B: unlocked-saved-list.row.<id> → screen.unlocked-post-detail → unlocked-post-detail.body visible',
     );
@@ -156,7 +158,9 @@ describe('Phase-1 happy path — verification flow', () => {
     it.todo('B: gratitude.mark-done → gratitude.mine-done visible');
     it.todo('A: gratitude.mark-done → gratitude.both-done + gratitude.loop-awarded visible');
     it.todo('B: gratitude.loop-awarded visible after the next sync cycle');
-    it.todo('A & B: couple-home.points-tile shows +25 (POINTS_LOOP_COMPLETED) → total 2+10+25=37');
+    it.todo(
+      'A & B: connection-home.points-tile shows +25 (POINTS_LOOP_COMPLETED) → total 2+10+25=37',
+    );
     it.todo(
       'PRIVACY: while rating-flow is visible, RatingFlow.body text never appears on the wire (operator-verified via relay-server logs)',
     );
@@ -166,9 +170,9 @@ describe('Phase-1 happy path — verification flow', () => {
   // Final acceptance
   // ---------------------------------------------------------------
   describe('Final — happy-path verified end-to-end', () => {
-    it.todo('A: couple-home.points-tile text reads "37"');
-    it.todo('B: couple-home.points-tile text reads "37"');
-    it.todo('A: couple-home.row.<*> shows three ledger entries (save / cert / loop)');
+    it.todo('A: connection-home.points-tile text reads "37"');
+    it.todo('B: connection-home.points-tile text reads "37"');
+    it.todo('A: connection-home.row.<*> shows three ledger entries (save / cert / loop)');
     it.todo('B: same three ledger entries with matching ids (deterministic UUIDs)');
   });
 });

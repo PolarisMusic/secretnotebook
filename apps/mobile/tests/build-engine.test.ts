@@ -6,13 +6,13 @@ import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import { ApiClient } from '../src/features/api/client';
 import {
-  loadCoupleSyncMaterial,
+  loadConnectionSyncMaterial,
   tryBuildSyncEngine,
-} from '../src/features/couple-channel/build-engine';
-import { initAndSaveRatchet } from '../src/features/couple-channel/ratchet-store';
+} from '../src/features/connection-channel/build-engine';
+import { initAndSaveRatchet } from '../src/features/connection-channel/ratchet-store';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
-const COUPLE_ID = '11111111-1111-1111-1111-111111111111';
+const CONNECTION_ID = '11111111-1111-1111-1111-111111111111';
 const ROOT_KEY = new Uint8Array(32).fill(0xab);
 const A_PUB = new Uint8Array(32).fill(0x10);
 const B_PUB = new Uint8Array(32).fill(0x20);
@@ -24,11 +24,11 @@ async function freshDb(status: 'awaiting_safeword' | 'paired' = 'paired'): Promi
   const exec = nodeExecutor(db);
   await runMigrations(exec, MIGRATIONS);
   await exec.execute(
-    `INSERT INTO couple (
+    `INSERT INTO connection (
        id, partner_a_pubkey, partner_b_pubkey,
        channel_root_key_wrapped, paired_at, status
      ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [COUPLE_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, status],
+    [CONNECTION_ID, A_PUB, B_PUB, ROOT_KEY, 1_700_000_000, status],
   );
   return { exec };
 }
@@ -41,25 +41,25 @@ async function freshApi(): Promise<ApiClient> {
   });
 }
 
-describe('loadCoupleSyncMaterial', () => {
-  it('returns the key material for a paired couple', async () => {
+describe('loadConnectionSyncMaterial', () => {
+  it('returns the key material for a paired connection', async () => {
     const { exec } = await freshDb('paired');
-    const m = await loadCoupleSyncMaterial(exec, COUPLE_ID);
+    const m = await loadConnectionSyncMaterial(exec, CONNECTION_ID);
     expect(m).not.toBeNull();
-    expect(m!.coupleId).toBe(COUPLE_ID);
-    expect(Array.from(m!.coupleRoot)).toEqual(Array.from(ROOT_KEY));
+    expect(m!.connectionId).toBe(CONNECTION_ID);
+    expect(Array.from(m!.connectionRoot)).toEqual(Array.from(ROOT_KEY));
     expect(Array.from(m!.partnerA)).toEqual(Array.from(A_PUB));
     expect(Array.from(m!.partnerB)).toEqual(Array.from(B_PUB));
   });
 
-  it('returns null when the couple is still awaiting_safeword', async () => {
+  it('returns null when the connection is still awaiting_safeword', async () => {
     const { exec } = await freshDb('awaiting_safeword');
-    expect(await loadCoupleSyncMaterial(exec, COUPLE_ID)).toBeNull();
+    expect(await loadConnectionSyncMaterial(exec, CONNECTION_ID)).toBeNull();
   });
 
   it('returns null when no row matches the id', async () => {
     const { exec } = await freshDb('paired');
-    expect(await loadCoupleSyncMaterial(exec, 'no-such-couple')).toBeNull();
+    expect(await loadConnectionSyncMaterial(exec, 'no-such-connection')).toBeNull();
   });
 });
 
@@ -68,12 +68,12 @@ describe('tryBuildSyncEngine', () => {
     const { exec } = await freshDb('paired');
     const api = await freshApi();
     await initAndSaveRatchet(exec, {
-      coupleId: COUPLE_ID,
+      connectionId: CONNECTION_ID,
       rootKey: ROOT_KEY,
       selfPub: A_PUB,
       peerPub: B_PUB,
     });
-    const engine = await tryBuildSyncEngine({ exec, api, coupleId: COUPLE_ID });
+    const engine = await tryBuildSyncEngine({ exec, api, connectionId: CONNECTION_ID });
     expect(engine).not.toBeNull();
   });
 
@@ -81,30 +81,30 @@ describe('tryBuildSyncEngine', () => {
     const { exec } = await freshDb('paired');
     const api = await freshApi();
     await initAndSaveRatchet(exec, {
-      coupleId: COUPLE_ID,
+      connectionId: CONNECTION_ID,
       rootKey: ROOT_KEY,
       selfPub: B_PUB,
       peerPub: A_PUB,
     });
-    const engine = await tryBuildSyncEngine({ exec, api, coupleId: COUPLE_ID });
+    const engine = await tryBuildSyncEngine({ exec, api, connectionId: CONNECTION_ID });
     expect(engine).not.toBeNull();
   });
 
   it('returns null when there is no ratchet row yet', async () => {
     const { exec } = await freshDb('paired');
     const api = await freshApi();
-    expect(await tryBuildSyncEngine({ exec, api, coupleId: COUPLE_ID })).toBeNull();
+    expect(await tryBuildSyncEngine({ exec, api, connectionId: CONNECTION_ID })).toBeNull();
   });
 
-  it('returns null when the couple is not paired yet (Safe Word still required)', async () => {
+  it('returns null when the connection is not paired yet (Safe Word still required)', async () => {
     const { exec } = await freshDb('awaiting_safeword');
     const api = await freshApi();
     await initAndSaveRatchet(exec, {
-      coupleId: COUPLE_ID,
+      connectionId: CONNECTION_ID,
       rootKey: ROOT_KEY,
       selfPub: A_PUB,
       peerPub: B_PUB,
     });
-    expect(await tryBuildSyncEngine({ exec, api, coupleId: COUPLE_ID })).toBeNull();
+    expect(await tryBuildSyncEngine({ exec, api, connectionId: CONNECTION_ID })).toBeNull();
   });
 });

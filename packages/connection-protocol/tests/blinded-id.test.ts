@@ -24,7 +24,7 @@ describe('utcDayBucket', () => {
 describe('computeBlindedRecipientId', () => {
   it('returns a 32-byte digest', async () => {
     const id = await computeBlindedRecipientId({
-      coupleRoot: seq(0x42),
+      connectionRoot: seq(0x42),
       recipientPubkey: seq(0x10),
       date: FIXED_DATE,
     });
@@ -32,7 +32,7 @@ describe('computeBlindedRecipientId', () => {
   });
 
   it('is deterministic for the same root + recipient + day', async () => {
-    const args = { coupleRoot: seq(0x42), recipientPubkey: seq(0x10), date: FIXED_DATE };
+    const args = { connectionRoot: seq(0x42), recipientPubkey: seq(0x10), date: FIXED_DATE };
     const a = await computeBlindedRecipientId(args);
     const b = await computeBlindedRecipientId(args);
     expect(bytesToHex(a)).toBe(bytesToHex(b));
@@ -40,12 +40,12 @@ describe('computeBlindedRecipientId', () => {
 
   it('rotates daily — same root + same recipient, different day → different id', async () => {
     const today = await computeBlindedRecipientId({
-      coupleRoot: seq(0x42),
+      connectionRoot: seq(0x42),
       recipientPubkey: seq(0x10),
       date: FIXED_DATE,
     });
     const tomorrow = await computeBlindedRecipientId({
-      coupleRoot: seq(0x42),
+      connectionRoot: seq(0x42),
       recipientPubkey: seq(0x10),
       date: OTHER_DAY,
     });
@@ -54,39 +54,39 @@ describe('computeBlindedRecipientId', () => {
 
   it('produces different ids for partner A vs partner B on the same day', async () => {
     const a = await computeBlindedRecipientId({
-      coupleRoot: seq(0x42),
+      connectionRoot: seq(0x42),
       recipientPubkey: seq(0x10),
       date: FIXED_DATE,
     });
     const b = await computeBlindedRecipientId({
-      coupleRoot: seq(0x42),
+      connectionRoot: seq(0x42),
       recipientPubkey: seq(0x20),
       date: FIXED_DATE,
     });
     expect(bytesToHex(a)).not.toBe(bytesToHex(b));
   });
 
-  it('does not collide across different couples that share a recipient pubkey on the same day', async () => {
+  it('does not collide across different connections that share a recipient pubkey on the same day', async () => {
     const args = { recipientPubkey: seq(0x10), date: FIXED_DATE };
-    const c1 = await computeBlindedRecipientId({ ...args, coupleRoot: seq(0x01) });
-    const c2 = await computeBlindedRecipientId({ ...args, coupleRoot: seq(0x02) });
+    const c1 = await computeBlindedRecipientId({ ...args, connectionRoot: seq(0x01) });
+    const c2 = await computeBlindedRecipientId({ ...args, connectionRoot: seq(0x02) });
     expect(bytesToHex(c1)).not.toBe(bytesToHex(c2));
   });
 
-  it('rejects a couple root whose length is not 32 bytes', async () => {
+  it('rejects a connection root whose length is not 32 bytes', async () => {
     await expect(
       computeBlindedRecipientId({
-        coupleRoot: new Uint8Array(16),
+        connectionRoot: new Uint8Array(16),
         recipientPubkey: seq(0x10),
         date: FIXED_DATE,
       }),
-    ).rejects.toThrow(/coupleRoot/);
+    ).rejects.toThrow(/connectionRoot/);
   });
 
   it('rejects a recipient pubkey whose length is not 32 bytes', async () => {
     await expect(
       computeBlindedRecipientId({
-        coupleRoot: seq(0x42),
+        connectionRoot: seq(0x42),
         recipientPubkey: new Uint8Array(20),
         date: FIXED_DATE,
       }),
@@ -94,7 +94,7 @@ describe('computeBlindedRecipientId', () => {
   });
 
   it('hex helper matches the bytesToHex of the raw helper', async () => {
-    const args = { coupleRoot: seq(0x42), recipientPubkey: seq(0x10), date: FIXED_DATE };
+    const args = { connectionRoot: seq(0x42), recipientPubkey: seq(0x10), date: FIXED_DATE };
     const raw = await computeBlindedRecipientId(args);
     expect(await computeBlindedRecipientIdHex(args)).toBe(bytesToHex(raw));
   });

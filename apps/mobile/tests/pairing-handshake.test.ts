@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { MockTransport, MockTransportBus } from '@secretnotebook/couple-protocol';
+import { MockTransport, MockTransportBus } from '@secretnotebook/connection-protocol';
 import { bytesToHex, generateX25519KeyPair } from '@secretnotebook/crypto';
 
 import { runPairing } from '../src/features/pairing/orchestrator';
@@ -98,7 +98,7 @@ describe('S1 pairing — two in-process devices', () => {
     expect(['idle', 'safeword_required']).toContain(finalB.name);
   });
 
-  it('does not leak couple material to a third instance on the same bus', async () => {
+  it('does not leak connection material to a third instance on the same bus', async () => {
     const bus = new MockTransportBus();
     const transportA = new MockTransport(bus);
     const transportB = new MockTransport(bus);

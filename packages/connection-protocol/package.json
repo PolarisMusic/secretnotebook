@@ -1,5 +1,5 @@
 {
-  "name": "@secretnotebook/couple-protocol",
+  "name": "@secretnotebook/connection-protocol",
   "version": "0.0.0",
   "private": true,
   "description": "CRDT + sync envelope format, Double Ratchet wrappers, BLE pairing transport",

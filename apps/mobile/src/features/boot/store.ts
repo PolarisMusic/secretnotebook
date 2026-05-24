@@ -5,7 +5,7 @@ import { create } from 'zustand';
  * splash / error UI before the navigator mounts. In-memory only.
  *   - idle      : before runBoot() is called (e.g. initial render)
  *   - running   : pipeline in flight (keychain → SQLCipher → migrations)
- *   - ready     : DatabaseStore + CoupleStore populated, safe to render
+ *   - ready     : DatabaseStore + ConnectionStore populated, safe to render
  *                 the navigator
  *   - error     : any step rejected; the BootScreen shows the message and
  *                 a Retry button

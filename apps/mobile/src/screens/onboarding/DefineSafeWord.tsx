@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export interface DefineSafeWordProps {
   /** Called when both fields match and the user submits. The container
    *  is responsible for deriving the Argon2id material, writing the
-   *  couple row, and advancing navigation. Resolve to display an error
+   *  connection row, and advancing navigation. Resolve to display an error
    *  message; reject to leave the user on the screen with the input
    *  intact. */
   readonly onSubmit: (safeword: string) => Promise<string | null>;

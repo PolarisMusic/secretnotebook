@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 
 import { scrubSentryEvent } from '../src/observability/sentry-scrubber';
 
-describe('scrubSentryEvent — couple-content fields are redacted wholesale', () => {
+describe('scrubSentryEvent — connection-content fields are redacted wholesale', () => {
   it('redacts the obvious sensitive top-level keys inside `extra`', () => {
     const out = scrubSentryEvent({
       extra: {
@@ -108,7 +108,7 @@ describe('scrubSentryEvent — couple-content fields are redacted wholesale', ()
     expect(extra.unset).toBeUndefined();
   });
 
-  it('does not leak couple ratings via stack-trace local-variable dumps', () => {
+  it('does not leak connection ratings via stack-trace local-variable dumps', () => {
     // Sentry's `extra.exception.values[].stacktrace.frames[].vars` is a
     // notorious leak surface — local variables in scope at the throw
     // site get serialised wholesale. Make sure our walker catches it.

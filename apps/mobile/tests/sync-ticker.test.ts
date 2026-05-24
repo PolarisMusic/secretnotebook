@@ -4,8 +4,8 @@ import type {
   FlushResult,
   PullResult,
   SyncEngine,
-} from '../src/features/couple-channel/sync-engine';
-import { runSyncCycle } from '../src/features/couple-channel/ticker';
+} from '../src/features/connection-channel/sync-engine';
+import { runSyncCycle } from '../src/features/connection-channel/ticker';
 
 interface MockEngine {
   flush: jest.Mock<() => Promise<FlushResult>>;

@@ -3,8 +3,11 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
 
 import { useDatabaseStore } from '../../db/store';
-import { listSavedByMe, type SavedPostRow } from '../../features/couple-channel/saved-post-store';
-import { useSyncEngineStore } from '../../features/couple-channel/store';
+import {
+  listSavedByMe,
+  type SavedPostRow,
+} from '../../features/connection-channel/saved-post-store';
+import { useSyncEngineStore } from '../../features/connection-channel/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { SavedByYou } from './SavedByYou';
 

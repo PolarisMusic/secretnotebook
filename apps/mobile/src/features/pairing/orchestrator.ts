@@ -1,5 +1,5 @@
 import { deriveRootKey, pairingCode } from '@secretnotebook/crypto';
-import type { PairingTransport } from '@secretnotebook/couple-protocol';
+import type { PairingTransport } from '@secretnotebook/connection-protocol';
 
 import type { PairingEvent, PairingState, SelfKeys } from './state-machine';
 import { INITIAL_STATE, pairingReducer } from './state-machine';

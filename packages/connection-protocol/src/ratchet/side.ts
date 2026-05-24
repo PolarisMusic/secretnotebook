@@ -1,4 +1,4 @@
-import type { CoupleSide } from './types.js';
+import type { ConnectionSide } from './types.js';
 
 /**
  * Lexicographically compare two byte arrays (left-to-right, first
@@ -18,14 +18,17 @@ export function compareBytes(a: Uint8Array, b: Uint8Array): -1 | 0 | 1 {
 }
 
 /**
- * Decide which couple side I am, given my long-term pubkey and the
+ * Decide which connection side I am, given my long-term pubkey and the
  * partner's. The convention matches `apps/mobile/src/features/pairing/
  * persistence.ts`: the lexicographically smaller pubkey is partner_a,
  * the larger is partner_b. Both partners arrive at the same answer
  * without an extra round trip, which is what makes the symmetric
  * ratchet chains line up across devices.
  */
-export function deriveCoupleSide(args: { selfPub: Uint8Array; peerPub: Uint8Array }): CoupleSide {
+export function deriveConnectionSide(args: {
+  selfPub: Uint8Array;
+  peerPub: Uint8Array;
+}): ConnectionSide {
   if (compareBytes(args.selfPub, args.peerPub) === 0) {
     throw new Error('selfPub and peerPub are equal — pairing should have prevented this');
   }

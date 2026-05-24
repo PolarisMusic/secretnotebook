@@ -4,9 +4,9 @@ import {
   ratchetDecrypt,
   ratchetEncrypt,
   serialiseOp,
-  type CoupleSide,
+  type ConnectionSide,
   type CrdtOp,
-} from '@secretnotebook/couple-protocol';
+} from '@secretnotebook/connection-protocol';
 import { base64ToBytes, bytesToBase64 } from '@secretnotebook/crypto';
 
 import type { SqlExecutor } from '../../db/executor';
@@ -42,11 +42,11 @@ function unpackOutbox(text: string): CrdtOp {
 export interface SyncEngineDeps {
   readonly exec: SqlExecutor;
   readonly api: ApiClient;
-  readonly coupleId: string;
-  readonly coupleRoot: Uint8Array;
+  readonly connectionId: string;
+  readonly connectionRoot: Uint8Array;
   readonly selfPub: Uint8Array;
   readonly peerPub: Uint8Array;
-  readonly side: CoupleSide;
+  readonly side: ConnectionSide;
   /** Mostly for tests — defaults to `new Date()`. */
   readonly now?: () => Date;
   /**
@@ -71,7 +71,7 @@ export interface PullResult {
 }
 
 /**
- * The couple-channel sync engine. Stateless across method calls — every
+ * The connection-channel sync engine. Stateless across method calls — every
  * operation reads the persisted ratchet, mutates it, and writes it back
  * within a transaction so a partial crash leaves a consistent state.
  *
@@ -104,8 +104,8 @@ export class SyncEngine {
   get peerPub(): Uint8Array {
     return this.deps.peerPub;
   }
-  get coupleId(): string {
-    return this.deps.coupleId;
+  get connectionId(): string {
+    return this.deps.connectionId;
   }
   get exec(): SqlExecutor {
     return this.deps.exec;
@@ -160,7 +160,7 @@ export class SyncEngine {
    */
   async pull(): Promise<PullResult> {
     const blindedId = await computeBlindedRecipientIdHex({
-      coupleRoot: this.deps.coupleRoot,
+      connectionRoot: this.deps.connectionRoot,
       recipientPubkey: this.deps.selfPub,
       date: this.now(),
     });
@@ -214,15 +214,15 @@ export class SyncEngine {
   // --- private helpers ---
 
   private async encryptAndSend(op: CrdtOp): Promise<void> {
-    const persisted = await loadRatchet(this.deps.exec, this.deps.coupleId);
-    if (!persisted) throw new Error(`no ratchet for couple ${this.deps.coupleId}`);
+    const persisted = await loadRatchet(this.deps.exec, this.deps.connectionId);
+    if (!persisted) throw new Error(`no ratchet for connection ${this.deps.connectionId}`);
     const { state } = persisted;
     const envBytes = serialiseOp(op);
     const env = await ratchetEncrypt(state, envBytes);
-    await saveRatchet(this.deps.exec, this.deps.coupleId, state);
+    await saveRatchet(this.deps.exec, this.deps.connectionId, state);
 
     const blindedId = await computeBlindedRecipientIdHex({
-      coupleRoot: this.deps.coupleRoot,
+      connectionRoot: this.deps.connectionRoot,
       recipientPubkey: this.deps.peerPub,
       date: this.now(),
     });
@@ -240,8 +240,8 @@ export class SyncEngine {
     ciphertext: Uint8Array,
     hash: Uint8Array,
   ): Promise<void> {
-    const persisted = await loadRatchet(this.deps.exec, this.deps.coupleId);
-    if (!persisted) throw new Error(`no ratchet for couple ${this.deps.coupleId}`);
+    const persisted = await loadRatchet(this.deps.exec, this.deps.connectionId);
+    if (!persisted) throw new Error(`no ratchet for connection ${this.deps.connectionId}`);
     const { state } = persisted;
     const plaintext = await ratchetDecrypt(state, header, ciphertext);
     const op = deserialiseOp(plaintext);
@@ -251,7 +251,7 @@ export class SyncEngine {
     await this.deps.exec.transaction(async () => {
       await applyCrdtOp(this.deps.exec, op);
       await markEnvelopeSeen(this.deps.exec, hash);
-      await saveRatchet(this.deps.exec, this.deps.coupleId, state);
+      await saveRatchet(this.deps.exec, this.deps.connectionId, state);
     });
   }
 }

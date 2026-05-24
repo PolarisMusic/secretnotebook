@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { bytesToHex } from '@secretnotebook/crypto';
 import { decodeHeader, encodeHeader } from '../src/ratchet/header.js';
 import {
-  initRatchetForCoupleSide,
+  initRatchetForConnectionSide,
   ratchetDecrypt,
   ratchetEncrypt,
 } from '../src/ratchet/ratchet.js';
@@ -19,8 +19,8 @@ function fixedRoot(byte: number): Uint8Array {
 async function pairedRatchets(): Promise<{ a: RatchetState; b: RatchetState }> {
   const root = fixedRoot(0x42);
   return {
-    a: await initRatchetForCoupleSide(root, 'a'),
-    b: await initRatchetForCoupleSide(root, 'b'),
+    a: await initRatchetForConnectionSide(root, 'a'),
+    b: await initRatchetForConnectionSide(root, 'b'),
   };
 }
 
@@ -50,9 +50,9 @@ describe('ratchet header codec', () => {
   });
 });
 
-describe('initRatchetForCoupleSide', () => {
+describe('initRatchetForConnectionSide', () => {
   it('rejects a root key of the wrong length', async () => {
-    await expect(initRatchetForCoupleSide(new Uint8Array(16), 'a')).rejects.toThrow(/32 bytes/);
+    await expect(initRatchetForConnectionSide(new Uint8Array(16), 'a')).rejects.toThrow(/32 bytes/);
   });
 
   it('gives the two sides mirrored chains — sending(a) === receiving(b)', async () => {
@@ -63,8 +63,8 @@ describe('initRatchetForCoupleSide', () => {
 
   it('derives different chains for the same root if sides match — sanity check on the domain split', async () => {
     const root = fixedRoot(0x42);
-    const a1 = await initRatchetForCoupleSide(root, 'a');
-    const a2 = await initRatchetForCoupleSide(root, 'a');
+    const a1 = await initRatchetForConnectionSide(root, 'a');
+    const a2 = await initRatchetForConnectionSide(root, 'a');
     // Same side from same root = same state.
     expect(bytesToHex(a1.sendingChainKey)).toBe(bytesToHex(a2.sendingChainKey));
     expect(bytesToHex(a1.receivingChainKey)).toBe(bytesToHex(a2.receivingChainKey));
@@ -192,14 +192,14 @@ describe('integrity', () => {
 
   it('a third party with a different root cannot decrypt anything (server-cannot-decrypt invariant)', async () => {
     const root = fixedRoot(0x42);
-    const a = await initRatchetForCoupleSide(root, 'a');
+    const a = await initRatchetForConnectionSide(root, 'a');
     const env = await ratchetEncrypt(a, new TextEncoder().encode('top secret'));
 
     // The relay only sees `(header, ciphertext)` and has no access to
-    // the couple root — modelled here by a third ratchet initialised
+    // the connection root — modelled here by a third ratchet initialised
     // from a different root entirely.
     const wrongRoot = fixedRoot(0xee);
-    const eavesdropper = await initRatchetForCoupleSide(wrongRoot, 'b');
+    const eavesdropper = await initRatchetForConnectionSide(wrongRoot, 'b');
     await expect(ratchetDecrypt(eavesdropper, env.header, env.ciphertext)).rejects.toBeTruthy();
   });
 });

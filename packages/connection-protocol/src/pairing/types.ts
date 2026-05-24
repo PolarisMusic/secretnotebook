@@ -2,7 +2,7 @@
  * Wire-level pairing messages. Only one message type is needed for the
  * pairing handshake itself — a hello carrying both keys the peer needs to
  * derive the shared root_key. Safe-Word verifier exchange (S2) reuses the
- * post-handshake couple channel rather than the pairing transport.
+ * post-handshake connection channel rather than the pairing transport.
  */
 export interface PairingHello {
   readonly kind: 'hello';

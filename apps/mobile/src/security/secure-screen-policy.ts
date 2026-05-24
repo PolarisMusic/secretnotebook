@@ -1,6 +1,6 @@
 /**
  * Pure policy for "block screenshot + screen-recording of every
- * couple-content surface."
+ * connection-content surface."
  *
  * On Android this maps to the per-window FLAG_SECURE flag — when set on
  * the host Activity, the OS refuses screenshots, hides the window from

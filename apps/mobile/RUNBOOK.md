@@ -42,7 +42,7 @@ Phase-1 needs two patches.
 
 `FLAG_SECURE` is a per-window flag that blocks screenshots, hides the
 window from screen-recording APIs, and substitutes a black thumbnail in
-the recents view. Phase-1's security stance is: every couple-content
+the recents view. Phase-1's security stance is: every connection-content
 surface gets it. The simplest implementation is to set the flag on the
 host `Activity` itself, which covers every screen rendered into it.
 
@@ -189,8 +189,8 @@ pass; the `it.todo()` placeholders are reported as todos, not failures.
 The expected end state, validated by the in-process full-loop test as
 well:
 
-- Both sims: `couple-home.points-tile` reads `37`
-- Both sims: `couple-home.row.<*>` shows three ledger entries (save / cert / loop) with matching deterministic UUIDs
+- Both sims: `connection-home.points-tile` reads `37`
+- Both sims: `connection-home.row.<*>` shows three ledger entries (save / cert / loop) with matching deterministic UUIDs
 
 ---
 

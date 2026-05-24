@@ -4,12 +4,12 @@ import { bytesToHex } from '@secretnotebook/crypto';
 
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
-import { persistCouple } from '../src/features/pairing/persistence';
+import { persistConnection } from '../src/features/pairing/persistence';
 import {
-  deriveCoupleSafeWord,
+  deriveConnectionSafeWord,
   deriveSafeWordSalt,
   saveSafeWord,
-  verifyCoupleSafeWord,
+  verifyConnectionSafeWord,
 } from '../src/features/safeword/verifier';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
@@ -22,15 +22,15 @@ const rootKey = new Uint8Array(32).fill(0x42);
 const selfPub = new Uint8Array(32).fill(0x01);
 const peerPub = new Uint8Array(32).fill(0x02);
 
-async function freshPairedCouple() {
+async function freshPairedConnection() {
   const db = new Database(':memory:');
   const exec = nodeExecutor(db);
   await runMigrations(exec, MIGRATIONS);
-  const { coupleId } = await persistCouple(exec, { rootKey, selfPub, peerPub });
-  return { db, exec, coupleId };
+  const { connectionId } = await persistConnection(exec, { rootKey, selfPub, peerPub });
+  return { db, exec, connectionId };
 }
 
-interface CoupleRow {
+interface ConnectionRow {
   status: string;
   safeword_verifier: Buffer | null;
   safeword_salt: Buffer | null;
@@ -55,77 +55,86 @@ describe('deriveSafeWordSalt', () => {
   });
 });
 
-describe('deriveCoupleSafeWord', () => {
+describe('deriveConnectionSafeWord', () => {
   it('produces byte-identical material on both sides (matching word)', async () => {
-    const sideA = await deriveCoupleSafeWord(rootKey, 'orchid-canyon-saffron', FAST_PARAMS);
-    const sideB = await deriveCoupleSafeWord(rootKey, 'orchid-canyon-saffron', FAST_PARAMS);
+    const sideA = await deriveConnectionSafeWord(rootKey, 'orchid-canyon-saffron', FAST_PARAMS);
+    const sideB = await deriveConnectionSafeWord(rootKey, 'orchid-canyon-saffron', FAST_PARAMS);
     expect(bytesToHex(sideA.salt)).toBe(bytesToHex(sideB.salt));
     expect(bytesToHex(sideA.verifier)).toBe(bytesToHex(sideB.verifier));
   });
 
   it('produces different verifiers for different safewords', async () => {
-    const a = await deriveCoupleSafeWord(rootKey, 'one', FAST_PARAMS);
-    const b = await deriveCoupleSafeWord(rootKey, 'two', FAST_PARAMS);
+    const a = await deriveConnectionSafeWord(rootKey, 'one', FAST_PARAMS);
+    const b = await deriveConnectionSafeWord(rootKey, 'two', FAST_PARAMS);
     expect(bytesToHex(a.verifier)).not.toBe(bytesToHex(b.verifier));
   });
 
   it('NFKC-normalises so visually-equal words match', async () => {
-    const composed = await deriveCoupleSafeWord(rootKey, 'éclipse', FAST_PARAMS);
-    const decomposed = await deriveCoupleSafeWord(rootKey, 'éclipse', FAST_PARAMS);
+    const composed = await deriveConnectionSafeWord(rootKey, 'éclipse', FAST_PARAMS);
+    const decomposed = await deriveConnectionSafeWord(rootKey, 'éclipse', FAST_PARAMS);
     expect(bytesToHex(composed.verifier)).toBe(bytesToHex(decomposed.verifier));
   });
 });
 
-describe('saveSafeWord + verifyCoupleSafeWord', () => {
-  it('promotes couple to paired and accepts the correct word', async () => {
-    const { db, exec, coupleId } = await freshPairedCouple();
-    const material = await deriveCoupleSafeWord(rootKey, 'forest-river-quartz', FAST_PARAMS);
-    await saveSafeWord(exec, coupleId, material);
+describe('saveSafeWord + verifyConnectionSafeWord', () => {
+  it('promotes connection to paired and accepts the correct word', async () => {
+    const { db, exec, connectionId } = await freshPairedConnection();
+    const material = await deriveConnectionSafeWord(rootKey, 'forest-river-quartz', FAST_PARAMS);
+    await saveSafeWord(exec, connectionId, material);
 
-    const row = db.prepare('SELECT * FROM couple WHERE id = ?').get(coupleId) as CoupleRow;
+    const row = db
+      .prepare('SELECT * FROM connection WHERE id = ?')
+      .get(connectionId) as ConnectionRow;
     expect(row.status).toBe('paired');
     expect(row.safeword_verifier).not.toBeNull();
     expect(row.safeword_salt).not.toBeNull();
 
-    const ok = await verifyCoupleSafeWord(exec, coupleId, 'forest-river-quartz', FAST_PARAMS);
+    const ok = await verifyConnectionSafeWord(
+      exec,
+      connectionId,
+      'forest-river-quartz',
+      FAST_PARAMS,
+    );
     expect(ok).toBe(true);
   });
 
-  it('rejects the wrong word with the same coupleId', async () => {
-    const { exec, coupleId } = await freshPairedCouple();
-    const material = await deriveCoupleSafeWord(rootKey, 'right', FAST_PARAMS);
-    await saveSafeWord(exec, coupleId, material);
-    const ok = await verifyCoupleSafeWord(exec, coupleId, 'wrong', FAST_PARAMS);
+  it('rejects the wrong word with the same connectionId', async () => {
+    const { exec, connectionId } = await freshPairedConnection();
+    const material = await deriveConnectionSafeWord(rootKey, 'right', FAST_PARAMS);
+    await saveSafeWord(exec, connectionId, material);
+    const ok = await verifyConnectionSafeWord(exec, connectionId, 'wrong', FAST_PARAMS);
     expect(ok).toBe(false);
   });
 
-  it('does not advance to paired if the couple is in an unexpected state', async () => {
-    const { db, exec, coupleId } = await freshPairedCouple();
-    db.prepare(`UPDATE couple SET status = 'severed' WHERE id = ?`).run(coupleId);
-    const material = await deriveCoupleSafeWord(rootKey, 'late', FAST_PARAMS);
-    await saveSafeWord(exec, coupleId, material);
-    const row = db.prepare('SELECT status FROM couple WHERE id = ?').get(coupleId) as CoupleRow;
+  it('does not advance to paired if the connection is in an unexpected state', async () => {
+    const { db, exec, connectionId } = await freshPairedConnection();
+    db.prepare(`UPDATE connection SET status = 'severed' WHERE id = ?`).run(connectionId);
+    const material = await deriveConnectionSafeWord(rootKey, 'late', FAST_PARAMS);
+    await saveSafeWord(exec, connectionId, material);
+    const row = db
+      .prepare('SELECT status FROM connection WHERE id = ?')
+      .get(connectionId) as ConnectionRow;
     expect(row.status).toBe('severed');
   });
 
-  it('rejects verification when the couple is not paired', async () => {
-    const { exec, coupleId } = await freshPairedCouple();
+  it('rejects verification when the connection is not paired', async () => {
+    const { exec, connectionId } = await freshPairedConnection();
     // never call saveSafeWord -> still awaiting_safeword
-    const ok = await verifyCoupleSafeWord(exec, coupleId, 'anything', FAST_PARAMS);
+    const ok = await verifyConnectionSafeWord(exec, connectionId, 'anything', FAST_PARAMS);
     expect(ok).toBe(false);
   });
 
-  it('rejects verification when the coupleId is unknown', async () => {
-    const { exec } = await freshPairedCouple();
-    const ok = await verifyCoupleSafeWord(exec, 'no-such-id', 'anything', FAST_PARAMS);
+  it('rejects verification when the connectionId is unknown', async () => {
+    const { exec } = await freshPairedConnection();
+    const ok = await verifyConnectionSafeWord(exec, 'no-such-id', 'anything', FAST_PARAMS);
     expect(ok).toBe(false);
   });
 
   it('rejects an empty candidate without running Argon2id', async () => {
-    const { exec, coupleId } = await freshPairedCouple();
-    const material = await deriveCoupleSafeWord(rootKey, 'real', FAST_PARAMS);
-    await saveSafeWord(exec, coupleId, material);
-    const ok = await verifyCoupleSafeWord(exec, coupleId, '', FAST_PARAMS);
+    const { exec, connectionId } = await freshPairedConnection();
+    const material = await deriveConnectionSafeWord(rootKey, 'real', FAST_PARAMS);
+    await saveSafeWord(exec, connectionId, material);
+    const ok = await verifyConnectionSafeWord(exec, connectionId, '', FAST_PARAMS);
     expect(ok).toBe(false);
   });
 });

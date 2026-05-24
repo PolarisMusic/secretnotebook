@@ -4,7 +4,7 @@ import { hkdfSha256 } from './hkdf.js';
 import { constantTimeEqual } from './hmac.js';
 
 export const ROOT_KEY_BYTES = 32;
-const ROOT_KEY_INFO = new TextEncoder().encode('secretnotebook/couple-root/v1');
+const ROOT_KEY_INFO = new TextEncoder().encode('secretnotebook/connection-root/v1');
 
 export interface HandshakeInputs {
   readonly selfIdentityPrivate: Uint8Array;

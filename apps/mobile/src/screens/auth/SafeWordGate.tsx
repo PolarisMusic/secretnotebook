@@ -68,7 +68,7 @@ export function SafeWordGate(props: SafeWordGateProps): JSX.Element {
       >
         <View style={styles.content}>
           <Text style={styles.title}>Safe Word</Text>
-          <Text style={styles.body}>Type it to unlock your couple notebook.</Text>
+          <Text style={styles.body}>Type it to unlock your connection notebook.</Text>
           <TextInput
             style={styles.input}
             value={candidate}

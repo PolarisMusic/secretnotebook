@@ -4,7 +4,7 @@ import { useBackgroundLock } from '../features/safeword/background-lock';
 import { isSafeWordSatisfied, useSafeWordSession } from '../features/safeword/session';
 import { SafeWordGateRoute } from '../screens/auth/SafeWordGateRoute';
 import { useSecureScreen } from '../security/secure-screen';
-import { useCoupleStore } from '../state/couple';
+import { useConnectionStore } from '../state/connection';
 import { MainStack } from './MainStack';
 import { OnboardingStack } from './OnboardingStack';
 
@@ -12,16 +12,16 @@ const Root = createNativeStackNavigator();
 
 /**
  * Three-way phase switch driven by:
- *   - couple.status   ('unpaired' / 'awaiting_safeword' / 'paired' / 'severed')
+ *   - connection.status   ('unpaired' / 'awaiting_safeword' / 'paired' / 'severed')
  *   - session.satisfiedAt  (in-memory; never persisted)
  *
- *   onboarding : couple not yet paired or still picking a Safe Word
+ *   onboarding : connection not yet paired or still picking a Safe Word
  *   gate       : paired, but session is locked (cold launch, background>60s,
  *                screen-lock release)
  *   main       : paired + session satisfied
  */
 export function RootStack(): JSX.Element {
-  const status = useCoupleStore((s) => s.status);
+  const status = useConnectionStore((s) => s.status);
   const sessionSnapshot = useSafeWordSession((s) => ({
     satisfiedAt: s.satisfiedAt,
     ttlMs: s.ttlMs,

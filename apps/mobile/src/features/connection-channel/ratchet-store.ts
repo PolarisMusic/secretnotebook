@@ -1,24 +1,24 @@
 import {
-  deriveCoupleSide,
-  initRatchetForCoupleSide,
+  deriveConnectionSide,
+  initRatchetForConnectionSide,
   restoreRatchetState,
   snapshotRatchetState,
-  type CoupleSide,
+  type ConnectionSide,
   type RatchetState,
-} from '@secretnotebook/couple-protocol';
+} from '@secretnotebook/connection-protocol';
 
 import type { SqlExecutor } from '../../db/executor';
 
 /**
- * Local representation of a `couple_ratchet` row. SQLite returns BLOB
+ * Local representation of a `connection_ratchet` row. SQLite returns BLOB
  * columns as either Buffer (better-sqlite3 in Node tests) or Uint8Array
  * (op-sqlite on device) — both are unified to Uint8Array by the executor
  * wrapper but we tolerate both here just in case a future executor
  * passes raw bytes from a different driver.
  */
 interface RatchetRow {
-  couple_id: string;
-  self_side: CoupleSide;
+  connection_id: string;
+  self_side: ConnectionSide;
   sending_chain_key: Uint8Array;
   sending_counter: number;
   receiving_chain_key: Uint8Array;
@@ -29,7 +29,7 @@ interface RatchetRow {
 
 export interface PersistedRatchet {
   state: RatchetState;
-  side: CoupleSide;
+  side: ConnectionSide;
 }
 
 function bytesFromRow(value: Uint8Array | ArrayBufferLike): Uint8Array {
@@ -42,25 +42,25 @@ function bytesFromRow(value: Uint8Array | ArrayBufferLike): Uint8Array {
 
 /**
  * Persist a fresh ratchet state at pairing time. Idempotent via
- * `ON CONFLICT(couple_id) DO NOTHING` so a redundant call after a
+ * `ON CONFLICT(connection_id) DO NOTHING` so a redundant call after a
  * successful pairing is harmless. The caller derives the side via
- * `deriveCoupleSide` and the chain keys via `initRatchetForCoupleSide`
+ * `deriveConnectionSide` and the chain keys via `initRatchetForConnectionSide`
  * — this function only writes.
  */
 export async function saveInitialRatchet(
   exec: SqlExecutor,
-  args: { coupleId: string; side: CoupleSide; state: RatchetState },
+  args: { connectionId: string; side: ConnectionSide; state: RatchetState },
   now: () => number = Date.now,
 ): Promise<void> {
   const snap = snapshotRatchetState(args.state);
   await exec.execute(
-    `INSERT INTO couple_ratchet (
-       couple_id, self_side, sending_chain_key, sending_counter,
+    `INSERT INTO connection_ratchet (
+       connection_id, self_side, sending_chain_key, sending_counter,
        receiving_chain_key, receiving_counter, skipped_keys, updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(couple_id) DO NOTHING`,
+     ON CONFLICT(connection_id) DO NOTHING`,
     [
-      args.coupleId,
+      args.connectionId,
       args.side,
       snap.sendingChainKey,
       snap.sendingCounter,
@@ -74,26 +74,26 @@ export async function saveInitialRatchet(
 
 /**
  * Write the post-encrypt or post-decrypt ratchet state back. UPDATE-only
- * (no INSERT): if there's no row for this couple, something's wrong with
+ * (no INSERT): if there's no row for this connection, something's wrong with
  * the boot pipeline and we'd rather fail loudly than ratchet into the
  * void.
  */
 export async function saveRatchet(
   exec: SqlExecutor,
-  coupleId: string,
+  connectionId: string,
   state: RatchetState,
   now: () => number = Date.now,
 ): Promise<void> {
   const snap = snapshotRatchetState(state);
   await exec.execute(
-    `UPDATE couple_ratchet
+    `UPDATE connection_ratchet
         SET sending_chain_key   = ?,
             sending_counter     = ?,
             receiving_chain_key = ?,
             receiving_counter   = ?,
             skipped_keys        = ?,
             updated_at          = ?
-      WHERE couple_id = ?`,
+      WHERE connection_id = ?`,
     [
       snap.sendingChainKey,
       snap.sendingCounter,
@@ -101,20 +101,20 @@ export async function saveRatchet(
       snap.receivingCounter,
       snap.skippedKeysBlob,
       Math.floor(now() / 1000),
-      coupleId,
+      connectionId,
     ],
   );
 }
 
 export async function loadRatchet(
   exec: SqlExecutor,
-  coupleId: string,
+  connectionId: string,
 ): Promise<PersistedRatchet | null> {
   const rows = await exec.query<RatchetRow>(
-    `SELECT couple_id, self_side, sending_chain_key, sending_counter,
+    `SELECT connection_id, self_side, sending_chain_key, sending_counter,
             receiving_chain_key, receiving_counter, skipped_keys, updated_at
-       FROM couple_ratchet WHERE couple_id = ?`,
-    [coupleId],
+       FROM connection_ratchet WHERE connection_id = ?`,
+    [connectionId],
   );
   const row = rows[0];
   if (!row) return null;
@@ -131,7 +131,7 @@ export async function loadRatchet(
 }
 
 /**
- * One-shot pairing-time helper: derive the couple side from the two
+ * One-shot pairing-time helper: derive the connection side from the two
  * pubkeys, initialise the ratchet from the root key, persist the row.
  * Returns the in-memory state + side so the caller can use them
  * immediately without a re-load.
@@ -139,15 +139,15 @@ export async function loadRatchet(
 export async function initAndSaveRatchet(
   exec: SqlExecutor,
   args: {
-    coupleId: string;
+    connectionId: string;
     rootKey: Uint8Array;
     selfPub: Uint8Array;
     peerPub: Uint8Array;
   },
   now: () => number = Date.now,
 ): Promise<PersistedRatchet> {
-  const side = deriveCoupleSide({ selfPub: args.selfPub, peerPub: args.peerPub });
-  const state = await initRatchetForCoupleSide(args.rootKey, side);
-  await saveInitialRatchet(exec, { coupleId: args.coupleId, side, state }, now);
+  const side = deriveConnectionSide({ selfPub: args.selfPub, peerPub: args.peerPub });
+  const state = await initRatchetForConnectionSide(args.rootKey, side);
+  await saveInitialRatchet(exec, { connectionId: args.connectionId, side, state }, now);
   return { side, state };
 }

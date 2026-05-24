@@ -13,7 +13,7 @@ import type { SqlExecutor } from '../../db/executor';
 /**
  * Safe Word verifier — Phase 1 implementation.
  *
- * Both partners share a 32-byte couple root_key from the S1 pairing
+ * Both partners share a 32-byte connection root_key from the S1 pairing
  * handshake. The salt for Argon2id is derived deterministically from the
  * root_key so it does not need to be exchanged separately:
  *   safeword_salt = HKDF-SHA-256(root_key,
@@ -26,9 +26,9 @@ import type { SqlExecutor } from '../../db/executor';
  * Because both sides start from the same root_key and the same Safe Word,
  * both derive byte-identical verifiers locally. There is no on-wire
  * exchange of the verifier itself in Phase 1 — typo mismatches surface
- * the next time either device verifies and the couple can re-pair.
+ * the next time either device verifies and the connection can re-pair.
  *
- * On successful local derivation the couple row is updated atomically:
+ * On successful local derivation the connection row is updated atomically:
  *   safeword_verifier := verifier
  *   safeword_salt     := salt
  *   status            := 'paired'
@@ -46,7 +46,7 @@ export async function deriveSafeWordSalt(rootKey: Uint8Array): Promise<Uint8Arra
   return hkdfSha256(rootKey, null, SAFEWORD_SALT_INFO, SAFEWORD_SALT_BYTES);
 }
 
-export async function deriveCoupleSafeWord(
+export async function deriveConnectionSafeWord(
   rootKey: Uint8Array,
   safeword: string,
   params: SafeWordParams = DEFAULT_SAFEWORD_PARAMS,
@@ -58,7 +58,7 @@ export async function deriveCoupleSafeWord(
 
 export async function saveSafeWord(
   exec: SqlExecutor,
-  coupleId: string,
+  connectionId: string,
   material: SafeWordMaterial,
 ): Promise<void> {
   if (material.salt.length !== SAFEWORD_SALT_BYTES) {
@@ -68,16 +68,16 @@ export async function saveSafeWord(
     throw new Error(`verifier must be ${SAFEWORD_VERIFIER_BYTES} bytes`);
   }
   await exec.execute(
-    `UPDATE couple
+    `UPDATE connection
         SET safeword_verifier = ?,
             safeword_salt     = ?,
             status            = 'paired'
       WHERE id = ? AND status = 'awaiting_safeword'`,
-    [material.verifier, material.salt, coupleId],
+    [material.verifier, material.salt, connectionId],
   );
 }
 
-interface StoredCouple {
+interface StoredConnection {
   safeword_verifier: Uint8Array | null;
   safeword_salt: Uint8Array | null;
   status: string;
@@ -86,20 +86,20 @@ interface StoredCouple {
 /**
  * Verify a candidate Safe Word against the stored row. Re-derives Argon2id
  * with the stored salt and constant-time-compares. Returns false on any
- * shape error (couple missing, row not yet finalised, verifier corrupt)
+ * shape error (connection missing, row not yet finalised, verifier corrupt)
  * — the caller should treat any false as a generic "wrong word" so the
  * lockout policy applies uniformly.
  */
-export async function verifyCoupleSafeWord(
+export async function verifyConnectionSafeWord(
   exec: SqlExecutor,
-  coupleId: string,
+  connectionId: string,
   candidate: string,
   params: SafeWordParams = DEFAULT_SAFEWORD_PARAMS,
 ): Promise<boolean> {
   if (candidate.length === 0) return false;
-  const rows = await exec.query<StoredCouple>(
-    `SELECT safeword_verifier, safeword_salt, status FROM couple WHERE id = ?`,
-    [coupleId],
+  const rows = await exec.query<StoredConnection>(
+    `SELECT safeword_verifier, safeword_salt, status FROM connection WHERE id = ?`,
+    [connectionId],
   );
   const row = rows[0];
   if (!row || row.status !== 'paired') return false;

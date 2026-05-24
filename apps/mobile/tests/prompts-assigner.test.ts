@@ -1,6 +1,6 @@
 import { describe, it } from '@jest/globals';
 
-// Phase-1.5 R0: skipped. The Phase-1 per-couple prompt assigner
+// Phase-1.5 R0: skipped. The Phase-1 per-connection prompt assigner
 // (assign / complete / certify state machine) does not map onto
 // the notes model. The new flow uses a server-side challenge
 // library (R2) that's drawn from on partner-side unlock attempts,

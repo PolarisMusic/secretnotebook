@@ -16,7 +16,7 @@ export interface ActivityRow {
   readonly createdAt: number;
 }
 
-export interface CoupleHomeProps {
+export interface ConnectionHomeProps {
   readonly totalPoints: number;
   readonly activity: ReadonlyArray<ActivityRow>;
   readonly isLoading: boolean;
@@ -32,35 +32,35 @@ function isoDate(secs: number): string {
 }
 
 /**
- * Phase-1.5 R0 Couple Home — ledger placeholder. The Couple Points
+ * Phase-1.5 R0 Connection Home — ledger placeholder. The Connection Points
  * accrual rules (+2 save / +10 certify / +25 loop) were retired with
  * the couple-loop cleanup; the screen survives as a shell to be
  * reframed in R6 as the Connection Home (Notes / Connection /
  * Subscription tiles).
  */
-export function CoupleHome(props: CoupleHomeProps): JSX.Element {
+export function ConnectionHome(props: ConnectionHomeProps): JSX.Element {
   return (
-    <SafeAreaView style={styles.container} testID="screen.couple-home">
+    <SafeAreaView style={styles.container} testID="screen.connection-home">
       <View style={styles.header}>
-        <Pressable accessibilityRole="button" onPress={props.onBack} testID="couple-home.back">
+        <Pressable accessibilityRole="button" onPress={props.onBack} testID="connection-home.back">
           <Text style={styles.back}>← Back</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Couple</Text>
+        <Text style={styles.headerTitle}>Connection</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <FlatList
         ListHeaderComponent={
           <View style={styles.headerBody}>
-            <View style={styles.tile} testID="couple-home.points-tile">
-              <Text style={styles.tileLabel}>Couple Points</Text>
+            <View style={styles.tile} testID="connection-home.points-tile">
+              <Text style={styles.tileLabel}>Connection Points</Text>
               <Text style={styles.tileCount}>{props.totalPoints}</Text>
             </View>
             <View style={styles.shortcuts}>
               {props.onOpenSaved ? (
                 <Pressable
                   accessibilityRole="button"
-                  testID="couple-home.open-saved"
+                  testID="connection-home.open-saved"
                   onPress={props.onOpenSaved}
                   style={styles.shortcutButton}
                 >
@@ -81,7 +81,7 @@ export function CoupleHome(props: CoupleHomeProps): JSX.Element {
           />
         }
         renderItem={({ item }) => (
-          <View style={styles.row} testID={`couple-home.row.${item.id}`}>
+          <View style={styles.row} testID={`connection-home.row.${item.id}`}>
             <Text style={styles.rowLabel} numberOfLines={1}>
               {item.reason}
             </Text>
@@ -93,11 +93,11 @@ export function CoupleHome(props: CoupleHomeProps): JSX.Element {
         )}
         ListEmptyComponent={
           props.isLoading ? (
-            <View style={styles.center} testID="couple-home.loading">
+            <View style={styles.center} testID="connection-home.loading">
               <ActivityIndicator color="#f5f5f5" />
             </View>
           ) : (
-            <View style={styles.empty} testID="couple-home.empty">
+            <View style={styles.empty} testID="connection-home.empty">
               <Text style={styles.emptyTitle}>No activity yet</Text>
               <Text style={styles.emptyBody}>Your shared ledger lands here.</Text>
             </View>

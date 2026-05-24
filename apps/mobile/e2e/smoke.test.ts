@@ -36,7 +36,7 @@ describe('Pairing (S1) — single-device flow up to code_shown', () => {
 });
 
 describe('Global feed (S3) — placeholder for the post-pairing happy path', () => {
-  // The full feed flow needs a paired + Safe-Word-satisfied couple, so
+  // The full feed flow needs a paired + Safe-Word-satisfied connection, so
   // the Detox step here is a placeholder until the harness wires that up
   // on the Mac runbook. The testIDs the feed slice exposes for E2E:
   //   screen.global-feed
@@ -74,10 +74,10 @@ describe('Global feed (S3) — placeholder for the post-pairing happy path', () 
   //   screen.unlocked-post-detail
   //     unlocked-post-detail.back / .body / .open-link / .tried-it
   //     unlocked-post-detail.already-started / .continue-loop / .error
-  //   feed.open-couple                — opens CoupleHome (engine-ready only)
-  //   screen.couple-home
-  //     couple-home.back / .points-tile / .open-saved / .open-prompts
-  //     couple-home.row.<ledgerId> / .empty / .loading
+  //   feed.open-connection                — opens ConnectionHome (engine-ready only)
+  //   screen.connection-home
+  //     connection-home.back / .points-tile / .open-saved / .open-prompts
+  //     connection-home.row.<ledgerId> / .empty / .loading
   //   screen.rating-flow              — curator's 1..10
   //     rating-flow.back / .chip.<1..10> / .submit
   //     rating-flow.already-rated / .error
