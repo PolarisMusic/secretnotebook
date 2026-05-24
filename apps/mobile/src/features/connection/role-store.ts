@@ -45,10 +45,15 @@ function nowSec(deps: RoleStoreDeps): number {
 async function loadConnectionForRoles(exec: SqlExecutor): Promise<RawConnectionRow | null> {
   // Phase-1.5 invariant: at most one active connection row per device.
   // We pick the most recently paired one as a defensive tie-break,
-  // matching loadActiveConnection's ordering.
+  // matching loadActiveConnection's ordering. Filter out 'severed'
+  // explicitly so a residual row from before a wipe can't catch a
+  // role.set; 'unpaired' and 'awaiting_safeword' are accepted because
+  // the partner pubkeys exist on the row from the moment pairing
+  // writes it, even before safeword bootstrap completes.
   const rows = await exec.query<RawConnectionRow>(
     `SELECT id, partner_a_pubkey, partner_b_pubkey, partner_a_role, partner_b_role
        FROM connection
+      WHERE status != 'severed'
       ORDER BY paired_at DESC
       LIMIT 1`,
   );

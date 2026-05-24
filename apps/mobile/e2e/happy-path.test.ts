@@ -1,15 +1,16 @@
 /* global device, element, by, expect, waitFor */
 
 /**
- * Phase-1 happy-path Detox spec — the canonical end-to-end script
- * the implementation-details.md "Phase 1 end-to-end test" section
- * spells out:
+ * Phase-1.5 happy-path Detox spec. The old Phase-1 spec walked the
+ * save → prompt → certify → unlock → rate → gratitude loop that R0
+ * deleted; this rewrite walks the post-R5 surface:
  *
- *   pair (BLE mocked) → Safe Word setup → both submit a post →
- *   save partner's post → assigned prompt completes → partner certifies
- *   → unlock one random post → view post (Safe Word gate) → enactor marks
- *   action done → curator submits private 1–10 rating → both complete
- *   gratitude prompt → Connection Points appear in both ledgers
+ *   pair (BLE mocked) → Safe Word → both submit a post on the global
+ *   feed → write a shared note (R2) → partner sees it → write a
+ *   secret note, reveal it (R2) → set my role on the connection
+ *   (R4) → buy an IAP subscription → publish a note to the global
+ *   feed (R3 + R5) → both sides see the published_* marker on the
+ *   note row
  *
  * Two-device steps need both simulators on the same BLE-mocked host;
  * those live in the Mac runbook (`RUNBOOK.md`) and ship here as
@@ -21,11 +22,15 @@
  * scripting bridge, the todos flip to live tests one by one — no
  * spec-level restructuring needed.
  *
- * testID conventions for this spec live alongside the smoke spec; the
- * full table is also in RUNBOOK.md.
+ * The in-process two-device backbone for everything past pairing
+ * lives in `apps/mobile/tests/full-loop.test.ts`; that's where to
+ * look for the protocol-level acceptance assertions (notes round-
+ * trip, body-not-on-wire invariant, publish propagation, IAP gate
+ * fail-closed). This Detox spec is the UI verification layer on
+ * top.
  */
 
-describe('Phase-1 happy path — verification flow', () => {
+describe('Phase-1.5 happy path — verification flow', () => {
   // ---------------------------------------------------------------
   // S1 — Pair (BLE mocked)
   // ---------------------------------------------------------------
@@ -78,7 +83,7 @@ describe('Phase-1 happy path — verification flow', () => {
   });
 
   // ---------------------------------------------------------------
-  // S3 — Global feed + post submission
+  // S3 — Global feed + post submission (unchanged from Phase 1)
   // ---------------------------------------------------------------
   describe('S3 — Global feed', () => {
     it.todo('A: screen.global-feed visible after Safe Word satisfied');
@@ -90,89 +95,75 @@ describe('Phase-1 happy path — verification flow', () => {
   });
 
   // ---------------------------------------------------------------
-  // S5 — Save for partner (S4 is the relay channel — observable in S5 onward)
+  // S4 — Notes (R2): shared + secret + reveal
   // ---------------------------------------------------------------
-  describe('S5 — Save for partner', () => {
+  describe('S4 — Notes (R2)', () => {
+    it.todo('A: notes.compose → notes.kind.shared + notes.body + notes.submit → notes.row.<id>');
+    it.todo('B: notes.row.<id> body visible after the next sync cycle (shared = body on wire)');
+    it.todo('A: notes.compose → notes.kind.secret + notes.body + notes.submit → notes.row.<id>');
     it.todo(
-      'B: feed.post.<id> → screen.post-detail → post-detail.save-for-partner → post-detail.save-notice',
-    );
-    it.todo('B: feed.open-saved → screen.saved-by-you → saved-by-you.row.<id> visible');
-    it.todo(
-      'A: feed.open-saved → saved-by-you.view-for-you → screen.saved-for-you → saved-for-you.locked-tile count is 1',
-    );
-    it.todo('A: saved-for-you.total reflects 1');
-    it.todo('A: connection-home.points-tile shows +2 (POINTS_SAVE_FOR_PARTNER)');
-    it.todo('B: connection-home.points-tile shows +2 after sync');
-  });
-
-  // ---------------------------------------------------------------
-  // S6 — Prompts (assign, complete, certify)
-  // ---------------------------------------------------------------
-  describe('S6 — Prompts', () => {
-    it.todo(
-      'A: feed.open-prompts → screen.prompt-list → prompt-list.assign → prompt-list.section.awaiting-my-cert grows by 1',
-    );
-    it.todo('B: prompt-list.section.assigned-to-me has the new prompt');
-    it.todo(
-      'B: prompt-list.row.<id> → screen.active-prompt → active-prompt.mark-done → active-prompt.waiting',
+      'B: notes.row.<id> shows notes.body.locked (existence visible, body NULL until reveal)',
     );
     it.todo(
-      'A: prompt-list.section.awaiting-my-cert.row.<id> → screen.certify-completion → certify-completion.certify',
+      'A: notes.row.<id> → notes-detail.reveal → after sync, B notes.row.<id> body becomes visible',
     );
     it.todo(
-      'A: certify-completion.already-certified visible after submit (debounce / idempotency)',
-    );
-    it.todo(
-      'A & B: connection-home.points-tile shows +10 (POINTS_PROMPT_CERTIFIED) on top of the +2',
+      'PRIVACY: while the secret note is in pre-reveal, the body never appears on the relay (operator-verified via relay logs; covered mechanically by tests/full-loop.test.ts secret-body-not-on-wire invariant)',
     );
   });
 
   // ---------------------------------------------------------------
-  // S7 — Random unlock (lands automatically with S6 certify)
+  // S5 — Connection role (R4)
   // ---------------------------------------------------------------
-  describe('S7 — Random unlock', () => {
-    it.todo('A: saved-for-you.unlocked-tile count goes 0 → 1 after partner cert');
+  describe('S5 — Connection role (R4)', () => {
     it.todo(
-      'B: saved-for-you.unlocked-tile count goes 0 → 1 after partner cert (their saved-for-me side)',
+      'A: connection-home.set-role → connection-home.role.masculine selected → connection-home.role.partner_a reads "masculine"',
+    );
+    it.todo('B: after sync, connection-home.role.partner_a reads "masculine"');
+    it.todo(
+      'B: connection-home.set-role → connection-home.role.feminine selected → connection-home.role.partner_b reads "feminine"',
     );
     it.todo(
-      'B: saved-for-you.open-unlocked → screen.unlocked-saved-list → unlocked-saved-list.row.<savedPostId> visible',
+      'A: after sync, connection-home.role.partner_b reads "feminine" (both sides converge on the same snapshot)',
     );
-    it.todo(
-      'B: tapping a second concurrent cert does NOT unlock a second post — same row stays the only one',
-    );
+    it.todo('A: change role to neutral → B converges on neutral after sync (last-write-wins)');
   });
 
   // ---------------------------------------------------------------
-  // S8 — Loop close: try it → rate → gratitude → +25
+  // S6 — Publish to the global feed (R3) + IAP gate (R5)
   // ---------------------------------------------------------------
-  describe('S8 — Try it + rate + gratitude + Connection Points', () => {
+  describe('S6 — Publish + IAP gate', () => {
     it.todo(
-      'B: unlocked-saved-list.row.<id> → screen.unlocked-post-detail → unlocked-post-detail.body visible',
-    );
-    it.todo('B: unlocked-post-detail.tried-it → screen.gratitude (B is the enactor)');
-    it.todo(
-      'A: feed.open-saved → saved-for-you.open-unlocked → unlocked-saved-list.row.<id> → unlocked-post-detail.continue-loop → screen.rating-flow (A is the curator)',
-    );
-    it.todo('A: rating-flow.chip.9 → rating-flow.submit → navigates to screen.gratitude');
-    it.todo('B: gratitude.mark-done → gratitude.mine-done visible');
-    it.todo('A: gratitude.mark-done → gratitude.both-done + gratitude.loop-awarded visible');
-    it.todo('B: gratitude.loop-awarded visible after the next sync cycle');
-    it.todo(
-      'A & B: connection-home.points-tile shows +25 (POINTS_LOOP_COMPLETED) → total 2+10+25=37',
+      'A (no entitlement): notes.row.<id> → notes-detail.publish → paywall.subscribe visible; tapping outside dismisses without publishing',
     );
     it.todo(
-      'PRIVACY: while rating-flow is visible, RatingFlow.body text never appears on the wire (operator-verified via relay-server logs)',
+      'A: paywall.subscribe → triggers IAP sandbox flow → on success, entitlement cache populated (verify via debug-menu.iap.status)',
+    );
+    it.todo(
+      'A: notes-detail.publish → server POST succeeds → notes-detail.published-badge with global_post_id link visible',
+    );
+    it.todo(
+      'A: feed.refresh → the new feed.post.<global_post_id> row is at the top of the list with notes-content body',
+    );
+    it.todo(
+      'B: after sync, notes-detail for the same note shows notes-detail.published-badge with the same global_post_id',
+    );
+    it.todo(
+      'A (expired entitlement): notes.row.<unpublished-id> → notes-detail.publish → paywall.renew visible; existing published notes still show their badge',
     );
   });
 
   // ---------------------------------------------------------------
   // Final acceptance
   // ---------------------------------------------------------------
-  describe('Final — happy-path verified end-to-end', () => {
-    it.todo('A: connection-home.points-tile text reads "37"');
-    it.todo('B: connection-home.points-tile text reads "37"');
-    it.todo('A: connection-home.row.<*> shows three ledger entries (save / cert / loop)');
-    it.todo('B: same three ledger entries with matching ids (deterministic UUIDs)');
+  describe('Final — Phase-1.5 happy-path verified end-to-end', () => {
+    it.todo('A: notes.list shows shared + secret + published rows with the right badges');
+    it.todo('B: same notes.list ordering + body availability matches A');
+    it.todo(
+      'A & B: connection-home.role.partner_a / .partner_b match across devices (R4 convergence)',
+    );
+    it.todo(
+      'A & B: feed.post.<published_global_post_id> visible to both partners and to anyone else on the global feed',
+    );
   });
 });

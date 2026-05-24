@@ -9,6 +9,19 @@ All commands below assume a macOS host with Xcode + Android Studio
 installed; the CI box can't drive simulators or build signed bundles, so
 this is the file you reach for the day of a verification pass.
 
+> **Phase-1.5 reshape (R0–R5).** The Phase-1 role-play / prompt /
+> save-for-partner / unlocked-saved loop has been retired. The current
+> couple-channel surface is: shared + secret **notes** (R2), per-note
+> **publish** to the global feed (R3), per-partner **role** on the
+> connection (R4), and **IAP-gated publish** (R5). The "+37 Couple
+> Points" verification target is gone; the new end-to-end target
+> reads from `screen.notes` / `screen.notes-detail` and
+> `connection-home.role.partner_{a,b}`. The walk in §3 below has been
+> rewritten accordingly. Protocol-level coverage of the new surface
+> (notes round-trip, secret-body-never-on-wire invariant, publish
+> propagation, IAP gate fail-closed) lives in
+> `apps/mobile/tests/full-loop.test.ts` and runs in CI.
+
 ---
 
 ## 0. Prerequisites
@@ -144,9 +157,9 @@ literals, UUIDs). This runs in CI; no operator action.
 
 ---
 
-## 3. Two-device Detox walk
+## 3. Two-device Detox walk (Phase-1.5)
 
-The full Phase-1 happy path lives in `apps/mobile/e2e/happy-path.test.ts`.
+The Phase-1.5 happy path lives in `apps/mobile/e2e/happy-path.test.ts`.
 Single-sim-reachable steps (Welcome → Pair-start) run as live `it()`
 blocks in the CI Detox config; the two-device steps ship as `it.todo()`
 with the exact tap script inline.
@@ -186,11 +199,34 @@ pass; the `it.todo()` placeholders are reported as todos, not failures.
 3. Open `happy-path.test.ts` next to your simulators and walk each `it.todo()` step in order. Each todo is annotated with `A:` / `B:` to indicate which sim performs the tap.
 4. For every step, assert the listed testID is visible (use the Detox inspector via `xcrun simctl spawn booted log stream` if a tap doesn't land).
 
-The expected end state, validated by the in-process full-loop test as
-well:
+### 3.3 Expected end state (Phase-1.5 acceptance)
 
-- Both sims: `connection-home.points-tile` reads `37`
-- Both sims: `connection-home.row.<*>` shows three ledger entries (save / cert / loop) with matching deterministic UUIDs
+After the §3.2 walk completes:
+
+- **Notes (R2):** both sims show the same `notes.list` content. Shared
+  notes have their body visible on both sides; secret notes that were
+  written-and-revealed have body visible on both sides; secret notes
+  still in pre-reveal show `notes.body.locked` on the partner side.
+- **Roles (R4):** `connection-home.role.partner_a` and
+  `connection-home.role.partner_b` read the same values on both sims
+  (whatever the script set — typically `masculine` / `feminine`).
+- **Publish (R3 + R5):** for every note that was published, both sims
+  show `notes-detail.published-badge` with the matching
+  `global_post_id`, and `feed.post.<global_post_id>` is at the top of
+  the global feed on both sides as well as visible to any third
+  device on the same feed.
+- **IAP gate (R5):** publish attempts without a current entitlement
+  surface `paywall.subscribe` (fresh) or `paywall.renew` (expired);
+  the local note row's `published_at` does NOT change in the
+  blocked case.
+
+The protocol-level invariants (notes round-trip, secret-body-never-
+on-wire, publish propagation, hostile-replay no-op, IAP gate fail-
+closed at the border) are covered mechanically by the in-process
+two-device harness `apps/mobile/tests/full-loop.test.ts`. That suite
+runs in CI on every push and is the authority for whether the
+sync-layer contracts hold — the Detox walk is the UI verification
+layer on top.
 
 ---
 

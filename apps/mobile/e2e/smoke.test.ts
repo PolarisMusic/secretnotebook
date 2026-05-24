@@ -1,5 +1,19 @@
 /* global device, element, by, expect */
 
+/**
+ * Single-sim Detox smoke. Boots the app to the Welcome surface,
+ * then walks the single-device half of pairing (the second half
+ * needs a peer simulator + BLE-mocked host; lives in the Mac
+ * runbook).
+ *
+ * The R0-R5 refactor reshaped what comes after pairing — notes,
+ * publish, roles, IAP — but those flows all require a paired,
+ * Safe-Word-satisfied connection, so they don't show up in this
+ * single-sim smoke. The end-to-end script with the full testID
+ * inventory lives in `happy-path.test.ts`; the in-process
+ * protocol-level acceptance harness is `tests/full-loop.test.ts`.
+ */
+
 describe('Smoke', () => {
   beforeAll(async () => {
     await device.launchApp({ newInstance: true });
@@ -33,65 +47,4 @@ describe('Pairing (S1) — single-device flow up to code_shown', () => {
     // pairing; once the call-to-action is added we'll tap it here.
     // For now this is documented as a placeholder Detox step.
   });
-});
-
-describe('Global feed (S3) — placeholder for the post-pairing happy path', () => {
-  // The full feed flow needs a paired + Safe-Word-satisfied connection, so
-  // the Detox step here is a placeholder until the harness wires that up
-  // on the Mac runbook. The testIDs the feed slice exposes for E2E:
-  //   screen.global-feed
-  //     feed.compose             — opens SubmitPost
-  //     feed.post.<uuid>         — opens PostDetail
-  //     feed.empty               — visible until the first GET 200
-  //     feed.loading-more        — visible during fetchNextPage()
-  //   screen.submit-post
-  //     submit-post.type.text    — content-type radio: text
-  //     submit-post.type.link    — content-type radio: link
-  //     submit-post.body         — TextInput
-  //     submit-post.submit       — disabled until non-empty body
-  //     submit-post.cancel       — pops back to feed
-  //     submit-post.too-long     — visible above the 4000-char limit
-  //     submit-post.error        — visible on a 4xx response
-  //   screen.post-detail
-  //     post-detail.back              — pops back to feed
-  //     post-detail.body              — for text posts
-  //     post-detail.open-link         — for link posts
-  //     post-detail.save-for-partner  — wired iff sync engine is ready
-  //     post-detail.save-notice       — inline status after save
-  //   feed.open-saved                 — opens SavedByYou (engine-ready only)
-  //   feed.open-prompts               — opens PromptList (engine-ready only)
-  //   screen.saved-by-you
-  //     saved-by-you.back / .view-for-you / .row.<savedPostId>
-  //     saved-by-you.empty / .loading
-  //   screen.saved-for-you
-  //     saved-for-you.back / .view-by-you
-  //     saved-for-you.locked-tile / .unlocked-tile
-  //     saved-for-you.open-unlocked   — opens UnlockedSavedList (S7)
-  //     saved-for-you.total
-  //   screen.unlocked-saved-list
-  //     unlocked-saved-list.back / .row.<savedPostId>
-  //     unlocked-saved-list.loading / .empty
-  //   screen.unlocked-post-detail
-  //     unlocked-post-detail.back / .body / .open-link / .tried-it
-  //     unlocked-post-detail.already-started / .continue-loop / .error
-  //   feed.open-connection                — opens ConnectionHome (engine-ready only)
-  //   screen.connection-home
-  //     connection-home.back / .points-tile / .open-saved / .open-prompts
-  //     connection-home.row.<ledgerId> / .empty / .loading
-  //   screen.rating-flow              — curator's 1..10
-  //     rating-flow.back / .chip.<1..10> / .submit
-  //     rating-flow.already-rated / .error
-  //   screen.gratitude
-  //     gratitude.back / .title / .body / .mark-done
-  //     gratitude.mine-done / .both-done / .loop-awarded / .error
-  //   screen.prompt-list
-  //     prompt-list.back / .assign / .assign-error
-  //     prompt-list.section.assigned-to-me / .section.awaiting-my-cert
-  //     prompt-list.empty.assigned-to-me / .empty.awaiting-my-cert
-  //     prompt-list.row.<promptId> / .loading
-  //   screen.active-prompt
-  //     active-prompt.back / .title / .body / .mark-done / .waiting / .error
-  //   screen.certify-completion
-  //     certify-completion.back / .title / .body / .certify
-  //     certify-completion.already-certified / .error
 });

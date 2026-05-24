@@ -104,5 +104,16 @@ export async function applyCrdtOp(exec: SqlExecutor, op: CrdtOp): Promise<void> 
       ]);
       return;
     }
+
+    default: {
+      // Exhaustiveness guard: if a new op kind is added to the
+      // CrdtOp discriminated union without a branch here, this
+      // assignment fails to typecheck. Throwing at runtime is the
+      // belt to the type-level brace — a forgotten branch
+      // otherwise silently drops the op (sync_seen would mark the
+      // envelope processed, and the substance is lost).
+      const _exhaustive: never = op;
+      throw new Error(`applyCrdtOp: unhandled CRDT op kind ${JSON.stringify(_exhaustive)}`);
+    }
   }
 }
