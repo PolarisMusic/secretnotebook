@@ -125,6 +125,32 @@ export const NotePublishOpSchema = z.object({
 });
 export type NotePublishOp = z.infer<typeof NotePublishOpSchema>;
 
+/** Three-value role taxonomy for now. Widening to additional values
+ *  requires a coordinated migration + protocol version bump. */
+export const ConnectionRoleSchema = z.enum(['masculine', 'feminine', 'neutral']);
+export type ConnectionRole = z.infer<typeof ConnectionRoleSchema>;
+
+/**
+ * Each partner self-declares their role on the connection. The
+ * `setterPubkey` identifies which side this op is for — the recipient
+ * matches it against partner_a_pubkey / partner_b_pubkey to know
+ * which column to write. Last-write-wins by ratchet order: a setter
+ * can change their mind by emitting a new op; the ratchet preserves
+ * causal order on a single sender so the latest value sticks.
+ *
+ * Replays are practically prevented by the seen-cache (sync_seen) +
+ * outbox-delete-on-success; the projector doesn't need a separate
+ * setAt comparison.
+ */
+export const ConnectionRoleSetOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('connection.role.set'),
+  setterPubkey: HexString(32),
+  role: ConnectionRoleSchema,
+  setAt: z.number().int().nonnegative(),
+});
+export type ConnectionRoleSetOp = z.infer<typeof ConnectionRoleSetOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
@@ -132,6 +158,7 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   NoteSecretAnnounceOpSchema,
   NoteSecretRevealOpSchema,
   NotePublishOpSchema,
+  ConnectionRoleSetOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 

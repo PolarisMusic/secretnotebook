@@ -38,6 +38,7 @@ describe('runMigrations', () => {
       'rename-couple-to-connection',
       'notes',
       'note-publish-cols',
+      'connection-roles',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -68,6 +69,7 @@ describe('runMigrations', () => {
       'rename-couple-to-connection',
       'notes',
       'note-publish-cols',
+      'connection-roles',
     ]);
   });
 

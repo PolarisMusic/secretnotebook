@@ -36,6 +36,7 @@ module.exports = {
     'src/features/connection-channel/sync-engine.ts',
     'src/features/connection-channel/ticker.ts',
     'src/features/connection-channel/uuid.ts',
+    'src/features/connection/role-store.ts',
     'src/features/ledger/store.ts',
     'src/features/notes/store.ts',
     'src/features/pairing/state-machine.ts',

@@ -87,5 +87,22 @@ export async function applyCrdtOp(exec: SqlExecutor, op: CrdtOp): Promise<void> 
         [op.publishedAt, op.publishedGlobalPostId, op.id],
       );
       return;
+
+    case 'connection.role.set': {
+      // Last-write-wins. Two UPDATEs run; the one whose pubkey
+      // doesn't match either partner is a 0-row no-op, so a setter
+      // outside this connection (a hostile op with a non-matching
+      // pubkey) cannot touch either column.
+      const setter = hexToBytes(op.setterPubkey);
+      await exec.execute(`UPDATE connection SET partner_a_role = ? WHERE partner_a_pubkey = ?`, [
+        op.role,
+        setter,
+      ]);
+      await exec.execute(`UPDATE connection SET partner_b_role = ? WHERE partner_b_pubkey = ?`, [
+        op.role,
+        setter,
+      ]);
+      return;
+    }
   }
 }

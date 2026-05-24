@@ -26,6 +26,11 @@ import {
   type NoteStoreDeps,
   type PublishToGlobalFeed,
 } from '../src/features/notes/store';
+import {
+  getConnectionRoles,
+  setMyRole,
+  type RoleStoreDeps,
+} from '../src/features/connection/role-store';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 const ROOT_KEY = new Uint8Array(32).fill(0xab);
@@ -127,6 +132,15 @@ async function syncBoth(a: Side, b: Side): Promise<void> {
 }
 
 function noteDeps(side: Side, selfPub: Uint8Array): NoteStoreDeps {
+  return {
+    exec: side.exec,
+    selfPubkey: selfPub,
+    now: () => FIXED_NOW,
+    enqueue: (op) => side.engine.enqueue(op),
+  };
+}
+
+function roleDeps(side: Side, selfPub: Uint8Array): RoleStoreDeps {
   return {
     exec: side.exec,
     selfPubkey: selfPub,
@@ -493,5 +507,89 @@ describe('Phase-1.5 R3 — publish-from-note', () => {
     const after = await getNote(b.exec, note.id);
     expect(after?.publishedGlobalPostId).toBe(PUBLIC_POST_ID); // pinned
     expect(after?.publishedAt).toBe(before?.publishedAt); // pinned
+  });
+});
+
+/**
+ * R4 layers connection roles on top of R3:
+ *   - each partner self-declares (masculine / feminine / neutral)
+ *   - their value rounds through the ratchet to the other side
+ *   - both sides converge on the same { partnerARole, partnerBRole }
+ *   - last-write-wins by ratchet order; hostile ops with non-
+ *     matching pubkeys touch nothing
+ */
+describe('Phase-1.5 R4 — connection roles', () => {
+  it('A sets a role; B sees it on the partner_a side after one sync', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+
+    const onAImmediately = await getConnectionRoles(a.exec);
+    expect(onAImmediately?.partnerARole).toBe('masculine');
+    expect((await getConnectionRoles(b.exec))?.partnerARole).toBeNull();
+
+    await syncBoth(a, b);
+
+    const onB = await getConnectionRoles(b.exec);
+    expect(onB?.partnerARole).toBe('masculine');
+    expect(onB?.partnerBRole).toBeNull();
+  });
+
+  it('both partners set their roles; both sides converge on the same snapshot', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+    await setMyRole(roleDeps(b, B_PUB), 'feminine');
+    await syncBoth(a, b);
+
+    const onA = await getConnectionRoles(a.exec);
+    const onB = await getConnectionRoles(b.exec);
+    expect(onA).toEqual(onB);
+    expect(onA?.partnerARole).toBe('masculine');
+    expect(onA?.partnerBRole).toBe('feminine');
+  });
+
+  it('a setter can change their mind; the partner converges on the latest value', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+    await syncBoth(a, b);
+    expect((await getConnectionRoles(b.exec))?.partnerARole).toBe('masculine');
+
+    await setMyRole(roleDeps(a, A_PUB), 'neutral');
+    await syncBoth(a, b);
+    expect((await getConnectionRoles(b.exec))?.partnerARole).toBe('neutral');
+    expect((await getConnectionRoles(a.exec))?.partnerARole).toBe('neutral');
+  });
+
+  it('a hostile role.set with a non-matching setterPubkey touches nothing', async () => {
+    // Apply the op directly through the projector — bypassing the
+    // store guards — to confirm the WHERE pubkey clause is what
+    // actually keeps a stranger's role off this connection's row.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const _b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+    void _b;
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+    const before = await getConnectionRoles(a.exec);
+
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await applyCrdtOp(a.exec, {
+      v: 1,
+      kind: 'connection.role.set',
+      setterPubkey: 'ee'.repeat(32), // stranger
+      role: 'feminine',
+      setAt: 1_900_000_000,
+    });
+
+    const after = await getConnectionRoles(a.exec);
+    expect(after).toEqual(before); // unchanged
   });
 });

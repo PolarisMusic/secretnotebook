@@ -55,6 +55,14 @@ const sampleNotePublish: CrdtOp = {
   publishedAt: 1_700_000_500,
 };
 
+const sampleConnectionRoleSet: CrdtOp = {
+  v: 1,
+  kind: 'connection.role.set',
+  setterPubkey: '44'.repeat(32),
+  role: 'masculine',
+  setAt: 1_700_000_600,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
@@ -91,6 +99,20 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
     expect(() =>
       CrdtOpSchema.parse({ ...sampleNotePublish, publishedGlobalPostId: 'not-a-uuid' }),
     ).toThrow();
+  });
+
+  it('round-trips a connection.role.set op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleConnectionRoleSet))).toEqual(sampleConnectionRoleSet);
+  });
+
+  it('rejects a role outside the masculine/feminine/neutral enum', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleConnectionRoleSet, role: 'something-else' }),
+    ).toThrow();
+  });
+
+  it('rejects a non-32-byte setterPubkey', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleConnectionRoleSet, setterPubkey: 'ab' })).toThrow();
   });
 });
 
