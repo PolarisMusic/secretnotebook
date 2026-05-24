@@ -39,6 +39,7 @@ describe('runMigrations', () => {
       'notes',
       'note-publish-cols',
       'connection-roles',
+      'entitlement',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -70,6 +71,7 @@ describe('runMigrations', () => {
       'notes',
       'note-publish-cols',
       'connection-roles',
+      'entitlement',
     ]);
   });
 

@@ -256,11 +256,23 @@ export async function publishNote(
   deps: NoteStoreDeps,
   id: string,
   publishToGlobalFeed: PublishToGlobalFeed,
-  opts: { contentType?: 'text' | 'link' } = {},
+  opts: {
+    contentType?: 'text' | 'link';
+    /** Resolves when the device has a current IAP entitlement,
+     *  throws otherwise (paywall surface). Optional so unit tests
+     *  that don't care about the gate can pass nothing; the
+     *  production wiring passes
+     *  `() => requireCurrentEntitlement(exec).then(() => undefined)`. */
+    requireEntitlement?: () => Promise<void>;
+  } = {},
 ): Promise<PublishNoteResult> {
   const row = await getNoteInternal(deps.exec, id);
   if (!row) throw new Error(`publishNote: no note with id ${id}`);
   if (row.publishedAt != null && row.publishedGlobalPostId != null) {
+    // Idempotent re-call short-circuits before the entitlement
+    // check too — if a note is already public, surfacing the
+    // existing post id should not depend on the user's current
+    // subscription state.
     return { globalPostId: row.publishedGlobalPostId, publishedAt: row.publishedAt };
   }
   if (row.body == null) {
@@ -269,6 +281,12 @@ export async function publishNote(
   // Author-only: byte-compare local self-pubkey to the row's author.
   if (!sameBytes(row.authorPubkey, deps.selfPubkey)) {
     throw new Error(`publishNote: only the author can publish their own note`);
+  }
+  // R5 paywall: if a gate is supplied, it must resolve before we
+  // hit the server. A throw here propagates to the caller and
+  // local state stays untouched.
+  if (opts.requireEntitlement) {
+    await opts.requireEntitlement();
   }
 
   const { id: globalPostId } = await publishToGlobalFeed({

@@ -31,6 +31,8 @@ import {
   setMyRole,
   type RoleStoreDeps,
 } from '../src/features/connection/role-store';
+import { cacheReceipt, requireCurrentEntitlement } from '../src/features/iap/store';
+import { fixedValidator } from './helpers/iap-validators';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 const ROOT_KEY = new Uint8Array(32).fill(0xab);
@@ -591,5 +593,136 @@ describe('Phase-1.5 R4 — connection roles', () => {
 
     const after = await getConnectionRoles(a.exec);
     expect(after).toEqual(before); // unchanged
+  });
+});
+
+/**
+ * R5 layers IAP gating on top of R3's publish flow:
+ *   - publish without a current entitlement throws BEFORE the
+ *     network call; no public post is created, no local state
+ *     changes, no op is enqueued
+ *   - publish with a valid entitlement walks the full R3 path
+ *   - the gate is a callback so unit tests stay shallow; the
+ *     production wiring threads `() => requireCurrentEntitlement(exec)`
+ */
+describe('Phase-1.5 R5 — publish is IAP-gated', () => {
+  const PUBLIC_POST_ID = 'feedface-feed-4ace-8ace-feedfacefeed';
+  const PRODUCT = 'sn.publish.monthly';
+  const NOW_SEC = Math.floor(FIXED_NOW.getTime() / 1000);
+
+  function fakePublish(id = PUBLIC_POST_ID): PublishToGlobalFeed {
+    return async () => ({ id });
+  }
+
+  async function seedEntitlement(side: Side, expiresAt: number): Promise<void> {
+    await cacheReceipt(
+      {
+        exec: side.exec,
+        validator: fixedValidator({ productId: PRODUCT, expiresAt }),
+        now: () => FIXED_NOW,
+      },
+      new Uint8Array([0x01, 0x02, 0x03]),
+      'ios',
+    );
+  }
+
+  function entitlementGate(side: Side): () => Promise<void> {
+    return async () => {
+      await requireCurrentEntitlement(side.exec, () => FIXED_NOW);
+    };
+  }
+
+  it('blocks publish on a device with no cached entitlement; local state untouched', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'should not ship');
+    await syncBoth(a, b);
+
+    let postCalls = 0;
+    const publish: PublishToGlobalFeed = async () => {
+      postCalls += 1;
+      return { id: PUBLIC_POST_ID };
+    };
+
+    await expect(
+      publishNote(noteDeps(a, A_PUB), note.id, publish, {
+        requireEntitlement: entitlementGate(a),
+      }),
+    ).rejects.toThrow(/no entitlement cached/);
+
+    // Network never called, no op on the wire, no published_* on either side.
+    expect(postCalls).toBe(0);
+    await syncBoth(a, b);
+    expect((await getNote(a.exec, note.id))?.publishedAt).toBeNull();
+    expect((await getNote(b.exec, note.id))?.publishedAt).toBeNull();
+  });
+
+  it('blocks publish when the cached entitlement has expired', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const _b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+    void _b;
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'expired sub');
+    await seedEntitlement(a, NOW_SEC - 1);
+
+    await expect(
+      publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+        requireEntitlement: entitlementGate(a),
+      }),
+    ).rejects.toThrow(/subscription expired/);
+
+    expect((await getNote(a.exec, note.id))?.publishedAt).toBeNull();
+  });
+
+  it('lets publish through when the cached entitlement is current; full R3 round-trip lands on B', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'paid up + going public');
+    await syncBoth(a, b);
+    await seedEntitlement(a, NOW_SEC + 30 * 86_400);
+
+    const result = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+      requireEntitlement: entitlementGate(a),
+    });
+    expect(result.globalPostId).toBe(PUBLIC_POST_ID);
+
+    await syncBoth(a, b);
+    expect((await getNote(b.exec, note.id))?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+  });
+
+  it('an already-published note is idempotent and skips the entitlement check on the re-call', async () => {
+    // Republishing should not require an active subscription: the
+    // public post already exists, the gate has no work to do, and
+    // a subscriber whose plan lapsed shouldn't lose visibility
+    // into their own already-public post.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const _b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+    void _b;
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'one-time publish');
+    await seedEntitlement(a, NOW_SEC + 100);
+    const first = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+      requireEntitlement: entitlementGate(a),
+    });
+
+    // Now simulate the entitlement expiring AFTER the original
+    // publish. Re-call publishNote with a gate that would throw
+    // if consulted.
+    await seedEntitlement(a, NOW_SEC - 1);
+    const gateCalls: number[] = [];
+    const second = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish(), {
+      requireEntitlement: async () => {
+        gateCalls.push(1);
+        throw new Error('gate should not have been consulted');
+      },
+    });
+    expect(gateCalls).toHaveLength(0);
+    expect(second.globalPostId).toBe(first.globalPostId);
   });
 });

@@ -5,6 +5,7 @@ import { sql as renameCoupleToConnectionSql } from './005-rename-couple-to-conne
 import { sql as notesSql } from './006-notes';
 import { sql as notePublishColsSql } from './007-note-publish-cols';
 import { sql as connectionRolesSql } from './008-connection-roles';
+import { sql as entitlementSql } from './009-entitlement';
 
 export interface Migration {
   readonly id: number;
@@ -22,4 +23,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 6, name: 'notes', sql: notesSql },
   { id: 7, name: 'note-publish-cols', sql: notePublishColsSql },
   { id: 8, name: 'connection-roles', sql: connectionRolesSql },
+  { id: 9, name: 'entitlement', sql: entitlementSql },
 ];
