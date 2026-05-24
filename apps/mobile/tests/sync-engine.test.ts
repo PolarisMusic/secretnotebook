@@ -438,8 +438,14 @@ describe('SyncEngine — outbox retry on POST failure', () => {
   });
 });
 
-describe('CrdtOp dispatch — ledger_entry.add', () => {
-  it('applies a ledger_entry.add op to the ledger_entry table', async () => {
+describe('CrdtOp dispatch — retired ledger_entry.add (R6.2)', () => {
+  it('swallows a stale ledger_entry.add as a projector no-op — relay envelope still gets delivered + deleted (no infinite retry)', async () => {
+    // R0 retired the only writer of ledger_entry rows; R6.2 keeps
+    // the schema in the union so a stale envelope from a pre-R6.2
+    // client still parses (otherwise pull would loop on it until
+    // TTL eviction) but the projector inserts NOTHING. We assert
+    // both halves: no row inserted, AND the relay envelope is
+    // gone after pull (proving the no-op path completed cleanly).
     const relay = new FakeRelay();
     const { a, b } = await pair(relay);
     const op: CrdtOp = {
@@ -454,10 +460,11 @@ describe('CrdtOp dispatch — ledger_entry.add', () => {
     };
     await a.engine.enqueue(op);
     await a.engine.flush();
+    expect(relay.rows).toHaveLength(1);
+
     await b.engine.pull();
-    const rows = await b.exec.query<{ id: string; delta: number; reason: string }>(
-      'SELECT id, delta, reason FROM ledger_entry',
-    );
-    expect(rows).toEqual([{ id: op.id, delta: 25, reason: 'completed-loop' }]);
+    const rows = await b.exec.query<{ id: string }>(`SELECT id FROM ledger_entry`);
+    expect(rows).toEqual([]);
+    expect(relay.rows).toHaveLength(0);
   });
 });

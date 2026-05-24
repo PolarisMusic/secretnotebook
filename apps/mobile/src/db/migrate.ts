@@ -16,6 +16,30 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 `;
 
 /**
+ * Split a multi-statement SQL block into individual statements. This
+ * exists because some op-sqlite versions (and historically a number
+ * of other SQLite-binding shims) only run the FIRST statement of a
+ * multi-statement string passed to `db.execute()`. Migrations 005 +
+ * 007 + 008 are multi-statement (multiple ALTER TABLEs in one
+ * migration); if the runner relied on executor multi-statement
+ * support, those migrations would partially apply on device while
+ * passing every Jest test (better-sqlite3 handles multi-statement
+ * fine, so tests don't catch it).
+ *
+ * The split is on `;` followed by a newline, which is the
+ * statement-terminator convention every migration in this tree
+ * follows. It does NOT handle semicolons inside string literals —
+ * if a future migration needs that, switch to a sqlite-tokeniser
+ * split (or change Migration.sql to `string[]`).
+ */
+function splitStatements(sql: string): string[] {
+  return sql
+    .split(/;\s*(?:\r?\n|$)/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/**
  * Apply every pending migration in order. Each migration is wrapped in a
  * transaction so a partial failure rolls back cleanly. Idempotent: rerunning
  * does nothing once everything is applied.
@@ -24,7 +48,9 @@ export async function runMigrations(
   exec: SqlExecutor,
   migrations: ReadonlyArray<Migration> = MIGRATIONS,
 ): Promise<MigrationResult> {
-  await exec.executeBatch(META_TABLE_DDL);
+  for (const statement of splitStatements(META_TABLE_DDL)) {
+    await exec.executeBatch(statement);
+  }
 
   const rows = await exec.query<{ id: number }>('SELECT id FROM schema_migrations');
   const appliedIds = new Set(rows.map((r) => r.id));
@@ -44,8 +70,11 @@ export async function runMigrations(
       alreadyApplied.push(m);
       continue;
     }
+    const statements = splitStatements(m.sql);
     await exec.transaction(async () => {
-      await exec.executeBatch(m.sql);
+      for (const statement of statements) {
+        await exec.executeBatch(statement);
+      }
       await exec.execute('INSERT INTO schema_migrations (id, name) VALUES (?, ?)', [m.id, m.name]);
     });
     applied.push(m);

@@ -294,6 +294,22 @@ export async function publishNote(
     await opts.requireEntitlement();
   }
 
+  // R6.2: if this is a secret note that hasn't been revealed yet,
+  // auto-reveal first. Publishing a note to the global feed is
+  // strictly more public than revealing it to the partner, so
+  // there's no consent leak — but without this step the partner
+  // would receive a `note.publish` op on a row whose body is still
+  // NULL (the announce went through, the reveal never did), and
+  // they'd see a "published" note with no substance locally. The
+  // reveal op + publish op then ride the ratchet in order so the
+  // partner's projector first fills the body, then stamps
+  // published_*. Idempotent: revealSecretNote short-circuits if
+  // already revealed, so calling this on a shared note or an
+  // already-revealed secret is a no-op.
+  if (row.kind === 'secret' && row.revealedAt == null) {
+    await revealSecretNote(deps, id);
+  }
+
   const { id: globalPostId } = await publishToGlobalFeed({
     contentType: opts.contentType ?? 'text',
     body: row.body,

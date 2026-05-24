@@ -5,7 +5,7 @@
     { "path": "./apps/mobile" },
     { "path": "./packages/shared-types" },
     { "path": "./packages/crypto" },
-    { "path": "./packages/couple-protocol" },
+    { "path": "./packages/connection-protocol" },
     { "path": "./packages/prompt-library" }
   ]
 }

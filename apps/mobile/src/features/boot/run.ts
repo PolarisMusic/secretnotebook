@@ -11,6 +11,7 @@ import { DEFAULT_API_CONFIG } from '../api/config';
 import { useApiStore } from '../api/store';
 import { tryBuildSyncEngine } from '../connection-channel/build-engine';
 import { useSyncEngineStore } from '../connection-channel/store';
+import { restoreEntitlementOnBoot } from '../iap/restore';
 import { bootstrap, type BootDeps } from './bootstrap';
 import { useBootStore } from './store';
 
@@ -56,6 +57,21 @@ export async function runBoot(): Promise<void> {
       });
       useSyncEngineStore.getState().setEngine(engine);
     }
+
+    // R5 publish gate restore. Boot calls the seam unconditionally
+    // with `bridge: null` for now — the function returns
+    // `{cached: null, reason: 'no-bridge'}` cleanly, so the rest
+    // of boot is unaffected. When a real ReceiptBridge
+    // implementation lands (react-native-iap wrapper / server-
+    // verifyReceipt fan-out), the bridge swap is a single argument
+    // here. Without this call, no slice ever populates the
+    // entitlement table and the publish gate degenerates to
+    // "always blocked."
+    await restoreEntitlementOnBoot({
+      exec: result.executor,
+      validator: { validate: async () => ({ productId: '', expiresAt: 0 }) },
+      bridge: null,
+    });
 
     boot.succeed();
   } catch (e) {

@@ -248,8 +248,13 @@ export class SyncEngine {
     // Single transaction: apply the op, mark the envelope seen, save
     // the bumped ratchet. If any step throws the runner rolls back —
     // we'd rather replay than half-apply.
+    //
+    // `peerPub` is passed as the sender identity: every op that
+    // arrives on this ratchet half was encrypted by the peer, so any
+    // author / setter field carried by the op MUST match. The
+    // projector enforces this per kind and throws on mismatch.
     await this.deps.exec.transaction(async () => {
-      await applyCrdtOp(this.deps.exec, op);
+      await applyCrdtOp(this.deps.exec, op, this.deps.peerPub);
       await markEnvelopeSeen(this.deps.exec, hash);
       await saveRatchet(this.deps.exec, this.deps.connectionId, state);
     });
