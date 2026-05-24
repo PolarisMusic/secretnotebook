@@ -47,6 +47,14 @@ const sampleNoteSecretReveal: CrdtOp = {
   revealedAt: 1_700_000_400,
 };
 
+const sampleNotePublish: CrdtOp = {
+  v: 1,
+  kind: 'note.publish',
+  id: '77777777-7777-7777-7777-777777777777',
+  publishedGlobalPostId: '88888888-8888-8888-8888-888888888888',
+  publishedAt: 1_700_000_500,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
@@ -73,6 +81,16 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
 
   it('round-trips a note.secret.reveal op byte-for-byte', () => {
     expect(deserialiseOp(serialiseOp(sampleNoteSecretReveal))).toEqual(sampleNoteSecretReveal);
+  });
+
+  it('round-trips a note.publish op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNotePublish))).toEqual(sampleNotePublish);
+  });
+
+  it('rejects a non-uuid publishedGlobalPostId', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleNotePublish, publishedGlobalPostId: 'not-a-uuid' }),
+    ).toThrow();
   });
 });
 

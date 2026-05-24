@@ -1,4 +1,5 @@
 import type {
+  NotePublishOp,
   NoteSecretAnnounceOp,
   NoteSecretRevealOp,
   NoteShareAddOp,
@@ -22,6 +23,12 @@ export interface NoteRow {
   /** Set once a reveal op has been applied. Stays NULL on the
    *  author's local row until they call revealSecretNote(). */
   revealedAt: number | null;
+  /** Set once the note has been promoted to a public post via
+   *  publishNote. NULL means "still private to this connection." */
+  publishedAt: number | null;
+  /** UUID of the resulting public post on the global feed.
+   *  Co-NULL with publishedAt. */
+  publishedGlobalPostId: string | null;
 }
 
 interface RawNoteRow {
@@ -31,6 +38,8 @@ interface RawNoteRow {
   body: string | null;
   created_at: number;
   revealed_at: number | null;
+  published_at: number | null;
+  published_global_post_id: string | null;
 }
 
 function bytesFromRow(value: Uint8Array | ArrayBufferLike): Uint8Array {
@@ -46,8 +55,13 @@ function rowOf(r: RawNoteRow): NoteRow {
     body: r.body,
     createdAt: r.created_at,
     revealedAt: r.revealed_at,
+    publishedAt: r.published_at,
+    publishedGlobalPostId: r.published_global_post_id,
   };
 }
+
+const NOTE_SELECT = `id, kind, author_pubkey, body, created_at, revealed_at,
+                     published_at, published_global_post_id`;
 
 /**
  * Anything the note store needs from the host: SQL access for the
@@ -63,9 +77,30 @@ export interface NoteStoreDeps {
   readonly exec: SqlExecutor;
   readonly selfPubkey: Uint8Array;
   readonly enqueue: (
-    op: NoteShareAddOp | NoteSecretAnnounceOp | NoteSecretRevealOp,
+    op: NoteShareAddOp | NoteSecretAnnounceOp | NoteSecretRevealOp | NotePublishOp,
   ) => Promise<void>;
   readonly now?: () => Date;
+}
+
+/**
+ * Caller-supplied capability for promoting a note to a public post.
+ * The store keeps publish out of its own dependency graph so the unit
+ * tests don't need an ApiClient — the production wiring passes
+ * `(input) => apiClient.submitPost(input)`, the tests pass a
+ * jest.fn() that returns a canned id.
+ */
+export type PublishToGlobalFeed = (input: {
+  contentType: 'text' | 'link';
+  body: string;
+}) => Promise<{ id: string }>;
+
+export interface PublishNoteResult {
+  /** id of the resulting public post. Same value lands in
+   *  row.publishedGlobalPostId after the projector applies the op. */
+  globalPostId: string;
+  /** Wall-clock seconds stamped on the row + propagated to the
+   *  partner via the publish op. */
+  publishedAt: number;
 }
 
 function nowSec(deps: NoteStoreDeps): number {
@@ -73,12 +108,7 @@ function nowSec(deps: NoteStoreDeps): number {
 }
 
 async function getNoteInternal(exec: SqlExecutor, id: string): Promise<NoteRow | null> {
-  const rows = await exec.query<RawNoteRow>(
-    `SELECT id, kind, author_pubkey, body, created_at, revealed_at
-       FROM note
-      WHERE id = ?`,
-    [id],
-  );
+  const rows = await exec.query<RawNoteRow>(`SELECT ${NOTE_SELECT} FROM note WHERE id = ?`, [id]);
   const row = rows[0];
   return row ? rowOf(row) : null;
 }
@@ -182,11 +212,96 @@ export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise
 /** Newest first, both kinds. Powers the (forthcoming) Notes screen. */
 export async function listNotes(exec: SqlExecutor): Promise<NoteRow[]> {
   const rows = await exec.query<RawNoteRow>(
-    `SELECT id, kind, author_pubkey, body, created_at, revealed_at
+    `SELECT ${NOTE_SELECT}
        FROM note
       ORDER BY created_at DESC, id DESC`,
   );
   return rows.map(rowOf);
+}
+
+/**
+ * Promote a note to a public post on the global feed. Author-only:
+ * the local row's `author_pubkey` must equal `deps.selfPubkey`,
+ * since the publisher's anon-author identity is the one stamped on
+ * the resulting public post (server-side); allowing the partner to
+ * publish would split the authorship across people in a way that
+ * the public-feed UI can't reflect.
+ *
+ * Sequence:
+ *   1. Validate locally — body filled, not yet published, I'm the
+ *      author.
+ *   2. Call publishToGlobalFeed OUTSIDE any DB transaction. The
+ *      network call may take seconds; holding a write lock for it
+ *      blocks the rest of the engine and starves the outbox/pull
+ *      cycle. If the server rejects, throw — local state untouched.
+ *   3. On success, run the local UPDATE + outbox enqueue INSIDE a
+ *      transaction. The server has already accepted the post by the
+ *      time we get here; the only failures left are local I/O,
+ *      which are caught by the txn rollback so the row stays
+ *      consistent.
+ *
+ * Recovery story for the "POST succeeded but local txn failed"
+ * gap: the resulting public post is still on the server and visible
+ * to everyone; the local note row just won't show the "published"
+ * marker. The user can re-call publishNote, which will round-trip
+ * a second POST — duplicate by content but with a different
+ * global_post_id. R4+ can add an idempotency token to the server
+ * to suppress that; R3 accepts the duplicate as a tail-risk.
+ *
+ * Idempotent in the success path: a second call after
+ * published_at is set returns the existing globalPostId without a
+ * new POST or op.
+ */
+export async function publishNote(
+  deps: NoteStoreDeps,
+  id: string,
+  publishToGlobalFeed: PublishToGlobalFeed,
+  opts: { contentType?: 'text' | 'link' } = {},
+): Promise<PublishNoteResult> {
+  const row = await getNoteInternal(deps.exec, id);
+  if (!row) throw new Error(`publishNote: no note with id ${id}`);
+  if (row.publishedAt != null && row.publishedGlobalPostId != null) {
+    return { globalPostId: row.publishedGlobalPostId, publishedAt: row.publishedAt };
+  }
+  if (row.body == null) {
+    throw new Error(`publishNote: cannot publish a note whose body is not local`);
+  }
+  // Author-only: byte-compare local self-pubkey to the row's author.
+  if (!sameBytes(row.authorPubkey, deps.selfPubkey)) {
+    throw new Error(`publishNote: only the author can publish their own note`);
+  }
+
+  const { id: globalPostId } = await publishToGlobalFeed({
+    contentType: opts.contentType ?? 'text',
+    body: row.body,
+  });
+
+  const publishedAt = nowSec(deps);
+  await deps.exec.transaction(async () => {
+    await deps.exec.execute(
+      `UPDATE note
+          SET published_at             = ?,
+              published_global_post_id = ?
+        WHERE id                       = ?
+          AND published_at IS NULL`,
+      [publishedAt, globalPostId, id],
+    );
+    await deps.enqueue({
+      v: 1,
+      kind: 'note.publish',
+      id,
+      publishedGlobalPostId: globalPostId,
+      publishedAt,
+    });
+  });
+
+  return { globalPostId, publishedAt };
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 export async function getNote(exec: SqlExecutor, id: string): Promise<NoteRow | null> {

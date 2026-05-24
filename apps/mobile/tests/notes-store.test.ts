@@ -1,5 +1,6 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 import type {
+  NotePublishOp,
   NoteSecretAnnounceOp,
   NoteSecretRevealOp,
   NoteShareAddOp,
@@ -12,10 +13,12 @@ import { MIGRATIONS } from '../src/db/migrations';
 import {
   getNote,
   listNotes,
+  publishNote,
   revealSecretNote,
   writeSecretNote,
   writeSharedNote,
   type NoteStoreDeps,
+  type PublishToGlobalFeed,
 } from '../src/features/notes/store';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
@@ -23,7 +26,7 @@ const SELF_PUBKEY = new Uint8Array(32).fill(0x33);
 const FIXED_NOW = new Date('2026-05-21T08:00:00.000Z');
 const FIXED_NOW_SEC = Math.floor(FIXED_NOW.getTime() / 1000);
 
-type EnqueuedOp = NoteShareAddOp | NoteSecretAnnounceOp | NoteSecretRevealOp;
+type EnqueuedOp = NoteShareAddOp | NoteSecretAnnounceOp | NoteSecretRevealOp | NotePublishOp;
 
 interface Harness {
   deps: NoteStoreDeps;
@@ -166,6 +169,107 @@ describe('notes store', () => {
       expect(rows.map((r) => r.id).sort()).toEqual([a.id, b.id, c.id].sort());
       expect(rows.some((r) => r.kind === 'shared')).toBe(true);
       expect(rows.some((r) => r.kind === 'secret')).toBe(true);
+    });
+  });
+
+  describe('publishNote', () => {
+    const GLOBAL_POST_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    function fakePublish(id = GLOBAL_POST_ID): jest.Mock<PublishToGlobalFeed> {
+      return jest.fn(async (_input) => ({ id }));
+    }
+
+    it('POSTs the body, stamps published_* locally, and enqueues a note.publish op', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSharedNote(deps, 'going public');
+      enqueued.length = 0;
+      const publish = fakePublish();
+
+      const result = await publishNote(deps, note.id, publish);
+      expect(result.globalPostId).toBe(GLOBAL_POST_ID);
+      expect(result.publishedAt).toBe(FIXED_NOW_SEC);
+      expect(publish).toHaveBeenCalledWith({ contentType: 'text', body: 'going public' });
+
+      const updated = await getNote(deps.exec, note.id);
+      expect(updated?.publishedAt).toBe(FIXED_NOW_SEC);
+      expect(updated?.publishedGlobalPostId).toBe(GLOBAL_POST_ID);
+
+      expect(enqueued).toHaveLength(1);
+      const op = enqueued[0] as NotePublishOp;
+      expect(op.kind).toBe('note.publish');
+      expect(op.id).toBe(note.id);
+      expect(op.publishedGlobalPostId).toBe(GLOBAL_POST_ID);
+      expect(op.publishedAt).toBe(FIXED_NOW_SEC);
+    });
+
+    it('honours the contentType opt (text vs link)', async () => {
+      const { deps } = await freshHarness();
+      const note = await writeSharedNote(deps, 'https://example.com');
+      const publish = fakePublish();
+      await publishNote(deps, note.id, publish, { contentType: 'link' });
+      expect(publish).toHaveBeenCalledWith({ contentType: 'link', body: 'https://example.com' });
+    });
+
+    it('is idempotent: a second call returns the existing globalPostId without POSTing or enqueueing', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSharedNote(deps, 'once');
+      const publish = fakePublish();
+      const first = await publishNote(deps, note.id, publish);
+      enqueued.length = 0;
+      publish.mockClear();
+
+      const second = await publishNote(deps, note.id, publish);
+      expect(publish).not.toHaveBeenCalled();
+      expect(enqueued).toHaveLength(0);
+      expect(second.globalPostId).toBe(first.globalPostId);
+      expect(second.publishedAt).toBe(first.publishedAt);
+    });
+
+    it('leaves local state untouched if the POST throws', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSharedNote(deps, 'will fail');
+      enqueued.length = 0;
+      const publish: jest.Mock<PublishToGlobalFeed> = jest.fn(async () => {
+        throw new Error('server said no');
+      });
+
+      await expect(publishNote(deps, note.id, publish)).rejects.toThrow(/server said no/);
+      const after = await getNote(deps.exec, note.id);
+      expect(after?.publishedAt).toBeNull();
+      expect(after?.publishedGlobalPostId).toBeNull();
+      expect(enqueued).toHaveLength(0);
+    });
+
+    it('throws on a missing note id', async () => {
+      const { deps } = await freshHarness();
+      await expect(
+        publishNote(deps, '00000000-0000-4000-8000-000000000000', fakePublish()),
+      ).rejects.toThrow(/no note with id/);
+    });
+
+    it('throws when the local row has no body (partner-side secret pre-reveal)', async () => {
+      const { deps } = await freshHarness();
+      const id = '22222222-2222-4222-8222-222222222222';
+      await deps.exec.execute(
+        `INSERT INTO note (id, kind, author_pubkey, body, created_at)
+         VALUES (?, 'secret', ?, NULL, ?)`,
+        [id, SELF_PUBKEY, FIXED_NOW_SEC],
+      );
+      await expect(publishNote(deps, id, fakePublish())).rejects.toThrow(/body is not local/);
+    });
+
+    it('refuses non-author publish (row.author_pubkey != self)', async () => {
+      const { deps } = await freshHarness();
+      const otherPubkey = new Uint8Array(32).fill(0xee);
+      const id = '33333333-3333-4333-8333-333333333333';
+      await deps.exec.execute(
+        `INSERT INTO note (id, kind, author_pubkey, body, created_at)
+         VALUES (?, 'shared', ?, ?, ?)`,
+        [id, otherPubkey, 'not mine to publish', FIXED_NOW_SEC],
+      );
+      await expect(publishNote(deps, id, fakePublish())).rejects.toThrow(
+        /only the author can publish/,
+      );
     });
   });
 });

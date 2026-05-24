@@ -72,5 +72,20 @@ export async function applyCrdtOp(exec: SqlExecutor, op: CrdtOp): Promise<void> 
         [op.body, op.revealedAt, op.id],
       );
       return;
+
+    case 'note.publish':
+      // First publish wins. Mirrors the author's local UPDATE so
+      // both sides agree on published_at + published_global_post_id.
+      // Replays and hostile re-publish attempts no-op against the
+      // WHERE published_at IS NULL guard.
+      await exec.execute(
+        `UPDATE note
+            SET published_at             = ?,
+                published_global_post_id = ?
+          WHERE id                       = ?
+            AND published_at IS NULL`,
+        [op.publishedAt, op.publishedGlobalPostId, op.id],
+      );
+      return;
   }
 }

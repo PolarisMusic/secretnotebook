@@ -103,12 +103,35 @@ export const NoteSecretRevealOpSchema = z.object({
 });
 export type NoteSecretRevealOp = z.infer<typeof NoteSecretRevealOpSchema>;
 
+/**
+ * Note has been promoted to a public post on the global feed. Mirrors
+ * the publish action across the connection so the partner's local
+ * row gets the same `published_at` + `published_global_post_id`
+ * stamping; the recipient projector UPDATEs WHERE published_at IS
+ * NULL so first publish wins and a hostile or replayed publish op
+ * cannot overwrite the existing record.
+ *
+ * Carries no body — the body is already on the public feed (and was
+ * already on both sides' local rows before publish), so the op only
+ * needs to tell the partner "this note is now public, here's the
+ * post id to follow."
+ */
+export const NotePublishOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('note.publish'),
+  id: z.string().uuid(),
+  publishedGlobalPostId: z.string().uuid(),
+  publishedAt: z.number().int().nonnegative(),
+});
+export type NotePublishOp = z.infer<typeof NotePublishOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
   NoteShareAddOpSchema,
   NoteSecretAnnounceOpSchema,
   NoteSecretRevealOpSchema,
+  NotePublishOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 

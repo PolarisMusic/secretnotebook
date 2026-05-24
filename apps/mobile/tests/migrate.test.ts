@@ -37,6 +37,7 @@ describe('runMigrations', () => {
       'drop-couple-loop',
       'rename-couple-to-connection',
       'notes',
+      'note-publish-cols',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -66,6 +67,7 @@ describe('runMigrations', () => {
       'drop-couple-loop',
       'rename-couple-to-connection',
       'notes',
+      'note-publish-cols',
     ]);
   });
 

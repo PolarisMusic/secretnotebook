@@ -19,10 +19,12 @@ import { sumConnectionPoints } from '../src/features/ledger/store';
 import {
   getNote,
   listNotes,
+  publishNote,
   revealSecretNote,
   writeSecretNote,
   writeSharedNote,
   type NoteStoreDeps,
+  type PublishToGlobalFeed,
 } from '../src/features/notes/store';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
@@ -379,5 +381,117 @@ describe('Phase-1.5 R2 — notes round-trip', () => {
     expect(onB).toHaveLength(2);
     const kinds = onB.map((n) => n.kind).sort();
     expect(kinds).toEqual(['secret', 'shared']);
+  });
+});
+
+/**
+ * R3 layers the publish flow on top of R2's notes carrier:
+ *   - publishNote calls a server-shaped capability, stamps the
+ *     local row's published_*, and emits a note.publish CRDT op
+ *   - the partner's projector mirrors the stamping on apply
+ *   - server failures roll back cleanly; published rows are
+ *     stable against hostile re-publish ops
+ */
+describe('Phase-1.5 R3 — publish-from-note', () => {
+  const PUBLIC_POST_ID = 'cafecafe-cafe-4afe-8afe-cafecafecafe';
+
+  function fakePublish(id = PUBLIC_POST_ID): PublishToGlobalFeed {
+    return async () => ({ id });
+  }
+
+  it('A publishes a shared note; after one sync B sees published_* mirrored', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'going public from A');
+    await syncBoth(a, b); // B receives the share
+
+    const result = await publishNote(noteDeps(a, A_PUB), note.id, fakePublish());
+    expect(result.globalPostId).toBe(PUBLIC_POST_ID);
+
+    // A's local row stamped immediately.
+    const onA = await getNote(a.exec, note.id);
+    expect(onA?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+    expect(onA?.publishedAt).toBe(Math.floor(FIXED_NOW.getTime() / 1000));
+
+    // B doesn't know until sync.
+    expect((await getNote(b.exec, note.id))?.publishedGlobalPostId).toBeNull();
+
+    await syncBoth(a, b);
+    const onB = await getNote(b.exec, note.id);
+    expect(onB?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+    expect(onB?.publishedAt).toBe(onA?.publishedAt);
+  });
+
+  it('A publishes a secret note after reveal; the body goes both to the relay (reveal op) and to the server (publish call)', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSecretNote(noteDeps(a, A_PUB), 'thoughts to publish');
+    await syncBoth(a, b); // B sees announce, body still NULL
+    await revealSecretNote(noteDeps(a, A_PUB), note.id);
+    await syncBoth(a, b); // B now has body
+
+    let sentBody: string | null = null;
+    const publish: PublishToGlobalFeed = async (input) => {
+      sentBody = input.body;
+      return { id: PUBLIC_POST_ID };
+    };
+    await publishNote(noteDeps(a, A_PUB), note.id, publish);
+    expect(sentBody).toBe('thoughts to publish');
+
+    await syncBoth(a, b);
+    const onB = await getNote(b.exec, note.id);
+    expect(onB?.body).toBe('thoughts to publish');
+    expect(onB?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+  });
+
+  it("when the server POST fails, neither A's row nor B's row gets the published marker", async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'doomed to fail');
+    await syncBoth(a, b);
+
+    const publishBoom: PublishToGlobalFeed = async () => {
+      throw new Error('relay 503');
+    };
+    await expect(publishNote(noteDeps(a, A_PUB), note.id, publishBoom)).rejects.toThrow(
+      /relay 503/,
+    );
+
+    await syncBoth(a, b);
+    expect((await getNote(a.exec, note.id))?.publishedAt).toBeNull();
+    expect((await getNote(b.exec, note.id))?.publishedAt).toBeNull();
+  });
+
+  it("a replayed publish op cannot overwrite an already-published row (B's pinned values survive)", async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSharedNote(noteDeps(a, A_PUB), 'first-publish wins');
+    await syncBoth(a, b);
+    await publishNote(noteDeps(a, A_PUB), note.id, fakePublish());
+    await syncBoth(a, b);
+
+    const before = await getNote(b.exec, note.id);
+    expect(before?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await applyCrdtOp(b.exec, {
+      v: 1,
+      kind: 'note.publish',
+      id: note.id,
+      publishedGlobalPostId: 'deadbeef-dead-4eef-8eef-deadbeefdead',
+      publishedAt: 1_900_000_000,
+    });
+
+    const after = await getNote(b.exec, note.id);
+    expect(after?.publishedGlobalPostId).toBe(PUBLIC_POST_ID); // pinned
+    expect(after?.publishedAt).toBe(before?.publishedAt); // pinned
   });
 });
