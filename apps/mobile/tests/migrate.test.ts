@@ -36,6 +36,7 @@ describe('runMigrations', () => {
       'connection-ratchet',
       'drop-couple-loop',
       'rename-couple-to-connection',
+      'notes',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -50,6 +51,8 @@ describe('runMigrations', () => {
     // pre-rename names are gone.
     expect(names).not.toContain('couple');
     expect(names).not.toContain('couple_ratchet');
+    // Phase-1.5 R2 added the notes carrier.
+    expect(names).toContain('note');
   });
 
   it('is idempotent: re-running applies nothing', async () => {
@@ -62,6 +65,7 @@ describe('runMigrations', () => {
       'connection-ratchet',
       'drop-couple-loop',
       'rename-couple-to-connection',
+      'notes',
     ]);
   });
 

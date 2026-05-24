@@ -22,6 +22,31 @@ const sampleLedgerEntryAdd: CrdtOp = {
   createdAt: 1_700_000_100,
 };
 
+const sampleNoteShareAdd: CrdtOp = {
+  v: 1,
+  kind: 'note.share.add',
+  id: '55555555-5555-5555-5555-555555555555',
+  authorPubkey: '22'.repeat(32),
+  body: 'a thought worth sharing',
+  createdAt: 1_700_000_200,
+};
+
+const sampleNoteSecretAnnounce: CrdtOp = {
+  v: 1,
+  kind: 'note.secret.announce',
+  id: '66666666-6666-6666-6666-666666666666',
+  authorPubkey: '33'.repeat(32),
+  createdAt: 1_700_000_300,
+};
+
+const sampleNoteSecretReveal: CrdtOp = {
+  v: 1,
+  kind: 'note.secret.reveal',
+  id: '66666666-6666-6666-6666-666666666666',
+  body: 'what I was holding back',
+  revealedAt: 1_700_000_400,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
@@ -36,6 +61,39 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
   it('accepts refId === null on ledger_entry.add', () => {
     const op: CrdtOp = { ...sampleLedgerEntryAdd, refId: null };
     expect(deserialiseOp(serialiseOp(op))).toEqual(op);
+  });
+
+  it('round-trips a note.share.add op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteShareAdd))).toEqual(sampleNoteShareAdd);
+  });
+
+  it('round-trips a note.secret.announce op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteSecretAnnounce))).toEqual(sampleNoteSecretAnnounce);
+  });
+
+  it('round-trips a note.secret.reveal op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteSecretReveal))).toEqual(sampleNoteSecretReveal);
+  });
+});
+
+describe('note.secret.announce body invariant', () => {
+  // The privacy guarantee of the secret-note flow is that announce
+  // ops carry no body. Lock that into the schema: any attempt to
+  // include a `body` key, even spelt the same way as the reveal op,
+  // must be rejected so a future refactor can't silently widen the
+  // op and leak the substance.
+  it('refuses an announce op that smuggles a body key', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        ...sampleNoteSecretAnnounce,
+        body: 'should not be here',
+      }),
+    ).toThrow();
+  });
+
+  it('keeps the serialised bytes free of any extra string fields', () => {
+    const json = new TextDecoder().decode(serialiseOp(sampleNoteSecretAnnounce));
+    expect(json).not.toContain('"body"');
   });
 });
 

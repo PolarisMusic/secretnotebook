@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { bytesToHex } from '@secretnotebook/crypto';
+import { base64ToBytes, bytesToHex } from '@secretnotebook/crypto';
 import type {
   ReceivedSyncEnvelope,
   RelayDeleteResponse,
@@ -16,6 +16,14 @@ import { initAndSaveRatchet, loadRatchet } from '../src/features/connection-chan
 import { listSavedByMe } from '../src/features/connection-channel/saved-post-store';
 import { SyncEngine } from '../src/features/connection-channel/sync-engine';
 import { sumConnectionPoints } from '../src/features/ledger/store';
+import {
+  getNote,
+  listNotes,
+  revealSecretNote,
+  writeSecretNote,
+  writeSharedNote,
+  type NoteStoreDeps,
+} from '../src/features/notes/store';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 const ROOT_KEY = new Uint8Array(32).fill(0xab);
@@ -116,6 +124,57 @@ async function syncBoth(a: Side, b: Side): Promise<void> {
   await b.engine.pull();
 }
 
+function noteDeps(side: Side, selfPub: Uint8Array): NoteStoreDeps {
+  return {
+    exec: side.exec,
+    selfPubkey: selfPub,
+    now: () => FIXED_NOW,
+    enqueue: (op) => side.engine.enqueue(op),
+  };
+}
+
+interface RawOutboxEnvelope {
+  envelope: string;
+}
+
+async function outboxPlaintext(side: Side): Promise<string> {
+  const rows = await side.exec.query<RawOutboxEnvelope>(
+    `SELECT envelope FROM sync_outbox ORDER BY id ASC`,
+  );
+  return rows.map((r) => r.envelope).join('\n');
+}
+
+function relayCiphertextBlob(relay: FakeRelay): Uint8Array {
+  // Concatenate header + ciphertext bytes across every envelope so a
+  // single .includes() check can rule the marker out of the whole
+  // current wire image.
+  const chunks: Uint8Array[] = [];
+  for (const r of relay.rows) {
+    chunks.push(base64ToBytes(r.envelope.header));
+    chunks.push(base64ToBytes(r.envelope.ciphertext));
+  }
+  let total = 0;
+  for (const c of chunks) total += c.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out;
+}
+
+function bytesInclude(haystack: Uint8Array, needle: Uint8Array): boolean {
+  if (needle.length === 0) return true;
+  outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (haystack[i + j] !== needle[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
 /**
  * Phase-1.5 R0.5 acceptance harness — the minimal integration backbone
  * the rest of the refactor builds on. The pre-S9 harness drove the
@@ -176,5 +235,149 @@ describe('Phase-1.5 acceptance harness — empty-state floor', () => {
     // relay on every cycle for no reason.
     await syncBoth(a, b);
     expect(relay.rows).toEqual([]);
+  });
+});
+
+/**
+ * R2 layers the notes model on top of the empty-state floor:
+ *   - shared notes round-trip body across the connection
+ *   - secret notes split announce + reveal so the body stays off
+ *     the wire until the author chooses to publish it
+ *   - the invariant test makes the second guarantee mechanical,
+ *     not "trust the schema"
+ */
+describe('Phase-1.5 R2 — notes round-trip', () => {
+  it('A writes a shared note; after one sync cycle B sees the body', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const written = await writeSharedNote(noteDeps(a, A_PUB), 'hello from A');
+    // Locally A has it immediately.
+    expect((await getNote(a.exec, written.id))?.body).toBe('hello from A');
+    // B doesn't yet — sync hasn't run.
+    expect(await getNote(b.exec, written.id)).toBeNull();
+
+    await syncBoth(a, b);
+
+    const onB = await getNote(b.exec, written.id);
+    expect(onB).not.toBeNull();
+    expect(onB?.kind).toBe('shared');
+    expect(onB?.body).toBe('hello from A');
+    expect(bytesToHex(onB!.authorPubkey)).toBe(bytesToHex(A_PUB));
+  });
+
+  it('A announces a secret; B sees the row with body=NULL; A reveals; B then sees the body', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const written = await writeSecretNote(noteDeps(a, A_PUB), 'private thoughts');
+    expect((await getNote(a.exec, written.id))?.body).toBe('private thoughts');
+
+    await syncBoth(a, b);
+
+    const announced = await getNote(b.exec, written.id);
+    expect(announced).not.toBeNull();
+    expect(announced?.kind).toBe('secret');
+    expect(announced?.body).toBeNull(); // partner sees existence, not substance
+    expect(announced?.revealedAt).toBeNull();
+    expect(bytesToHex(announced!.authorPubkey)).toBe(bytesToHex(A_PUB));
+
+    await revealSecretNote(noteDeps(a, A_PUB), written.id);
+    await syncBoth(a, b);
+
+    const revealed = await getNote(b.exec, written.id);
+    expect(revealed?.body).toBe('private thoughts');
+    expect(revealed?.revealedAt).not.toBeNull();
+  });
+
+  it('secret bodies never appear on the wire before reveal — protocol- and byte-level checks', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const MARKER = 'SECRET_BODY_MARKER_xyzzy_42';
+    const MARKER_BYTES = new TextEncoder().encode(MARKER);
+    const written = await writeSecretNote(noteDeps(a, A_PUB), MARKER);
+
+    // Protocol-level: the outbox row carries the announce op as
+    // plaintext JSON. The marker must not be there.
+    const preFlushOutbox = await outboxPlaintext(a);
+    expect(preFlushOutbox).toContain(written.id); // sanity: the op IS there
+    expect(preFlushOutbox).not.toContain(MARKER);
+
+    await a.engine.flush();
+
+    // Byte-level: the relay has the encrypted envelope. The marker
+    // bytes must not appear anywhere in header || ciphertext.
+    expect(relay.rows).toHaveLength(1);
+    expect(bytesInclude(relayCiphertextBlob(relay), MARKER_BYTES)).toBe(false);
+
+    await b.engine.pull();
+    // B has the announce — no body yet.
+    expect((await getNote(b.exec, written.id))?.body).toBeNull();
+
+    // Reveal: now the body legitimately rides the next op. Sanity-
+    // check that it DOES appear in the outbox plaintext after the
+    // reveal call so we know the negative checks above weren't just
+    // missing it for some other reason.
+    await revealSecretNote(noteDeps(a, A_PUB), written.id);
+    const postRevealOutbox = await outboxPlaintext(a);
+    expect(postRevealOutbox).toContain(MARKER);
+
+    await syncBoth(a, b);
+    expect((await getNote(b.exec, written.id))?.body).toBe(MARKER);
+  });
+
+  it('a replayed reveal op is a no-op (does not overwrite already-revealed body)', async () => {
+    // Idempotency cover: if the same reveal op gets applied twice
+    // (e.g. envelope re-delivered for any reason), the projector
+    // WHERE clause filters it out and the body + revealed_at stay
+    // pinned to the first reveal.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const written = await writeSecretNote(noteDeps(a, A_PUB), 'first body');
+    await syncBoth(a, b);
+    await revealSecretNote(noteDeps(a, A_PUB), written.id);
+    await syncBoth(a, b);
+
+    const beforeReplay = await getNote(b.exec, written.id);
+    expect(beforeReplay?.body).toBe('first body');
+    const firstRevealedAt = beforeReplay?.revealedAt;
+    expect(firstRevealedAt).not.toBeNull();
+
+    // Re-apply the projector directly with a tampered body to prove
+    // the WHERE-clause guard holds even against a hostile op (i.e.
+    // the receiver's invariant doesn't depend on the sender behaving).
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await applyCrdtOp(b.exec, {
+      v: 1,
+      kind: 'note.secret.reveal',
+      id: written.id,
+      body: 'tampered body',
+      revealedAt: 1_900_000_000,
+    });
+
+    const afterReplay = await getNote(b.exec, written.id);
+    expect(afterReplay?.body).toBe('first body'); // unchanged
+    expect(afterReplay?.revealedAt).toBe(firstRevealedAt);
+  });
+
+  it('listNotes on B reflects both kinds after a round-trip', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await writeSharedNote(noteDeps(a, A_PUB), 'shared from A');
+    await writeSecretNote(noteDeps(a, A_PUB), 'secret from A');
+    await syncBoth(a, b);
+
+    const onB = await listNotes(b.exec);
+    expect(onB).toHaveLength(2);
+    const kinds = onB.map((n) => n.kind).sort();
+    expect(kinds).toEqual(['secret', 'shared']);
   });
 });

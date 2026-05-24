@@ -37,6 +37,7 @@ module.exports = {
     'src/features/connection-channel/ticker.ts',
     'src/features/connection-channel/uuid.ts',
     'src/features/ledger/store.ts',
+    'src/features/notes/store.ts',
     'src/features/pairing/state-machine.ts',
     'src/features/pairing/orchestrator.ts',
     'src/features/pairing/persistence.ts',

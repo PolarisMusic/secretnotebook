@@ -2,6 +2,7 @@ import { sql as initSql } from './001-init';
 import { sql as connectionRatchetSql } from './002-connection-ratchet';
 import { sql as dropCoupleLoopSql } from './004-drop-couple-loop';
 import { sql as renameCoupleToConnectionSql } from './005-rename-couple-to-connection';
+import { sql as notesSql } from './006-notes';
 
 export interface Migration {
   readonly id: number;
@@ -16,4 +17,5 @@ export const MIGRATIONS: readonly Migration[] = [
   // it describes the surface being dropped at the moment it ran.
   { id: 4, name: 'drop-couple-loop', sql: dropCoupleLoopSql },
   { id: 5, name: 'rename-couple-to-connection', sql: renameCoupleToConnectionSql },
+  { id: 6, name: 'notes', sql: notesSql },
 ];
