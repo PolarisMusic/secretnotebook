@@ -132,7 +132,6 @@ secretnotebook/
 │   ├── crypto/                  # libsodium wrappers: X25519/Ed25519/AEAD/Argon2id/HKDF/HMAC/SHA-256/base64
 │   ├── connection-protocol/     # CRDT op shapes, ratchet, blinded ID, pairing transport interface
 │   ├── shared-types/            # Zod schemas (Post, SyncEnvelope, Device, relay request/response)
-│   ├── prompt-library/          # Seed JSON of relationship-deepening prompts (stranded — Phase-1 surface deleted in R0; kept for reference until a R6+ replacement lands)
 │   ├── config-eslint/           # Shared flat ESLint preset
 │   └── config-tsconfig/         # Shared base / node / react-native tsconfig presets
 └── infra/

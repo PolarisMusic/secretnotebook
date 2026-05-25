@@ -120,7 +120,6 @@ async function freshSide(args: {
     connectionRoot: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
-    side: bytesToHex(args.selfPub) < bytesToHex(args.peerPub) ? 'a' : 'b',
     now: () => FIXED_NOW,
   });
   return { exec, engine };
@@ -370,14 +369,22 @@ describe('Phase-1.5 R2 — notes round-trip', () => {
     // Re-apply the projector directly with a tampered body to prove
     // the WHERE-clause guard holds even against a hostile op (i.e.
     // the receiver's invariant doesn't depend on the sender behaving).
+    // note.secret.reveal carries no author field — pass A_PUB as the
+    // senderPubkey since A is who would have legitimately authored
+    // the original announce; the projector won't reject on author
+    // grounds for this kind.
     const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
-    await applyCrdtOp(b.exec, {
-      v: 1,
-      kind: 'note.secret.reveal',
-      id: written.id,
-      body: 'tampered body',
-      revealedAt: 1_900_000_000,
-    });
+    await applyCrdtOp(
+      b.exec,
+      {
+        v: 1,
+        kind: 'note.secret.reveal',
+        id: written.id,
+        body: 'tampered body',
+        revealedAt: 1_900_000_000,
+      },
+      A_PUB,
+    );
 
     const afterReplay = await getNote(b.exec, written.id);
     expect(afterReplay?.body).toBe('first body'); // unchanged
@@ -484,6 +491,29 @@ describe('Phase-1.5 R3 — publish-from-note', () => {
     expect((await getNote(b.exec, note.id))?.publishedAt).toBeNull();
   });
 
+  it('publishing a secret note before revealing auto-reveals; partner converges on body AND published_*', async () => {
+    // R6.2: prevent the "partner sees published_* on a body=NULL
+    // row" strand. publishNote inlines a revealSecretNote when it
+    // sees kind='secret' && revealedAt IS NULL, so the partner
+    // receives reveal + publish in order via the ratchet.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const note = await writeSecretNote(noteDeps(a, A_PUB), 'thoughts I want to publish');
+    await syncBoth(a, b); // B has announce, body NULL
+    expect((await getNote(b.exec, note.id))?.body).toBeNull();
+
+    // Publish WITHOUT calling revealSecretNote first.
+    await publishNote(noteDeps(a, A_PUB), note.id, fakePublish());
+    await syncBoth(a, b);
+
+    const onB = await getNote(b.exec, note.id);
+    expect(onB?.body).toBe('thoughts I want to publish');
+    expect(onB?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
+    expect(onB?.revealedAt).not.toBeNull();
+  });
+
   it("a replayed publish op cannot overwrite an already-published row (B's pinned values survive)", async () => {
     const relay = new FakeRelay();
     const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
@@ -498,13 +528,17 @@ describe('Phase-1.5 R3 — publish-from-note', () => {
     expect(before?.publishedGlobalPostId).toBe(PUBLIC_POST_ID);
 
     const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
-    await applyCrdtOp(b.exec, {
-      v: 1,
-      kind: 'note.publish',
-      id: note.id,
-      publishedGlobalPostId: 'deadbeef-dead-4eef-8eef-deadbeefdead',
-      publishedAt: 1_900_000_000,
-    });
+    await applyCrdtOp(
+      b.exec,
+      {
+        v: 1,
+        kind: 'note.publish',
+        id: note.id,
+        publishedGlobalPostId: 'deadbeef-dead-4eef-8eef-deadbeefdead',
+        publishedAt: 1_900_000_000,
+      },
+      A_PUB,
+    );
 
     const after = await getNote(b.exec, note.id);
     expect(after?.publishedGlobalPostId).toBe(PUBLIC_POST_ID); // pinned
@@ -570,10 +604,13 @@ describe('Phase-1.5 R4 — connection roles', () => {
     expect((await getConnectionRoles(a.exec))?.partnerARole).toBe('neutral');
   });
 
-  it('a hostile role.set with a non-matching setterPubkey touches nothing', async () => {
-    // Apply the op directly through the projector — bypassing the
-    // store guards — to confirm the WHERE pubkey clause is what
-    // actually keeps a stranger's role off this connection's row.
+  it('a stranger-pubkey role.set arriving on the peer ratchet is rejected by the author check', async () => {
+    // Layer 1 of defense: the projector compares op.setterPubkey
+    // against senderPubkey (= peerPub on the receiving side). A
+    // stranger-pubkey op decrypted from B's ratchet half on A's
+    // device has setterPubkey ('ee'..) != B_PUB, so the check
+    // throws BEFORE touching either role column. (The legacy
+    // WHERE-pubkey-matches defense remains the fallback.)
     const relay = new FakeRelay();
     const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
     const _b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
@@ -583,16 +620,91 @@ describe('Phase-1.5 R4 — connection roles', () => {
     const before = await getConnectionRoles(a.exec);
 
     const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
-    await applyCrdtOp(a.exec, {
-      v: 1,
-      kind: 'connection.role.set',
-      setterPubkey: 'ee'.repeat(32), // stranger
-      role: 'feminine',
-      setAt: 1_900_000_000,
-    });
+    await expect(
+      applyCrdtOp(
+        a.exec,
+        {
+          v: 1,
+          kind: 'connection.role.set',
+          setterPubkey: 'ee'.repeat(32), // stranger
+          role: 'feminine',
+          setAt: 1_900_000_000,
+        },
+        B_PUB,
+      ),
+    ).rejects.toThrow(/setterPubkey does not match sender/);
 
     const after = await getConnectionRoles(a.exec);
     expect(after).toEqual(before); // unchanged
+  });
+
+  it("partner-impersonation: B sending {setterPubkey: A_PUB} on B's ratchet is rejected on A's device", async () => {
+    // The critical R6.2 fix. Without the author check, B can craft
+    // `{role.set, setterPubkey: A_PUB, role: 'feminine'}` and the
+    // legacy WHERE-pubkey-matches UPDATE happily flips A's OWN
+    // partner_a_role on A's device — because A_PUB does match
+    // partner_a_pubkey on the connection row. The senderPubkey
+    // check intercepts this: the op arrived on B's ratchet half,
+    // so senderPubkey=B_PUB, and B_PUB != A_PUB → throw.
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+
+    await setMyRole(roleDeps(a, A_PUB), 'masculine');
+    const before = await getConnectionRoles(a.exec);
+    expect(before?.partnerARole).toBe('masculine');
+
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await expect(
+      applyCrdtOp(
+        a.exec,
+        {
+          v: 1,
+          kind: 'connection.role.set',
+          setterPubkey: bytesToHex(A_PUB), // claiming to be A
+          role: 'feminine',
+          setAt: 1_900_000_000,
+        },
+        B_PUB, // but the ratchet says B
+      ),
+    ).rejects.toThrow(/setterPubkey does not match sender/);
+
+    const after = await getConnectionRoles(a.exec);
+    expect(after?.partnerARole).toBe('masculine'); // NOT flipped to feminine
+  });
+});
+
+/**
+ * R6.2 cleanup: a stale ledger_entry.add op from a pre-R6.2 client
+ * must be applied as a projector no-op (no row inserted, no error
+ * propagated to the pull loop). Without that contract, the pull
+ * loop would either burn a retry every cycle (if deserialise threw)
+ * or silently materialise an unsourced ledger row (if the projector
+ * still INSERTed).
+ */
+describe('Phase-1.5 R6.2 — retired ledger_entry.add is a projector no-op', () => {
+  it('applies cleanly and inserts no row', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+
+    const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+    await applyCrdtOp(
+      a.exec,
+      {
+        v: 1,
+        kind: 'ledger_entry.add',
+        id: '99999999-9999-4999-8999-999999999999',
+        ledgerKind: 'couple_points',
+        delta: 10,
+        reason: 'should-not-materialise',
+        refId: null,
+        createdAt: 1_900_000_000,
+      },
+      B_PUB,
+    );
+
+    expect(await sumConnectionPoints(a.exec)).toBe(0);
+    const rows = await a.exec.query<{ id: string }>(`SELECT id FROM ledger_entry`);
+    expect(rows).toEqual([]);
   });
 });
 

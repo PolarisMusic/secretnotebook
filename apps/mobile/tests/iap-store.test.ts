@@ -174,5 +174,23 @@ describe('IAP entitlement store', () => {
         /at least 4 bytes/,
       );
     });
+
+    it('round-trips a Y2038+ expiry (top byte ≥ 0x80) as an unsigned 32-bit int', async () => {
+      // The pre-R6.3 hand-rolled decode produced a signed int32
+      // and depended on a trailing `>>> 0` to coerce back. DataView
+      // makes this correct by construction. The number used here
+      // is 2_300_000_000 (~year 2042), whose top byte is 0x89 —
+      // signed-decode would have wrapped to a negative.
+      const exec = await freshExec();
+      const expiresAt = 2_300_000_000;
+      const receipt = buildReceiptWithExpiry(expiresAt);
+      const deps: IapStoreDeps = {
+        exec,
+        validator: expiryEncodedValidator(PRODUCT),
+        now: () => FIXED_NOW,
+      };
+      const stored = await cacheReceipt(deps, receipt, 'ios');
+      expect(stored.expiresAt).toBe(expiresAt);
+    });
   });
 });

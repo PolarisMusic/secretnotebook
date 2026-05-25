@@ -80,6 +80,18 @@ const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
   'saved_by_pubkey',
   'saved_for_pubkey',
   'actor_pubkey',
+  'setter_pubkey',
+  'author_pubkey',
+  'recipient_pubkey',
+  // R1 renamed couple → connection; the snake_case + camelCase
+  // variants both need explicit entries because isSensitiveKey
+  // normalises camelCase to snake_case for the lookup.
+  'couple_id',
+  'connection_id',
+  'connection_root',
+  'connection_root_key',
+  'receipt',
+  'product_id',
   'email',
   'phone',
 ]);

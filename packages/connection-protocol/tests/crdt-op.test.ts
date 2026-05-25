@@ -11,6 +11,12 @@ const sampleSavedPostAdd: CrdtOp = {
   createdAt: 1_700_000_000,
 };
 
+/**
+ * Retired in R6.2 — kept here only to ensure the schema still
+ * parses a stale envelope from a pre-R6.2 client (so pull can
+ * delete it instead of looping). The projector swallows applies
+ * as a no-op; see projector tests.
+ */
 const sampleLedgerEntryAdd: CrdtOp = {
   v: 1,
   kind: 'ledger_entry.add',
@@ -69,14 +75,12 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
     expect(deserialiseOp(bytes)).toEqual(sampleSavedPostAdd);
   });
 
-  it('round-trips a ledger_entry.add op byte-for-byte', () => {
+  it('still round-trips the retired ledger_entry.add op (pull-loop safety)', () => {
+    // Deserialise must keep working for stale envelopes, otherwise
+    // pull's catch-and-leave-on-relay path retries them every cycle
+    // until TTL. The projector treats this kind as a no-op.
     const bytes = serialiseOp(sampleLedgerEntryAdd);
     expect(deserialiseOp(bytes)).toEqual(sampleLedgerEntryAdd);
-  });
-
-  it('accepts refId === null on ledger_entry.add', () => {
-    const op: CrdtOp = { ...sampleLedgerEntryAdd, refId: null };
-    expect(deserialiseOp(serialiseOp(op))).toEqual(op);
   });
 
   it('round-trips a note.share.add op byte-for-byte', () => {
@@ -156,18 +160,8 @@ describe('CrdtOpSchema rejects malformed ops', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleSavedPostAdd, savedByPubkey: 'ab' })).toThrow();
   });
 
-  it('rejects a non-couple_points ledgerKind', () => {
-    expect(() =>
-      CrdtOpSchema.parse({ ...sampleLedgerEntryAdd, ledgerKind: 'popularity' }),
-    ).toThrow();
-  });
-
-  it('rejects a non-integer delta', () => {
+  it('rejects a non-integer delta on a stale ledger_entry.add (schema is still strict)', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleLedgerEntryAdd, delta: 1.5 })).toThrow();
-  });
-
-  it('rejects an empty reason', () => {
-    expect(() => CrdtOpSchema.parse({ ...sampleLedgerEntryAdd, reason: '' })).toThrow();
   });
 });
 

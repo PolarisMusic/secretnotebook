@@ -195,6 +195,15 @@ export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise
   if (row.revealedAt != null) return; // already revealed → idempotent no-op
   const revealedAt = nowSec(deps);
   await deps.exec.transaction(async () => {
+    // R6.3: re-read inside the txn before deciding to enqueue. Two
+    // concurrent calls would both pass the outer guard at line 195;
+    // without this re-check the second's UPDATE would no-op via
+    // WHERE revealed_at IS NULL, but the enqueue would still fire,
+    // putting a duplicate reveal op on the wire. The re-read is
+    // consistent with the UPDATE because the surrounding
+    // transaction holds a write lock for the whole sequence.
+    const fresh = await getNoteInternal(deps.exec, id);
+    if (fresh?.revealedAt != null) return;
     await deps.exec.execute(
       `UPDATE note SET revealed_at = ? WHERE id = ? AND revealed_at IS NULL`,
       [revealedAt, id],
@@ -294,6 +303,22 @@ export async function publishNote(
     await opts.requireEntitlement();
   }
 
+  // R6.2: if this is a secret note that hasn't been revealed yet,
+  // auto-reveal first. Publishing a note to the global feed is
+  // strictly more public than revealing it to the partner, so
+  // there's no consent leak — but without this step the partner
+  // would receive a `note.publish` op on a row whose body is still
+  // NULL (the announce went through, the reveal never did), and
+  // they'd see a "published" note with no substance locally. The
+  // reveal op + publish op then ride the ratchet in order so the
+  // partner's projector first fills the body, then stamps
+  // published_*. Idempotent: revealSecretNote short-circuits if
+  // already revealed, so calling this on a shared note or an
+  // already-revealed secret is a no-op.
+  if (row.kind === 'secret' && row.revealedAt == null) {
+    await revealSecretNote(deps, id);
+  }
+
   const { id: globalPostId } = await publishToGlobalFeed({
     contentType: opts.contentType ?? 'text',
     body: row.body,
@@ -301,6 +326,16 @@ export async function publishNote(
 
   const publishedAt = nowSec(deps);
   await deps.exec.transaction(async () => {
+    // R6.3: re-read inside the txn so a racing concurrent call
+    // doesn't enqueue a duplicate publish op. Without this, two
+    // concurrent publishNote(id) calls would both pass the outer
+    // `published_at != null` guard, both POST (server dedups by
+    // body_hash → same id), both enter txn; second UPDATE no-ops
+    // via WHERE but enqueue fires unconditionally. The re-read is
+    // consistent with the UPDATE because the txn holds a write
+    // lock for the whole sequence.
+    const fresh = await getNoteInternal(deps.exec, id);
+    if (fresh?.publishedAt != null) return;
     await deps.exec.execute(
       `UPDATE note
           SET published_at             = ?,

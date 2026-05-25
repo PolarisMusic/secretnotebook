@@ -79,11 +79,29 @@ function nowSec(now: (() => Date) | undefined): number {
  * rejects the receipt — the local cache is unchanged in that case
  * (no partial write, no stale state reactivated).
  */
+/** Known platforms, mirror of the schema's CHECK constraint. */
+const KNOWN_PLATFORMS: ReadonlySet<IapPlatform> = new Set(['ios', 'android']);
+
 export async function cacheReceipt(
   deps: IapStoreDeps,
   receipt: Uint8Array,
   platform: IapPlatform,
 ): Promise<EntitlementRow> {
+  // Validate `platform` up front — BEFORE invoking the validator —
+  // because validator implementations can have platform-side
+  // effects (StoreKit "finish transaction", Play Billing
+  // acknowledgePurchase) that we MUST NOT trigger for an input
+  // that's about to fail the schema CHECK. Without this guard,
+  // a typed-as-IapPlatform value passed via a runtime escape
+  // hatch (e.g. JS interop, untyped event payload) could consume
+  // the receipt on the platform side while leaving the local
+  // cache empty.
+  if (!KNOWN_PLATFORMS.has(platform)) {
+    throw new Error(`cacheReceipt: unknown platform "${platform}"`);
+  }
+  if (receipt.length === 0) {
+    throw new Error('cacheReceipt: receipt must be non-empty');
+  }
   const validated = await deps.validator.validate(receipt, platform);
   const validatedAt = nowSec(deps.now);
   await deps.exec.execute(

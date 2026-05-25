@@ -23,8 +23,13 @@ export const SavedPostAddOpSchema = z.object({
 export type SavedPostAddOp = z.infer<typeof SavedPostAddOpSchema>;
 
 /**
- * Add-only set op for a `ledger_entry` row. Same idempotency story as
- * saved_post: the row's id is the dedup key.
+ * Add-only set op for a `ledger_entry` row. **Retired in Phase-1.5 R6.2.**
+ * The only writer (`awardCouplePoints`) was deleted in R0; the
+ * schema is kept here so a stale envelope from a pre-R6.2 client
+ * still parses cleanly and gets swallowed as a projector no-op
+ * (see projector.ts) — without it, deserialiseOp would throw, pull
+ * would not delete the envelope, and it would retry every cycle
+ * until TTL eviction. New code MUST NOT emit this op.
  */
 export const LedgerEntryAddOpSchema = z.object({
   v: z.literal(1),
@@ -38,10 +43,12 @@ export const LedgerEntryAddOpSchema = z.object({
 });
 export type LedgerEntryAddOp = z.infer<typeof LedgerEntryAddOpSchema>;
 
-/** Cap on a single note's body. 4 KiB is plenty for a journal entry
- *  and small enough to keep one envelope well under the relay's
- *  payload limit. Bumped later if a richer format demands it. */
-const NOTE_BODY_MAX = 4096;
+/** Cap on a single note's body. Pinned to 4000 to match the server's
+ *  PostInputSchema.body.max(4000) so any note that fits locally can
+ *  always be promoted to the global feed without a length-rejection
+ *  surprise at publish time. Bumped together with the server cap if
+ *  a richer format demands it. */
+const NOTE_BODY_MAX = 4000;
 
 /**
  * Shared-note creation. Body travels with the op — both sides see

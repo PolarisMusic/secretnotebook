@@ -30,39 +30,36 @@ export function throwingValidator(err: Error): ReceiptValidator {
 }
 
 /** Validator that interprets the LAST 4 bytes of the receipt as
- *  a big-endian unix-seconds expiry, returning the supplied
- *  productId. Lets a single test exercise both "current" and
- *  "expired" by constructing different receipt blobs without
- *  swapping validators. */
+ *  a big-endian unsigned 32-bit unix-seconds expiry. Uses DataView
+ *  for the decode so the result is correctly unsigned for any byte
+ *  whose top bit is set (≥ 0x80) — the previous hand-rolled
+ *  `(b<<24)|...` chain produced a signed int32 and relied on a
+ *  trailing `>>> 0` to coerce back. DataView removes that
+ *  fragility. */
 export function expiryEncodedValidator(productId: string): ReceiptValidator {
   return {
     validate: async (receipt: Uint8Array, _platform: IapPlatform): Promise<ValidatedReceipt> => {
       if (receipt.length < 4) {
         throw new Error('expiryEncodedValidator: receipt must be at least 4 bytes');
       }
-      const off = receipt.length - 4;
-      const expiresAt =
-        ((receipt[off] as number) << 24) |
-        ((receipt[off + 1] as number) << 16) |
-        ((receipt[off + 2] as number) << 8) |
-        (receipt[off + 3] as number);
-      return { productId, expiresAt: expiresAt >>> 0 };
+      const view = new DataView(receipt.buffer, receipt.byteOffset, receipt.byteLength);
+      const expiresAt = view.getUint32(receipt.length - 4, false); // big-endian, unsigned
+      return { productId, expiresAt };
     },
   };
 }
 
 /** Build a receipt blob whose last 4 bytes encode the expiresAt
- *  value for the expiryEncodedValidator. Front-pads with a marker
- *  byte so receipts of different expiries don't collide on size. */
+ *  value for the expiryEncodedValidator. Uses DataView.setUint32
+ *  so encode and decode share the same primitive — the round-trip
+ *  is exact for any expiresAt in [0, 2^32-1] (year ~2106).
+ *  Front-pads with a marker byte so receipts of different
+ *  expiries don't collide on size. */
 export function buildReceiptWithExpiry(expiresAt: number, marker = 0xa5): Uint8Array {
   const r = new Uint8Array(8);
   r[0] = marker;
-  r[1] = 0x00;
-  r[2] = 0x00;
-  r[3] = 0x00;
-  r[4] = (expiresAt >>> 24) & 0xff;
-  r[5] = (expiresAt >>> 16) & 0xff;
-  r[6] = (expiresAt >>> 8) & 0xff;
-  r[7] = expiresAt & 0xff;
+  // r[1..3] left zero as padding.
+  const view = new DataView(r.buffer, r.byteOffset, r.byteLength);
+  view.setUint32(4, expiresAt, false); // big-endian, unsigned
   return r;
 }

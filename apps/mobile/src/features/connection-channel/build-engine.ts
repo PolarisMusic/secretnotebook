@@ -77,6 +77,5 @@ export async function tryBuildSyncEngine(deps: BuildEngineDeps): Promise<SyncEng
     connectionRoot: material.connectionRoot,
     selfPub,
     peerPub,
-    side: ratchet.side,
   });
 }
