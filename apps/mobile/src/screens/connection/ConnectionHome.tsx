@@ -1,44 +1,53 @@
+import { useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  Modal,
   Pressable,
-  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export interface ActivityRow {
-  readonly id: string;
-  readonly delta: number;
-  readonly reason: string;
-  readonly createdAt: number;
-}
+import type { ConnectionRole } from '../../features/connection/role-store';
 
 export interface ConnectionHomeProps {
-  readonly totalPoints: number;
-  readonly activity: ReadonlyArray<ActivityRow>;
+  /** null until first load completes. */
+  readonly myRole: ConnectionRole | null;
+  readonly partnerRole: ConnectionRole | null;
   readonly isLoading: boolean;
   readonly isRefreshing: boolean;
+  readonly busy: boolean;
+  readonly error: string | null;
   readonly onRefresh: () => void;
+  readonly onSetMyRole: (role: ConnectionRole) => Promise<void>;
   readonly onBack: () => void;
-  /** Open the saved-by-you (proto-pin) area. */
   readonly onOpenSaved?: () => void;
+  readonly onOpenNotes?: () => void;
 }
 
-function isoDate(secs: number): string {
-  return new Date(secs * 1000).toISOString().slice(0, 10);
+const ROLES: ConnectionRole[] = ['masculine', 'feminine', 'neutral'];
+
+function roleLabel(role: ConnectionRole | null): string {
+  return role ?? '— (not set)';
 }
 
 /**
- * Phase-1.5 R0 Connection Home — ledger placeholder. The Connection Points
- * accrual rules (+2 save / +10 certify / +25 loop) were retired with
- * the couple-loop cleanup; the screen survives as a shell to be
- * reframed in R6 as the Connection Home (Notes / Connection /
- * Subscription tiles).
+ * Phase-1.6 Connection Home — role tile + nav shortcuts. The
+ * Phase-1.5-R0 Connection Points tile lived here as a placeholder
+ * for the retired couple-loop ledger; it always read 0 because no
+ * writer survived the R0 cleanup. R6 replaces it with a Role tile
+ * that drives the R4 setMyRole / getConnectionRoles surface.
  */
 export function ConnectionHome(props: ConnectionHomeProps): JSX.Element {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  async function pick(role: ConnectionRole): Promise<void> {
+    setPickerOpen(false);
+    await props.onSetMyRole(role);
+  }
+
   return (
     <SafeAreaView style={styles.container} testID="screen.connection-home">
       <View style={styles.header}>
@@ -49,62 +58,106 @@ export function ConnectionHome(props: ConnectionHomeProps): JSX.Element {
         <View style={styles.headerSpacer} />
       </View>
 
-      <FlatList
-        ListHeaderComponent={
-          <View style={styles.headerBody}>
-            <View style={styles.tile} testID="connection-home.points-tile">
-              <Text style={styles.tileLabel}>Connection Points</Text>
-              <Text style={styles.tileCount}>{props.totalPoints}</Text>
-            </View>
-            <View style={styles.shortcuts}>
-              {props.onOpenSaved ? (
-                <Pressable
-                  accessibilityRole="button"
-                  testID="connection-home.open-saved"
-                  onPress={props.onOpenSaved}
-                  style={styles.shortcutButton}
-                >
-                  <Text style={styles.shortcutText}>Saved</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            <Text style={styles.sectionHeader}>Recent activity</Text>
+      <ScrollView contentContainerStyle={styles.body}>
+        {props.isLoading ? (
+          <View style={styles.center} testID="connection-home.loading">
+            <ActivityIndicator color="#f5f5f5" />
           </View>
-        }
-        data={props.activity as ActivityRow[]}
-        keyExtractor={(r) => r.id}
-        refreshControl={
-          <RefreshControl
-            refreshing={props.isRefreshing}
-            onRefresh={props.onRefresh}
-            tintColor="#f5f5f5"
-          />
-        }
-        renderItem={({ item }) => (
-          <View style={styles.row} testID={`connection-home.row.${item.id}`}>
-            <Text style={styles.rowLabel} numberOfLines={1}>
-              {item.reason}
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setPickerOpen(true)}
+            testID="connection-home.set-role"
+            style={styles.tile}
+          >
+            <Text style={styles.tileLabel}>Roles</Text>
+            <Text style={styles.tileRow} testID="connection-home.role.partner_a">
+              My role: {roleLabel(props.myRole)}
             </Text>
-            <Text style={styles.rowMeta}>
-              {isoDate(item.createdAt)} · {item.delta >= 0 ? '+' : ''}
-              {item.delta}
+            <Text style={styles.tileRow} testID="connection-home.role.partner_b">
+              Partner's role: {roleLabel(props.partnerRole)}
             </Text>
-          </View>
+            <Text style={styles.tileHint}>Tap to change · pull down to refresh</Text>
+            {props.busy ? <ActivityIndicator color="#9ec5ff" style={styles.busy} /> : null}
+          </Pressable>
         )}
-        ListEmptyComponent={
-          props.isLoading ? (
-            <View style={styles.center} testID="connection-home.loading">
-              <ActivityIndicator color="#f5f5f5" />
-            </View>
-          ) : (
-            <View style={styles.empty} testID="connection-home.empty">
-              <Text style={styles.emptyTitle}>No activity yet</Text>
-              <Text style={styles.emptyBody}>Your shared ledger lands here.</Text>
-            </View>
-          )
-        }
-        contentContainerStyle={styles.listContent}
-      />
+
+        {props.error ? (
+          <Text style={styles.errorText} testID="connection-home.error">
+            {props.error}
+          </Text>
+        ) : null}
+
+        <View style={styles.shortcuts}>
+          {props.onOpenNotes ? (
+            <Pressable
+              accessibilityRole="button"
+              testID="connection-home.open-notes"
+              onPress={props.onOpenNotes}
+              style={styles.shortcutButton}
+            >
+              <Text style={styles.shortcutText}>Notes</Text>
+            </Pressable>
+          ) : null}
+          {props.onOpenSaved ? (
+            <Pressable
+              accessibilityRole="button"
+              testID="connection-home.open-saved"
+              onPress={props.onOpenSaved}
+              style={styles.shortcutButton}
+            >
+              <Text style={styles.shortcutText}>Saved</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            testID="connection-home.refresh"
+            onPress={props.onRefresh}
+            style={styles.shortcutButton}
+          >
+            <Text style={styles.shortcutText}>
+              {props.isRefreshing ? 'Refreshing…' : 'Refresh'}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+
+      <Modal
+        visible={pickerOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <View style={styles.modalBackdrop} testID="connection-home.role-picker">
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Set my role</Text>
+            {ROLES.map((r) => (
+              <Pressable
+                key={r}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: props.myRole === r }}
+                testID={`connection-home.role.${r}`}
+                onPress={() => void pick(r)}
+                style={[styles.roleOption, props.myRole === r && styles.roleOptionActive]}
+              >
+                <Text
+                  style={[styles.roleOptionText, props.myRole === r && styles.roleOptionTextActive]}
+                >
+                  {r}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              testID="connection-home.role-picker.cancel"
+              onPress={() => setPickerOpen(false)}
+              style={styles.cancelButton}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -119,46 +172,61 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
   },
-  back: { color: '#9ec5ff', fontSize: 15 },
+  back: { color: '#9ec5ff', fontSize: 15, minWidth: 60 },
   headerTitle: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
-  headerSpacer: { width: 40 },
-  headerBody: { paddingHorizontal: 16, gap: 14 },
+  headerSpacer: { width: 60 },
+  body: { padding: 16, gap: 16 },
   tile: {
     padding: 18,
     backgroundColor: '#161616',
     borderRadius: 12,
-    gap: 6,
+    gap: 8,
   },
-  tileLabel: { color: '#9e9e9e', fontSize: 13, letterSpacing: 0.5 },
-  tileCount: { color: '#f5f5f5', fontSize: 36, fontWeight: '700' },
-  shortcuts: { flexDirection: 'row', gap: 10 },
-  shortcutButton: {
-    backgroundColor: '#1a1a1a',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  shortcutText: { color: '#9ec5ff', fontWeight: '600' },
-  sectionHeader: {
+  tileLabel: {
     color: '#9e9e9e',
     fontSize: 13,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
-    paddingTop: 8,
   },
-  listContent: { paddingBottom: 24 },
-  row: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    padding: 14,
-    backgroundColor: '#161616',
-    borderRadius: 10,
-    gap: 4,
+  tileRow: { color: '#f5f5f5', fontSize: 16 },
+  tileHint: { color: '#5e5e5e', fontSize: 12, paddingTop: 4 },
+  busy: { paddingTop: 8 },
+  shortcuts: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  shortcutButton: {
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
-  rowLabel: { color: '#f5f5f5', fontSize: 14 },
-  rowMeta: { color: '#808080', fontSize: 12 },
-  empty: { paddingTop: 24, alignItems: 'center', gap: 6, paddingHorizontal: 32 },
-  emptyTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600' },
-  emptyBody: { color: '#808080', fontSize: 13, textAlign: 'center' },
+  shortcutText: { color: '#9ec5ff', fontWeight: '600' },
+  errorText: { color: '#ffb4b4', fontSize: 13 },
   center: { paddingTop: 32, alignItems: 'center' },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: '#161616',
+    borderRadius: 14,
+    padding: 18,
+    gap: 10,
+  },
+  modalTitle: { color: '#f5f5f5', fontSize: 16, fontWeight: '600', paddingBottom: 4 },
+  roleOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#1a1a1a',
+  },
+  roleOptionActive: { backgroundColor: '#9ec5ff' },
+  roleOptionText: { color: '#f5f5f5', fontSize: 15, textTransform: 'capitalize' },
+  roleOptionTextActive: { color: '#0a0a0a', fontWeight: '600' },
+  cancelButton: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  cancelText: { color: '#9ec5ff', fontSize: 14 },
 });

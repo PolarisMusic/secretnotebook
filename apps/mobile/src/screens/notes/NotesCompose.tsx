@@ -1,0 +1,189 @@
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import type { NoteKind } from '../../features/notes/store';
+
+const MAX_LENGTH = 4000; // matches NOTE_BODY_MAX in connection-protocol
+
+export interface NotesComposeProps {
+  /** Resolves to an error string to show inline, or null on success.
+   *  Rejecting leaves the form intact with a generic message. */
+  readonly onSubmit: (input: { kind: NoteKind; body: string }) => Promise<string | null>;
+  readonly onCancel: () => void;
+}
+
+/**
+ * Presentational compose form for a new shared / secret note. The
+ * route is responsible for stitching this to writeSharedNote /
+ * writeSecretNote — this component knows nothing about the data
+ * layer.
+ */
+export function NotesCompose(props: NotesComposeProps): JSX.Element {
+  const [kind, setKind] = useState<NoteKind>('shared');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const tooShort = body.trim().length === 0;
+  const tooLong = body.length > MAX_LENGTH;
+  const canSubmit = !busy && !tooShort && !tooLong;
+
+  async function submit(): Promise<void> {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const errMessage = await props.onSubmit({ kind, body: body.trim() });
+      if (errMessage) setError(errMessage);
+    } catch (e) {
+      setError((e as Error).message ?? 'Could not save note');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.container} testID="screen.notes-compose">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.kbv}
+      >
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={props.onCancel}
+            testID="notes-compose.cancel"
+          >
+            <Text style={styles.cancel}>Cancel</Text>
+          </Pressable>
+          <Text style={styles.title}>New note</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!canSubmit}
+            onPress={submit}
+            testID="notes.submit"
+            style={[styles.submitButton, !canSubmit && styles.submitDisabled]}
+          >
+            {busy ? (
+              <ActivityIndicator color="#0a0a0a" />
+            ) : (
+              <Text style={styles.submitText}>Save</Text>
+            )}
+          </Pressable>
+        </View>
+
+        <View style={styles.radioRow}>
+          {(['shared', 'secret'] satisfies NoteKind[]).map((k) => (
+            <Pressable
+              key={k}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: kind === k }}
+              testID={`notes.kind.${k}`}
+              onPress={() => setKind(k)}
+              style={[styles.radio, kind === k && styles.radioActive]}
+            >
+              <Text style={[styles.radioText, kind === k && styles.radioTextActive]}>
+                {k === 'shared' ? 'Shared' : 'Secret'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <TextInput
+          value={body}
+          onChangeText={setBody}
+          placeholder={
+            kind === 'shared'
+              ? 'Write a note both of you can read…'
+              : 'Write a secret. Body stays on your device until you tap Reveal.'
+          }
+          placeholderTextColor="#666"
+          multiline
+          maxLength={MAX_LENGTH}
+          style={styles.input}
+          testID="notes.body"
+        />
+
+        <View style={styles.statusRow}>
+          <Text style={styles.counter}>
+            {body.length} / {MAX_LENGTH}
+          </Text>
+          {tooLong ? (
+            <Text style={styles.errorText} testID="notes-compose.too-long">
+              Body exceeds {MAX_LENGTH} characters.
+            </Text>
+          ) : null}
+          {error ? (
+            <Text style={styles.errorText} testID="notes-compose.error">
+              {error}
+            </Text>
+          ) : null}
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  kbv: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  title: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
+  cancel: { color: '#9ec5ff', fontSize: 15 },
+  submitButton: {
+    backgroundColor: '#9ec5ff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 64,
+    alignItems: 'center',
+  },
+  submitDisabled: { backgroundColor: '#2a2a2a' },
+  submitText: { color: '#0a0a0a', fontWeight: '600' },
+  radioRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  radio: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#1a1a1a',
+  },
+  radioActive: { backgroundColor: '#9ec5ff' },
+  radioText: { color: '#9e9e9e', fontWeight: '600' },
+  radioTextActive: { color: '#0a0a0a' },
+  input: {
+    flex: 1,
+    margin: 16,
+    padding: 14,
+    backgroundColor: '#161616',
+    color: '#f5f5f5',
+    fontSize: 15,
+    lineHeight: 20,
+    borderRadius: 10,
+    textAlignVertical: 'top',
+  },
+  statusRow: { paddingHorizontal: 16, paddingBottom: 16, gap: 6 },
+  counter: { color: '#666', fontSize: 12, textAlign: 'right' },
+  errorText: { color: '#ffb4b4', fontSize: 13 },
+});
