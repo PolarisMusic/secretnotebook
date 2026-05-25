@@ -5,6 +5,12 @@ import { MIGRATIONS } from './migrations';
 export interface MigrationResult {
   readonly applied: ReadonlyArray<Migration>;
   readonly alreadyApplied: ReadonlyArray<Migration>;
+  /** IDs present in `schema_migrations` on disk that DON'T appear in
+   *  the supplied `migrations` array. Phase-1.5 R0 deleted migration
+   *  003 (`roleplay-session-extra`); a device that applied it
+   *  pre-R0 still has the row. Surfaced for boot diagnostics + so a
+   *  future re-numbering or rollback mistake doesn't go silent. */
+  readonly unknownApplied: ReadonlyArray<number>;
 }
 
 const META_TABLE_DDL = `
@@ -62,6 +68,9 @@ export async function runMigrations(
     }
   }
 
+  const knownIds = new Set(sorted.map((m) => m.id));
+  const unknownApplied = [...appliedIds].filter((id) => !knownIds.has(id)).sort((a, b) => a - b);
+
   const applied: Migration[] = [];
   const alreadyApplied: Migration[] = [];
 
@@ -80,5 +89,5 @@ export async function runMigrations(
     applied.push(m);
   }
 
-  return { applied, alreadyApplied };
+  return { applied, alreadyApplied, unknownApplied };
 }

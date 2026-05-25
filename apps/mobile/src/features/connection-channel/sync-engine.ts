@@ -4,7 +4,6 @@ import {
   ratchetDecrypt,
   ratchetEncrypt,
   serialiseOp,
-  type ConnectionSide,
   type CrdtOp,
 } from '@secretnotebook/connection-protocol';
 import { base64ToBytes, bytesToBase64 } from '@secretnotebook/crypto';
@@ -46,7 +45,6 @@ export interface SyncEngineDeps {
   readonly connectionRoot: Uint8Array;
   readonly selfPub: Uint8Array;
   readonly peerPub: Uint8Array;
-  readonly side: ConnectionSide;
   /** Mostly for tests — defaults to `new Date()`. */
   readonly now?: () => Date;
   /**

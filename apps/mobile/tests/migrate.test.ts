@@ -181,4 +181,29 @@ describe('runMigrations', () => {
     // Phase-1.5 R0 dropped this index along with the unlocked_at column.
     expect(indexes).not.toContain('saved_post_for_pubkey_idx');
   });
+
+  it('reports unknown applied ids — surfaces rows from migrations the array no longer carries', async () => {
+    // Simulates the "device upgraded across R0 with id=3 still in
+    // schema_migrations" case. The runner doesn't error (extra
+    // applied rows are valid: a migration could have been deleted
+    // because its effect was later dropped by a successor), but
+    // surfaces the gap so boot diagnostics + Sentry breadcrumbs
+    // can record it.
+    const db = new Database(':memory:');
+    const exec = nodeExecutor(db);
+    await runMigrations(exec, MIGRATIONS);
+    // Sneak a row for an id we don't ship.
+    db.prepare('INSERT INTO schema_migrations (id, name) VALUES (?, ?)').run(3, 'unknown-extra');
+
+    const re = await runMigrations(exec, MIGRATIONS);
+    expect(re.applied).toEqual([]);
+    expect(re.unknownApplied).toEqual([3]);
+  });
+
+  it('returns unknownApplied=[] when every applied id is known', async () => {
+    const db = new Database(':memory:');
+    const exec = nodeExecutor(db);
+    const first = await runMigrations(exec, MIGRATIONS);
+    expect(first.unknownApplied).toEqual([]);
+  });
 });

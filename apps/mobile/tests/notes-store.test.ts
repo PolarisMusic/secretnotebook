@@ -154,6 +154,39 @@ describe('notes store', () => {
       );
       await expect(revealSecretNote(deps, id)).rejects.toThrow(/body is not local/);
     });
+
+    it('R6.3 race: if a concurrent caller marks revealed_at between the outer read and the txn body, the inner re-read short-circuits — no duplicate reveal op enqueued', async () => {
+      // The outer guard at line 195 of store.ts only catches the
+      // simple case. Two concurrent callers would both pass it,
+      // both enter the txn; without the inner re-read the second
+      // would no-op the UPDATE (via WHERE) but still enqueue a
+      // duplicate op. We simulate the race by wrapping
+      // transaction() so the FIRST call mutates the row to mark
+      // it revealed before the inner callback runs.
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSecretNote(deps, 'racey reveal');
+      enqueued.length = 0;
+
+      const realTxn = deps.exec.transaction.bind(deps.exec);
+      let raced = false;
+      const racingExec = {
+        ...deps.exec,
+        transaction: async <T>(fn: () => Promise<T>): Promise<T> => {
+          if (!raced) {
+            raced = true;
+            await deps.exec.execute(`UPDATE note SET revealed_at = ? WHERE id = ?`, [
+              FIXED_NOW_SEC - 1,
+              note.id,
+            ]);
+          }
+          return realTxn(fn);
+        },
+      };
+      const racingDeps = { ...deps, exec: racingExec };
+
+      await revealSecretNote(racingDeps, note.id);
+      expect(enqueued).toHaveLength(0);
+    });
   });
 
   describe('listNotes', () => {
@@ -317,6 +350,40 @@ describe('notes store', () => {
       expect(after?.publishedAt).toBe(FIXED_NOW_SEC);
       // Sanity: server was hit twice (once before crash, once on retry).
       expect(serverDedup).toHaveBeenCalledTimes(2);
+    });
+
+    it('R6.3 race: if a concurrent caller stamps published_at between the outer read and the txn body, the inner re-read short-circuits — no duplicate publish op enqueued', async () => {
+      // Same shape as the reveal race: two concurrent publishNote
+      // calls both pass the outer guard, both POST (server dedups
+      // by body_hash → same id), both enter txn. Without the
+      // inner re-read the second's UPDATE would no-op via WHERE
+      // but the enqueue would still fire.
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSharedNote(deps, 'racey publish');
+      enqueued.length = 0;
+      const publish = fakePublish();
+
+      const realTxn = deps.exec.transaction.bind(deps.exec);
+      let raced = false;
+      const racingExec = {
+        ...deps.exec,
+        transaction: async <T>(fn: () => Promise<T>): Promise<T> => {
+          if (!raced) {
+            raced = true;
+            await deps.exec.execute(
+              `UPDATE note
+                  SET published_at = ?, published_global_post_id = ?
+                WHERE id = ?`,
+              [FIXED_NOW_SEC - 1, 'ffffffff-ffff-4fff-8fff-ffffffffffff', note.id],
+            );
+          }
+          return realTxn(fn);
+        },
+      };
+      const racingDeps = { ...deps, exec: racingExec };
+
+      await publishNote(racingDeps, note.id, publish);
+      expect(enqueued).toHaveLength(0);
     });
   });
 });

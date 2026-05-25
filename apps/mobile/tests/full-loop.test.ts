@@ -120,7 +120,6 @@ async function freshSide(args: {
     connectionRoot: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
-    side: bytesToHex(args.selfPub) < bytesToHex(args.peerPub) ? 'a' : 'b',
     now: () => FIXED_NOW,
   });
   return { exec, engine };

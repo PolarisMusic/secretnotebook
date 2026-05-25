@@ -158,7 +158,6 @@ async function makeSide(args: {
     connectionRoot: ROOT_KEY,
     selfPub: args.selfPub,
     peerPub: args.peerPub,
-    side: bytesToHex(args.selfPub) < bytesToHex(args.peerPub) ? 'a' : 'b',
     now: () => FIXED_NOW,
   });
   return { exec, engine, selfPub: args.selfPub, peerPub: args.peerPub };
@@ -327,7 +326,6 @@ describe('SyncEngine — out-of-order delivery', () => {
       connectionRoot: ROOT_KEY,
       selfPub: B_PUB,
       peerPub: A_PUB,
-      side: 'b',
       now: () => FIXED_NOW,
     });
 
@@ -422,7 +420,6 @@ describe('SyncEngine — outbox retry on POST failure', () => {
       connectionRoot: ROOT_KEY,
       selfPub: A_PUB,
       peerPub: B_PUB,
-      side: 'a',
       now: () => FIXED_NOW,
       retryBackoffMs: 60_000,
     });
