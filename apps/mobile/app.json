@@ -52,6 +52,10 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:3000",
+      "devGrantEntitlement": "0"
+    }
   }
 }

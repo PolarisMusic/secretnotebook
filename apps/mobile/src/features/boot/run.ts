@@ -1,4 +1,5 @@
 import { getSodium } from '@secretnotebook/crypto';
+import { Platform } from 'react-native';
 
 import { openDatabase } from '../../db/client';
 import { runMigrations } from '../../db/migrate';
@@ -11,6 +12,8 @@ import { DEFAULT_API_CONFIG } from '../api/config';
 import { useApiStore } from '../api/store';
 import { tryBuildSyncEngine } from '../connection-channel/build-engine';
 import { useSyncEngineStore } from '../connection-channel/store';
+import { DEV_GRANT_ENTITLEMENT } from '../iap/config';
+import { devGrantBridge, devGrantValidator, productionValidator } from '../iap/dev-grant';
 import { restoreEntitlementOnBoot } from '../iap/restore';
 import { bootstrap, type BootDeps } from './bootstrap';
 import { useBootStore } from './store';
@@ -58,19 +61,26 @@ export async function runBoot(): Promise<void> {
       useSyncEngineStore.getState().setEngine(engine);
     }
 
-    // R5 publish gate restore. Boot calls the seam unconditionally
-    // with `bridge: null` for now — the function returns
-    // `{cached: null, reason: 'no-bridge'}` cleanly, so the rest
-    // of boot is unaffected. When a real ReceiptBridge
-    // implementation lands (react-native-iap wrapper / server-
-    // verifyReceipt fan-out), the bridge swap is a single argument
-    // here. Without this call, no slice ever populates the
-    // entitlement table and the publish gate degenerates to
-    // "always blocked."
+    // R5 publish gate restore. Two paths:
+    //
+    //   - DEV_GRANT_ENTITLEMENT=1 (tester builds): the dev-grant
+    //     bridge hands the validator a known sentinel which is
+    //     accepted unconditionally and cached for a year. Lets
+    //     internal testers exercise the publish path without a
+    //     sandbox IAP purchase.
+    //   - default (production / external testers): no bridge is
+    //     installed; restoreEntitlementOnBoot returns
+    //     `reason: 'no-bridge'`, the entitlement cache stays empty,
+    //     and the publish gate refuses with `no-entitlement` until
+    //     the real react-native-iap pipeline lands. The
+    //     productionValidator() seam is wired so any boot-side
+    //     call goes through a single throw point — easy to swap
+    //     when the real verify-receipt server is in place.
+    const platform: 'ios' | 'android' = Platform.OS === 'android' ? 'android' : 'ios';
     await restoreEntitlementOnBoot({
       exec: result.executor,
-      validator: { validate: async () => ({ productId: '', expiresAt: 0 }) },
-      bridge: null,
+      validator: DEV_GRANT_ENTITLEMENT ? devGrantValidator() : productionValidator(),
+      bridge: DEV_GRANT_ENTITLEMENT ? devGrantBridge(platform) : null,
     });
 
     boot.succeed();

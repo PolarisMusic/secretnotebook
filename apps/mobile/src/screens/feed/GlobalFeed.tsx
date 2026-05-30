@@ -26,6 +26,8 @@ export interface GlobalFeedProps {
   readonly onOpenSaved?: () => void;
   /** Optional — hidden on unpaired devices. Opens ConnectionHome. */
   readonly onOpenConnection?: () => void;
+  /** Optional — hidden on unpaired devices. Opens NotesList. */
+  readonly onOpenNotes?: () => void;
 }
 
 /**
@@ -72,6 +74,16 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
               style={styles.savedButton}
             >
               <Text style={styles.savedButtonText}>Connection</Text>
+            </Pressable>
+          ) : null}
+          {props.onOpenNotes ? (
+            <Pressable
+              accessibilityRole="button"
+              testID="feed.open-notes"
+              onPress={props.onOpenNotes}
+              style={styles.savedButton}
+            >
+              <Text style={styles.savedButtonText}>Notes</Text>
             </Pressable>
           ) : null}
           {props.onOpenSaved ? (
