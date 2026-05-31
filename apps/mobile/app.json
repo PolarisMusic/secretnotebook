@@ -7,6 +7,10 @@
     "scheme": "secretnotebook",
     "userInterfaceStyle": "dark",
     "newArchEnabled": false,
+    "splash": {
+      "backgroundColor": "#0a0a0a",
+      "resizeMode": "contain"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.secretnotebook.app",
@@ -51,7 +55,9 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "./plugins/with-android-flag-secure.js",
+      "./plugins/with-android-release-signing.js"
     ],
     "extra": {
       "apiBaseUrl": "http://localhost:3000",
