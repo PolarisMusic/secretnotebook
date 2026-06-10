@@ -20,6 +20,7 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "dependencies": {
+    "@noble/hashes": "^1.5.0",
     "libsodium-wrappers-sumo": "^0.7.15"
   },
   "peerDependencies": {
