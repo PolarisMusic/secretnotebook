@@ -1,11 +1,19 @@
 import { useNavigation, type NavigationProp } from '@react-navigation/native';
+import { useEffect } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { debugLog } from '../../debug/log-store';
 import type { OnboardingParamList } from '../../navigation/OnboardingStack';
 
 export function WelcomeScreen(): JSX.Element {
   const navigation = useNavigation<NavigationProp<OnboardingParamList>>();
+
+  useEffect(() => {
+    debugLog('welcome', 'mount');
+    return () => debugLog('welcome', 'unmount');
+  }, []);
+
   return (
     <SafeAreaView style={styles.container} testID="screen.welcome">
       <View style={styles.content}>
@@ -19,16 +27,16 @@ export function WelcomeScreen(): JSX.Element {
           accessibilityRole="button"
           style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
           hitSlop={12}
+          onPressIn={() => debugLog('welcome', 'pressIn')}
           onPress={() => {
+            debugLog('welcome', 'press → navigate(PairWithPartner)');
             try {
               navigation.navigate('PairWithPartner');
+              debugLog('welcome', 'navigate returned');
             } catch (e) {
-              // Surface any navigator-side throw in an alert so it stops
-              // looking like a dead button when something downstream
-              // (e.g. a missing route, broken Pressable layer) eats the
-              // press silently. Tester-build only diagnostic; will get
-              // removed once the cause is identified.
-              Alert.alert('Navigation failed', String((e as Error)?.message ?? e));
+              const msg = String((e as Error)?.message ?? e);
+              debugLog('welcome', `navigate threw: ${msg}`, 'error');
+              Alert.alert('Navigation failed', msg);
             }
           }}
           testID="welcome.start"
@@ -47,9 +55,6 @@ const styles = StyleSheet.create({
   subtitle: { color: '#a0a0a0', fontSize: 16 },
   body: { color: '#808080', fontSize: 14, lineHeight: 20, marginTop: 16, marginBottom: 24 },
   cta: { backgroundColor: '#3a3a3a', paddingVertical: 14, borderRadius: 8, alignItems: 'center' },
-  // Visible pressed state so a tap that registers always produces a
-  // visual change. If the user sees no flash on press, the Pressable
-  // itself isn't receiving the touch event.
   ctaPressed: { backgroundColor: '#5a5a5a' },
   ctaText: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
 });

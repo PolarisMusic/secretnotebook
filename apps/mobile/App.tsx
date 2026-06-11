@@ -4,6 +4,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { DebugOverlay } from './src/debug/DebugOverlay';
+import { debugLog } from './src/debug/log-store';
 import { runBoot } from './src/features/boot/run';
 import { useBootStore } from './src/features/boot/store';
 import { useSyncEngineStore } from './src/features/connection-channel/store';
@@ -28,8 +30,13 @@ export function App(): JSX.Element {
   const phase = useBootStore((s) => s.phase);
 
   useEffect(() => {
+    debugLog('app', 'mount');
     void runBoot();
   }, []);
+
+  useEffect(() => {
+    debugLog('app', `phase=${phase}`);
+  }, [phase]);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -43,6 +50,7 @@ export function App(): JSX.Element {
         ) : (
           <BootScreen onRetry={() => void runBoot()} />
         )}
+        <DebugOverlay />
       </SafeAreaProvider>
     </QueryClientProvider>
   );
