@@ -12,6 +12,7 @@ import { DEFAULT_API_CONFIG } from '../api/config';
 import { useApiStore } from '../api/store';
 import { tryBuildSyncEngine } from '../connection-channel/build-engine';
 import { useSyncEngineStore } from '../connection-channel/store';
+import { debugLog } from '../../debug/log-store';
 import { DEV_GRANT_ENTITLEMENT } from '../iap/config';
 import { devGrantBridge, devGrantValidator, productionValidator } from '../iap/dev-grant';
 import { restoreEntitlementOnBoot } from '../iap/restore';
@@ -33,20 +34,26 @@ const DB_FILENAME = 'secretnotebook.db';
 export async function runBoot(): Promise<void> {
   const boot = useBootStore.getState();
   boot.start();
+  debugLog('boot', 'start');
   try {
     const result = await bootstrap(defaultDeps());
+    debugLog('boot', 'bootstrap ok');
     useDatabaseStore.getState().setExec(result.executor);
     if (result.connection) {
       useConnectionStore.setState({
         status: result.connection.status,
         connectionId: result.connection.connectionId,
       });
+      debugLog('boot', `connection status=${result.connection.status}`);
+    } else {
+      debugLog('boot', 'no connection row');
     }
     const apiClient = new ApiClient({
       baseUrl: DEFAULT_API_CONFIG.baseUrl,
       keyPair: result.deviceSigningKey,
     });
     useApiStore.getState().setClient(apiClient);
+    debugLog('boot', `api baseUrl=${DEFAULT_API_CONFIG.baseUrl}`);
 
     // If the device is already paired and the connection_ratchet row exists
     // from a prior session, lift the SyncEngine into the store now so
@@ -77,15 +84,19 @@ export async function runBoot(): Promise<void> {
     //     call goes through a single throw point — easy to swap
     //     when the real verify-receipt server is in place.
     const platform: 'ios' | 'android' = Platform.OS === 'android' ? 'android' : 'ios';
-    await restoreEntitlementOnBoot({
+    const entRes = await restoreEntitlementOnBoot({
       exec: result.executor,
       validator: DEV_GRANT_ENTITLEMENT ? devGrantValidator() : productionValidator(),
       bridge: DEV_GRANT_ENTITLEMENT ? devGrantBridge(platform) : null,
     });
+    debugLog('boot', `entitlement=${entRes.reason}`);
 
     boot.succeed();
+    debugLog('boot', 'ready');
   } catch (e) {
-    boot.fail((e as Error).message ?? 'Boot failed');
+    const msg = (e as Error).message ?? 'Boot failed';
+    debugLog('boot', msg, 'error');
+    boot.fail(msg);
   }
 }
 
