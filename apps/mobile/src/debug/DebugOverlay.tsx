@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { DEBUG_OVERLAY_ENABLED } from './config';
 import { useDebugLog, type DebugLine } from './log-store';
 
 /**
- * Always-on debug overlay rendered above every other screen. Lets
- * testers see boot pipeline events + button presses + navigation
- * attempts without a USB cable + Xcode console. Tap the header to
- * collapse it to a thin handle so it doesn't block the UI underneath
- * while you read.
+ * Always-on debug overlay. Rendered inside a transparent `Modal` so it
+ * paints above react-native-screens' native UIViewControllers — the
+ * previous absolute-positioned sibling approach got hidden underneath
+ * the native stack on iOS. Modal windows sit on a separate iOS layer
+ * that the native screens can't cover.
  *
- * Returns null when `EXPO_PUBLIC_DEBUG_OVERLAY` isn't `1`, so the
- * component file can be left imported in App.tsx with zero cost in
- * external-tester / production builds.
+ * `pointerEvents="box-none"` on the modal's root + on the spacer fill
+ * lets touches through to the app underneath; only the overlay panel
+ * itself captures input. Without this the modal would intercept every
+ * tap and make the rest of the app unusable.
+ *
+ * Returns null when `DEBUG_OVERLAY_ENABLED` is false — short-circuit at
+ * the top so production builds bear no UI cost.
  */
 export function DebugOverlay(): JSX.Element | null {
   const lines = useDebugLog((s) => s.lines);
@@ -21,8 +25,7 @@ export function DebugOverlay(): JSX.Element | null {
   const scrollRef = useRef<ScrollView | null>(null);
   const [open, setOpen] = useState(true);
 
-  // Auto-scroll the log to the latest line. Without this the operator
-  // would have to manually scroll every time a new event lands.
+  // Auto-scroll the log to the latest line.
   useEffect(() => {
     if (!open) return;
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
@@ -30,47 +33,69 @@ export function DebugOverlay(): JSX.Element | null {
 
   if (!DEBUG_OVERLAY_ENABLED) return null;
 
-  if (!open) {
-    return (
-      <Pressable style={styles.collapsedHandle} onPress={() => setOpen(true)} testID="debug.expand">
-        <Text style={styles.handleText}>▲ debug ({lines.length})</Text>
-      </Pressable>
-    );
-  }
-
   return (
-    <View pointerEvents="box-none" style={styles.container} testID="debug.overlay">
-      <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setOpen(false)}
-          style={styles.headerHit}
-          testID="debug.collapse"
-        >
-          <Text style={styles.headerText}>▼ debug ({lines.length})</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={clear}
-          style={styles.clearHit}
-          testID="debug.clear"
-        >
-          <Text style={styles.clearText}>clear</Text>
-        </Pressable>
+    <Modal
+      visible
+      transparent
+      animationType="none"
+      // statusBarTranslucent only matters on Android; harmless on iOS.
+      statusBarTranslucent
+      // No close action — overlay is always present; collapsing is a
+      // JS-side state change that doesn't dismiss the modal.
+      onRequestClose={() => undefined}
+    >
+      <View pointerEvents="box-none" style={styles.modalRoot}>
+        {/* Spacer fills the upper area but doesn't capture touches. */}
+        <View pointerEvents="none" style={styles.spacer} />
+        {open ? (
+          <View style={styles.container} testID="debug.overlay">
+            <View style={styles.header}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setOpen(false)}
+                style={styles.headerHit}
+                testID="debug.collapse"
+              >
+                <Text style={styles.headerText}>▼ debug ({lines.length})</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={clear}
+                style={styles.clearHit}
+                testID="debug.clear"
+              >
+                <Text style={styles.clearText}>clear</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              ref={(r) => {
+                scrollRef.current = r;
+              }}
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator
+            >
+              {lines.length === 0 ? (
+                <Text style={styles.line}>
+                  <Text style={styles.tag}>debug</Text>
+                  <Text> overlay mounted — waiting for events</Text>
+                </Text>
+              ) : (
+                lines.map((l) => <LineView key={l.id} line={l} />)
+              )}
+            </ScrollView>
+          </View>
+        ) : (
+          <Pressable
+            style={styles.collapsedHandle}
+            onPress={() => setOpen(true)}
+            testID="debug.expand"
+          >
+            <Text style={styles.handleText}>▲ debug ({lines.length})</Text>
+          </Pressable>
+        )}
       </View>
-      <ScrollView
-        ref={(r) => {
-          scrollRef.current = r;
-        }}
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator
-      >
-        {lines.map((l) => (
-          <LineView key={l.id} line={l} />
-        ))}
-      </ScrollView>
-    </View>
+    </Modal>
   );
 }
 
@@ -92,13 +117,11 @@ function LineView({ line }: { line: DebugLine }): JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  spacer: { flex: 1 },
   container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     maxHeight: '40%',
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
     borderTopWidth: 1,
     borderTopColor: '#3a3a3a',
   },
@@ -122,10 +145,6 @@ const styles = StyleSheet.create({
   warn: { color: '#ffd47a' },
   error: { color: '#ff8a8a' },
   collapsedHandle: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     paddingVertical: 4,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     alignItems: 'center',
