@@ -1,10 +1,23 @@
-import { getSodium } from './sodium.js';
+import { hmac as nobleHmac } from '@noble/hashes/hmac';
+import { sha256 as nobleSha256 } from '@noble/hashes/sha256';
 
+/**
+ * HMAC-SHA-256.
+ *
+ * Backed by @noble/hashes (pure-JS, well-audited) rather than libsodium
+ * because `react-native-libsodium` does not expose the
+ * `crypto_auth_hmacsha256_*` family — only `crypto_auth` (which is
+ * HMAC-SHA-512, not SHA-256). The streaming
+ * `init/update/final` calls used previously evaluated to `undefined`
+ * on iOS and threw "undefined is not a function" at boot during
+ * deriveSqlcipherKey → hkdfSha256 → hmacSha256.
+ *
+ * Output is byte-for-byte identical to libsodium's HMAC-SHA-256, so
+ * this change does not invalidate any persisted ratchet state, derived
+ * keys, or test vectors.
+ */
 export async function hmacSha256(key: Uint8Array, message: Uint8Array): Promise<Uint8Array> {
-  const sodium = await getSodium();
-  const state = sodium.crypto_auth_hmacsha256_init(key);
-  sodium.crypto_auth_hmacsha256_update(state, message);
-  return sodium.crypto_auth_hmacsha256_final(state);
+  return nobleHmac(nobleSha256, key, message);
 }
 
 export async function hmacSha256Verify(
