@@ -45,8 +45,10 @@ export function DebugOverlay(): JSX.Element | null {
       onRequestClose={() => undefined}
     >
       <View pointerEvents="box-none" style={styles.modalRoot}>
-        {/* Spacer fills the upper area but doesn't capture touches. */}
-        <View pointerEvents="none" style={styles.spacer} />
+        {/* Spacer fills the lower area but doesn't capture touches —
+            the overlay now sits at the top, so the spacer goes
+            BELOW. Order matters because column flex puts top child
+            first. */}
         {open ? (
           <View style={styles.container} testID="debug.overlay">
             <View style={styles.header}>
@@ -91,9 +93,12 @@ export function DebugOverlay(): JSX.Element | null {
             onPress={() => setOpen(true)}
             testID="debug.expand"
           >
-            <Text style={styles.handleText}>▲ debug ({lines.length})</Text>
+            <Text style={styles.handleText}>▼ debug ({lines.length})</Text>
           </Pressable>
         )}
+        {/* Spacer goes AFTER the panel so column flex pins the panel
+            to the top of the screen. */}
+        <View pointerEvents="none" style={styles.spacer} />
       </View>
     </Modal>
   );
@@ -117,13 +122,16 @@ function LineView({ line }: { line: DebugLine }): JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  // Moved overlay to the TOP so it doesn't cover bottom-of-screen
+  // buttons during the touch-diagnostic flow. Reduced maxHeight to
+  // 25% so most of the screen is visible for tapping.
+  modalRoot: { flex: 1, justifyContent: 'flex-start' },
   spacer: { flex: 1 },
   container: {
-    maxHeight: '40%',
+    maxHeight: '25%',
     backgroundColor: 'rgba(0, 0, 0, 0.92)',
-    borderTopWidth: 1,
-    borderTopColor: '#3a3a3a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#3a3a3a',
   },
   header: {
     flexDirection: 'row',
