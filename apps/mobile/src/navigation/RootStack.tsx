@@ -22,11 +22,17 @@ const Root = createNativeStackNavigator();
  */
 export function RootStack(): JSX.Element {
   const status = useConnectionStore((s) => s.status);
-  const sessionSnapshot = useSafeWordSession((s) => ({
-    satisfiedAt: s.satisfiedAt,
-    ttlMs: s.ttlMs,
-  }));
-  const satisfied = isSafeWordSatisfied(sessionSnapshot);
+  // Subscribe to each session field individually so Zustand can use
+  // Object.is per field. Selecting an object literal here would
+  // return a fresh reference on every call, fail the default
+  // equality check, and trigger an infinite render loop that hangs
+  // the JS thread — the entire app loses its responder system, so
+  // every Pressable / TouchableOpacity / RNGH gesture silently dies
+  // while native scrolling keeps working (those don't need JS to
+  // advance).
+  const satisfiedAt = useSafeWordSession((s) => s.satisfiedAt);
+  const ttlMs = useSafeWordSession((s) => s.ttlMs);
+  const satisfied = isSafeWordSatisfied({ satisfiedAt, ttlMs });
 
   // Lock the session as soon as the app has been backgrounded for more
   // than 60 s — the gate re-renders automatically on the next status
