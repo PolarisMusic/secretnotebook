@@ -4,6 +4,7 @@ import {
   Alert,
   Button as RNButton,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -59,8 +60,8 @@ export function WelcomeScreen(): JSX.Element {
         return false; // Don't actually capture — just log
       }}
     >
-      <View
-        style={styles.content}
+      <ScrollView
+        contentContainerStyle={styles.content}
         onStartShouldSetResponder={() => {
           debugLog('welcome', 'content.onStartShouldSetResponder');
           return false;
@@ -132,14 +133,16 @@ export function WelcomeScreen(): JSX.Element {
         <View style={[styles.cta, styles.variantF]}>
           <RNButton title="F. Start pairing (RN Button)" onPress={() => navigate('rnbutton')} />
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, gap: 10 },
+  // No flex:1 — this is a ScrollView contentContainerStyle. Pad the
+  // top so content clears the debug overlay sitting at the top.
+  content: { paddingTop: 180, paddingHorizontal: 32, paddingBottom: 40, gap: 10 },
   title: { color: '#f5f5f5', fontSize: 24, fontWeight: '600' },
   subtitle: { color: '#a0a0a0', fontSize: 14 },
   body: { color: '#808080', fontSize: 12, lineHeight: 16, marginTop: 8, marginBottom: 12 },
