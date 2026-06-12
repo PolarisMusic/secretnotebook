@@ -2,6 +2,7 @@ import { useNavigation, type NavigationProp } from '@react-navigation/native';
 import { useEffect } from 'react';
 import {
   Alert,
+  Button as RNButton,
   Pressable,
   StyleSheet,
   Text,
@@ -9,6 +10,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { RectButton } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { debugLog } from '../../debug/log-store';
@@ -118,6 +120,18 @@ export function WelcomeScreen(): JSX.Element {
         >
           <Text style={styles.ctaText}>D. Start pairing (Pressable)</Text>
         </Pressable>
+
+        {/* Variant 5: RectButton from react-native-gesture-handler.
+            Runs through RNGH's native gesture pipeline (UITapGestureRecognizer
+            on iOS) — bypasses RN's responder system entirely. */}
+        <RectButton style={[styles.cta, styles.variantE]} onPress={() => navigate('rngh')}>
+          <Text style={styles.ctaText}>E. Start pairing (RNGH RectButton)</Text>
+        </RectButton>
+
+        {/* Variant 6: RN's legacy Button. Native iOS UIButton-style. */}
+        <View style={[styles.cta, styles.variantF]}>
+          <RNButton title="F. Start pairing (RN Button)" onPress={() => navigate('rnbutton')} />
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -134,6 +148,8 @@ const styles = StyleSheet.create({
   variantB: { backgroundColor: '#3a7a3a' }, // green — TWOF
   variantC: { backgroundColor: '#3a3a7a' }, // blue — TouchableOpacity
   variantD: { backgroundColor: '#7a7a3a' }, // yellow — Pressable
+  variantE: { backgroundColor: '#7a3a7a' }, // magenta — RNGH RectButton
+  variantF: { backgroundColor: '#3a7a7a' }, // teal — RN Button
   ctaPressed: { opacity: 0.6 },
   ctaText: { color: '#f5f5f5', fontSize: 13, fontWeight: '600' },
 });
