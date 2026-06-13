@@ -4,6 +4,7 @@ export * from './ed25519.js';
 export * from './handshake.js';
 export * from './hkdf.js';
 export * from './hmac.js';
+export * from './rendezvous.js';
 export * from './safeword.js';
 export * from './sha256.js';
 export { bytesToHex, concatBytes, getSodium, hexToBytes } from './sodium.js';
