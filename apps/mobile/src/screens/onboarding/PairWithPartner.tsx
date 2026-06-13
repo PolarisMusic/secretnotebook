@@ -1,10 +1,24 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { generateX25519KeyPair } from '@secretnotebook/crypto';
+import {
+  formatRendezvousCode,
+  generateRendezvousCode,
+  generateX25519KeyPair,
+  isValidRendezvousCode,
+  normalizeRendezvousCode,
+} from '@secretnotebook/crypto';
 
 import type { BiometricPrompt } from '../../features/pairing/biometric';
 import {
@@ -18,7 +32,16 @@ import type { PairingState, SelfKeys } from '../../features/pairing/state-machin
 
 type Mode = 'choose' | 'qr' | 'relay';
 
-const RELAY_CODE_RE = /^[a-z0-9-]{6,16}$/i;
+/**
+ * Relay sub-flow role. To stop unrelated couples colliding on a guessable
+ * shared phrase ("iloveyou"), users no longer invent the code: one device
+ * `create`s a high-entropy code and the other `join`s by entering it.
+ */
+type RelayRole = 'pick' | 'create' | 'join';
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export interface PairWithPartnerProps {
   /** Base URL for the API server (used by the relay transport). */
@@ -44,8 +67,11 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   const scanLockRef = useRef(false);
 
   // Relay-mode state.
-  const [relayCode, setRelayCode] = useState('');
+  const [relayRole, setRelayRole] = useState<RelayRole>('pick');
+  const [relayInput, setRelayInput] = useState('');
+  const [createdCode, setCreatedCode] = useState<string | null>(null);
   const [relayConnecting, setRelayConnecting] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const runRef = useRef<PairingRun | null>(null);
 
@@ -73,50 +99,106 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
     setSelfQr(null);
     scanLockRef.current = false;
 
-    const transport = new QrTransport();
-    qrTransportRef.current = transport;
-    transport.onSelfHelloChange((serialized) => setSelfQr(serialized));
+    // Everything here can reject (keygen reads the native CSPRNG, the
+    // transport boots). An unguarded reject becomes an unhandled promise
+    // rejection that never surfaces in a release build — the screen just
+    // hangs on "Preparing your pairing QR…". Catch and show the error.
+    try {
+      const transport = new QrTransport();
+      qrTransportRef.current = transport;
+      transport.onSelfHelloChange((serialized) => setSelfQr(serialized));
 
-    const selfKeys = await generateSelfKeys();
-    const run = runPairing({
-      transport,
-      hooks,
-      selfKeys,
-      onTransition: (next) => setState(next),
-    });
-    runRef.current = run;
+      const selfKeys = await generateSelfKeys();
+      const run = runPairing({
+        transport,
+        hooks,
+        selfKeys,
+        onTransition: (next) => setState(next),
+      });
+      runRef.current = run;
 
-    const final = await run.result;
-    await maybeFinishPairing(final, selfKeys);
+      const final = await run.result;
+      await maybeFinishPairing(final, selfKeys);
+    } catch (err) {
+      setState({ name: 'error', reason: errorMessage(err) });
+    }
   }
 
   function pickRelayMode(): void {
     setMode('relay');
+    setRelayRole('pick');
+    setRelayInput('');
+    setCreatedCode(null);
+    setRelayConnecting(false);
+    setJoinError(null);
     setState({ name: 'idle' });
   }
 
-  async function connectRelay(): Promise<void> {
-    const code = relayCode.trim().toLowerCase();
-    if (!RELAY_CODE_RE.test(code)) {
-      setState({ name: 'error', reason: 'Code must be 6–16 letters, digits, or dashes.' });
+  async function startRelayCreate(): Promise<void> {
+    setRelayRole('create');
+    setCreatedCode(null);
+    setJoinError(null);
+    setState({ name: 'idle' });
+    try {
+      // We mint the code so two couples can't both pick "iloveyou" and
+      // cross-pair through the relay. 8 chars from a 31-symbol alphabet.
+      const code = await generateRendezvousCode();
+      setCreatedCode(code);
+      await startRelay(code);
+    } catch (err) {
+      setState({ name: 'error', reason: errorMessage(err) });
+    }
+  }
+
+  function startRelayJoin(): void {
+    setRelayRole('join');
+    setRelayInput('');
+    setJoinError(null);
+    setState({ name: 'idle' });
+  }
+
+  async function connectRelayJoin(): Promise<void> {
+    const code = normalizeRendezvousCode(relayInput);
+    if (!isValidRendezvousCode(code)) {
+      setJoinError("That code doesn't look right — ask your partner to read it out again.");
       return;
     }
+    setJoinError(null);
+    await startRelay(code);
+  }
+
+  /** Shared relay entry point: POST our hello under `code` and poll for the
+   *  peer. `code` is already in canonical wire form (lowercase, no dashes). */
+  async function startRelay(code: string): Promise<void> {
     setRelayConnecting(true);
     setState({ name: 'idle' });
+    try {
+      const transport = new RelayTransport({ code, baseUrl: props.apiBaseUrl });
+      const selfKeys = await generateSelfKeys();
+      const run = runPairing({
+        transport,
+        hooks,
+        selfKeys,
+        onTransition: (next) => setState(next),
+      });
+      runRef.current = run;
 
-    const transport = new RelayTransport({ code, baseUrl: props.apiBaseUrl });
-    const selfKeys = await generateSelfKeys();
-    const run = runPairing({
-      transport,
-      hooks,
-      selfKeys,
-      onTransition: (next) => setState(next),
-    });
-    runRef.current = run;
+      const final = await run.result;
+      await maybeFinishPairing(final, selfKeys);
+    } catch (err) {
+      setState({ name: 'error', reason: errorMessage(err) });
+    } finally {
+      setRelayConnecting(false);
+    }
+  }
 
-    const final = await run.result;
-    setRelayConnecting(false);
-    await maybeFinishPairing(final, selfKeys);
+  async function shareCreatedCode(): Promise<void> {
+    if (createdCode === null) return;
+    try {
+      await Share.share({ message: `Our pairing code: ${formatRendezvousCode(createdCode)}` });
+    } catch {
+      // User dismissed the share sheet, or it's unavailable — non-fatal.
+    }
   }
 
   async function maybeFinishPairing(final: PairingState, selfKeys: SelfKeys): Promise<void> {
@@ -134,8 +216,11 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
     runRef.current = null;
     qrTransportRef.current = null;
     setSelfQr(null);
-    setRelayCode('');
+    setRelayRole('pick');
+    setRelayInput('');
+    setCreatedCode(null);
     setRelayConnecting(false);
+    setJoinError(null);
     setState({ name: 'idle' });
     setMode('choose');
   }
@@ -165,21 +250,50 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
             />
           ))}
 
-        {mode === 'relay' && state.name === 'idle' && !relayConnecting && (
-          <RelayCodePhase
-            value={relayCode}
-            onChange={setRelayCode}
-            onConnect={connectRelay}
+        {mode === 'relay' && relayRole === 'pick' && state.name === 'idle' && (
+          <RelayRolePicker
+            onCreate={startRelayCreate}
+            onJoin={startRelayJoin}
             onCancel={cancelAndReset}
           />
         )}
 
         {mode === 'relay' &&
+          relayRole === 'create' &&
+          (state.name === 'idle' || state.name === 'scanning') &&
+          (createdCode === null ? (
+            <>
+              <ActivityIndicator />
+              <Text style={styles.body}>Preparing your code…</Text>
+            </>
+          ) : (
+            <RelayCreatePhase
+              code={createdCode}
+              onShare={shareCreatedCode}
+              onCancel={cancelAndReset}
+            />
+          ))}
+
+        {mode === 'relay' && relayRole === 'join' && !relayConnecting && state.name === 'idle' && (
+          <RelayJoinPhase
+            value={relayInput}
+            error={joinError}
+            onChange={(v) => {
+              setRelayInput(v);
+              if (joinError !== null) setJoinError(null);
+            }}
+            onConnect={connectRelayJoin}
+            onCancel={cancelAndReset}
+          />
+        )}
+
+        {mode === 'relay' &&
+          relayRole === 'join' &&
           relayConnecting &&
           (state.name === 'idle' || state.name === 'scanning') && (
             <>
               <ActivityIndicator />
-              <Text style={styles.body}>Waiting for your partner to enter the same code…</Text>
+              <Text style={styles.body}>Waiting for your partner…</Text>
               <Pressable onPress={cancelAndReset} style={styles.secondaryCta}>
                 <Text style={styles.secondaryCtaText}>Cancel</Text>
               </Pressable>
@@ -319,8 +433,76 @@ function QrPhase(props: {
   );
 }
 
-function RelayCodePhase(props: {
+function RelayRolePicker(props: {
+  onCreate: () => void;
+  onJoin: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  return (
+    <>
+      <Text style={styles.body}>
+        One of you creates a code and shares it; the other types it in. Decide who does which — you
+        only need one code between you.
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        style={styles.cta}
+        onPress={props.onCreate}
+        testID="pair.relay.create"
+      >
+        <Text style={styles.ctaText}>Create a code</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={styles.ctaAlt}
+        onPress={props.onJoin}
+        testID="pair.relay.join"
+      >
+        <Text style={styles.ctaText}>Enter partner's code</Text>
+      </Pressable>
+      <Pressable onPress={props.onCancel} style={styles.secondaryCta}>
+        <Text style={styles.secondaryCtaText}>Back</Text>
+      </Pressable>
+    </>
+  );
+}
+
+function RelayCreatePhase(props: {
+  code: string;
+  onShare: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  return (
+    <>
+      <Text style={styles.body}>
+        Send this code to your partner — text it, Signal it, or read it out. They'll enter it on
+        their phone. Keep this screen open; it pairs automatically once they do.
+      </Text>
+      <Text style={styles.relayCode} selectable testID="pair.relay.created">
+        {formatRendezvousCode(props.code)}
+      </Text>
+      <View style={styles.waitingRow}>
+        <ActivityIndicator />
+        <Text style={styles.body}>Waiting for your partner…</Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        style={styles.cta}
+        onPress={props.onShare}
+        testID="pair.relay.share"
+      >
+        <Text style={styles.ctaText}>Share code</Text>
+      </Pressable>
+      <Pressable onPress={props.onCancel} style={styles.secondaryCta}>
+        <Text style={styles.secondaryCtaText}>Cancel</Text>
+      </Pressable>
+    </>
+  );
+}
+
+function RelayJoinPhase(props: {
   value: string;
+  error: string | null;
   onChange: (v: string) => void;
   onConnect: () => void;
   onCancel: () => void;
@@ -328,19 +510,20 @@ function RelayCodePhase(props: {
   return (
     <>
       <Text style={styles.body}>
-        Agree on a short code with your partner (text it, say it out loud — anything). Both of you
-        type the same code here and tap Connect. 6–16 letters, digits, or dashes.
+        Type the code your partner created and read to you, then tap Connect.
       </Text>
       <TextInput
         style={styles.codeInput}
         value={props.value}
         onChangeText={props.onChange}
-        autoCapitalize="none"
+        autoCapitalize="characters"
         autoCorrect={false}
-        placeholder="e.g. bluefox42"
+        autoComplete="off"
+        placeholder="e.g. K7QH-92RT"
         placeholderTextColor="#5a5a5a"
         testID="pair.relay.code"
       />
+      {props.error !== null && <Text style={styles.error}>{props.error}</Text>}
       <Pressable
         accessibilityRole="button"
         style={styles.cta}
@@ -396,6 +579,20 @@ const styles = StyleSheet.create({
   ctaText: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
   secondaryCta: { paddingVertical: 10, alignItems: 'center' },
   secondaryCtaText: { color: '#7a7a7a', fontSize: 13 },
+  relayCode: {
+    color: '#f5f5f5',
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: 4,
+    textAlign: 'center',
+    marginVertical: 12,
+  },
+  waitingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   qrBox: {
     alignSelf: 'center',
     padding: 16,

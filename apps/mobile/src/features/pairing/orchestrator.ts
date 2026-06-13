@@ -65,6 +65,11 @@ export function runPairing(opts: OrchestratorOptions): PairingRun {
     resolved = true;
     unsubMsg();
     unsubErr();
+    // Release transport resources at the single exit point. This matters for
+    // the relay transport, whose polling loop otherwise keeps hitting the
+    // network for the full timeout window after a cancel or a successful
+    // pair. Best-effort: a stop() failure must not mask the pairing result.
+    void opts.transport.stop().catch(() => undefined);
     resolveResult(final);
   }
 
