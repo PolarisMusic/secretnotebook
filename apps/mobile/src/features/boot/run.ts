@@ -16,6 +16,7 @@ import { DEV_GRANT_ENTITLEMENT } from '../iap/config';
 import { devGrantBridge, devGrantValidator, productionValidator } from '../iap/dev-grant';
 import { restoreEntitlementOnBoot } from '../iap/restore';
 import { bootstrap, type BootDeps } from './bootstrap';
+import { loadConnectionRootKey } from './connection-load';
 import { useBootStore } from './store';
 
 const DB_FILENAME = 'secretnotebook.db';
@@ -41,6 +42,19 @@ export async function runBoot(): Promise<void> {
         status: result.connection.status,
         connectionId: result.connection.connectionId,
       });
+      // Re-hydrate the pending root_key on a cold launch that boots straight
+      // into 'awaiting_safeword'. The live pairing flow sets this in memory;
+      // a restart before the Safe Word is defined would otherwise lose it and
+      // strand the user on DefineSafeWord's "pairing state is missing".
+      if (result.connection.status === 'awaiting_safeword') {
+        const pendingRootKey = await loadConnectionRootKey(
+          result.executor,
+          result.connection.connectionId,
+        );
+        if (pendingRootKey) {
+          useConnectionStore.setState({ pendingRootKey });
+        }
+      }
     }
     const apiClient = new ApiClient({
       baseUrl: DEFAULT_API_CONFIG.baseUrl,

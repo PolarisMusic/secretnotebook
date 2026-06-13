@@ -21,6 +21,7 @@ import {
 } from '@secretnotebook/crypto';
 
 import type { BiometricPrompt } from '../../features/pairing/biometric';
+import { friendlyPairingError } from '../../features/pairing/errors';
 import {
   runPairing,
   type PairingHooks,
@@ -328,7 +329,7 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
         )}
         {state.name === 'error' && (
           <>
-            <Text style={styles.error}>{state.reason}</Text>
+            <Text style={styles.error}>{friendlyPairingError(state.reason)}</Text>
             <Pressable style={styles.cta} onPress={cancelAndReset} testID="pair.retry">
               <Text style={styles.ctaText}>Try again</Text>
             </Pressable>
