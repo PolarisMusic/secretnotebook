@@ -1,7 +1,8 @@
-import { concatBytes, getSodium } from './sodium.js';
+import { concatBytes } from './sodium.js';
 import { x25519DH } from './x25519.js';
 import { hkdfSha256 } from './hkdf.js';
 import { constantTimeEqual } from './hmac.js';
+import { sha256 } from './sha256.js';
 
 export const ROOT_KEY_BYTES = 32;
 const ROOT_KEY_INFO = new TextEncoder().encode('secretnotebook/connection-root/v1');
@@ -66,10 +67,11 @@ export async function pairingCode(
   pubkeyB: Uint8Array,
   digits = 6,
 ): Promise<string> {
-  const sodium = await getSodium();
   const first = pickFirst(pubkeyA, pubkeyB) ? pubkeyA : pubkeyB;
   const second = pickFirst(pubkeyA, pubkeyB) ? pubkeyB : pubkeyA;
-  const digest = sodium.crypto_hash_sha256(concatBytes(first, second));
+  // crypto_hash_sha256 isn't exported by react-native-libsodium; route
+  // through the @noble-backed wrapper so both platforms behave identically.
+  const digest = await sha256(concatBytes(first, second));
   const truncated =
     (digest[0] as number) * 65536 + (digest[1] as number) * 256 + (digest[2] as number);
   return truncated.toString(10).padStart(digits, '0').slice(-digits);

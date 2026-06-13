@@ -11,6 +11,7 @@ import httpSignaturePlugin, { HEADER_PUBKEY } from './auth/http-signature.js';
 import type { Env } from './config.js';
 import { devicesRoute } from './routes/devices.js';
 import { healthRoute } from './routes/health.js';
+import { pairRendezvousRoute } from './routes/pair-rendezvous.js';
 import { postsRoute } from './routes/posts.js';
 import { relayRoute } from './routes/relay.js';
 import type { DevicesStore, PostsStore, RelayStore } from './storage/types.js';
@@ -63,6 +64,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     now: opts.now,
   });
   await app.register(healthRoute);
+  // Unauthenticated: the 6-character rendezvous code is the auth, and the
+  // posted hellos are public keys (not secrets). See
+  // routes/pair-rendezvous.ts for the threat model.
+  await app.register(pairRendezvousRoute, { now: opts.now });
   const nowDate = (): Date => new Date((opts.now ?? Date.now)());
   await app.register(postsRoute, { store: opts.postsStore, now: nowDate });
   await app.register(devicesRoute, { store: opts.devicesStore, now: nowDate });
