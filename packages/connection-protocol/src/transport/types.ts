@@ -13,8 +13,10 @@ export type Unsubscribe = () => void;
  * peer once one is reachable, `stop()` tears down all radio resources.
  *
  * Implementations:
- *   - `BleTransport` (apps/mobile)         — react-native-ble-plx based
- *   - `MockTransport` (this package)       — in-process pair for unit tests
+ *   - `QrTransport`    (apps/mobile) — same-room: display + scan QR codes
+ *   - `RelayTransport` (apps/mobile) — long-distance: hellos rendezvous
+ *                                      through the API keyed by a short code
+ *   - `MockTransport`  (this package) — in-process pair for unit tests
  */
 export interface PairingTransport {
   start(): Promise<void>;

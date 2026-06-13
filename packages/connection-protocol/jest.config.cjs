@@ -16,7 +16,7 @@ module.exports = {
       },
     ],
   },
-  collectCoverageFrom: ['src/**/*.ts', '!src/transport/ble.ts'],
+  collectCoverageFrom: ['src/**/*.ts'],
   coverageReporters: ['text', 'lcov'],
   testTimeout: 15000,
 };
