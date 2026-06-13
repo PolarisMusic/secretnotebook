@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import { persistConnection } from '../src/features/pairing/persistence';
-import { loadActiveConnection } from '../src/features/boot/connection-load';
+import { loadActiveConnection, loadConnectionRootKey } from '../src/features/boot/connection-load';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 async function freshDb() {
@@ -45,5 +45,35 @@ describe('loadActiveConnection', () => {
       transaction: async <T>(fn: () => Promise<T>) => fn(),
     };
     expect(await loadActiveConnection(fakeExec)).toBeNull();
+  });
+});
+
+describe('loadConnectionRootKey', () => {
+  it('re-hydrates the root key persisted at pairing time', async () => {
+    const { exec } = await freshDb();
+    const rootKey = new Uint8Array(32).fill(0xab);
+    const selfPub = new Uint8Array(32).fill(0x01);
+    const peerPub = new Uint8Array(32).fill(0x02);
+    const { connectionId } = await persistConnection(exec, { rootKey, selfPub, peerPub });
+
+    const loaded = await loadConnectionRootKey(exec, connectionId);
+    expect(loaded).not.toBeNull();
+    expect(loaded).toBeInstanceOf(Uint8Array);
+    expect(loaded && Array.from(loaded)).toEqual(Array.from(rootKey));
+  });
+
+  it('returns null for an unknown connection id', async () => {
+    const { exec } = await freshDb();
+    expect(await loadConnectionRootKey(exec, 'nosuchid')).toBeNull();
+  });
+
+  it('returns null when the stored key is the wrong size (defensive)', async () => {
+    const fakeExec = {
+      executeBatch: async () => undefined,
+      execute: async () => undefined,
+      query: async () => [{ channel_root_key_wrapped: new Uint8Array(8) }] as never,
+      transaction: async <T>(fn: () => Promise<T>) => fn(),
+    };
+    expect(await loadConnectionRootKey(fakeExec, 'cid')).toBeNull();
   });
 });

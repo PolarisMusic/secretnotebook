@@ -15,16 +15,24 @@ const Stack = createNativeStackNavigator<OnboardingParamList>();
 
 export function OnboardingStack(): JSX.Element {
   const status = useConnectionStore((s) => s.status);
-  // Initial route is chosen from the persisted connection status so that a
-  // cold launch into 'awaiting_safeword' jumps straight to DefineSafeWord
-  // without re-pairing.
-  const initial: keyof OnboardingParamList =
-    status === 'awaiting_safeword' ? 'DefineSafeWord' : 'Welcome';
+  // Render the screen SET declaratively from connection.status rather than
+  // leaning on initialRouteName. `initialRouteName` is honoured only at
+  // mount, so once this stack is mounted on Welcome/PairWithPartner a later
+  // flip to 'awaiting_safeword' (the moment pairing completes) would NOT
+  // advance the user — they'd sit on PairWithPartner's "Paired…" message
+  // forever. Swapping the rendered screens makes React Navigation
+  // re-navigate to the only available screen, both for the live transition
+  // and for a cold launch that boots straight into 'awaiting_safeword'.
   return (
-    <Stack.Navigator initialRouteName={initial} screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen name="PairWithPartner" component={PairWithPartnerRoute} />
-      <Stack.Screen name="DefineSafeWord" component={DefineSafeWordRoute} />
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {status === 'awaiting_safeword' ? (
+        <Stack.Screen name="DefineSafeWord" component={DefineSafeWordRoute} />
+      ) : (
+        <>
+          <Stack.Screen name="Welcome" component={WelcomeScreen} />
+          <Stack.Screen name="PairWithPartner" component={PairWithPartnerRoute} />
+        </>
+      )}
     </Stack.Navigator>
   );
 }
