@@ -6,6 +6,8 @@ import { sql as notesSql } from './006-notes';
 import { sql as notePublishColsSql } from './007-note-publish-cols';
 import { sql as connectionRolesSql } from './008-connection-roles';
 import { sql as entitlementSql } from './009-entitlement';
+import { sql as appSettingsSql } from './010-app-settings';
+import { sql as pairedCoercionSql } from './011-paired-coercion';
 
 export interface Migration {
   readonly id: number;
@@ -24,4 +26,6 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 7, name: 'note-publish-cols', sql: notePublishColsSql },
   { id: 8, name: 'connection-roles', sql: connectionRolesSql },
   { id: 9, name: 'entitlement', sql: entitlementSql },
+  { id: 10, name: 'app-settings', sql: appSettingsSql },
+  { id: 11, name: 'paired-coercion', sql: pairedCoercionSql },
 ];

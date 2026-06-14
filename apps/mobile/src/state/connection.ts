@@ -34,6 +34,9 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   setConnectionId: (connectionId) => set({ connectionId }),
   setPendingRootKey: (pendingRootKey) => set({ pendingRootKey }),
   completePairing: ({ connectionId, rootKey }) =>
-    set({ status: 'awaiting_safeword', connectionId, pendingRootKey: rootKey }),
+    // Pairing now lands directly in 'paired' (the Safe Word is no longer an
+    // onboarding gate). pendingRootKey is still stashed for the upcoming
+    // optional-Safe-Word flow, but it no longer gates app use.
+    set({ status: 'paired', connectionId, pendingRootKey: rootKey }),
   finalizePairing: () => set({ status: 'paired', pendingRootKey: null }),
 }));

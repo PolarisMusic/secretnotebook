@@ -30,7 +30,7 @@ describe('loadActiveConnection', () => {
     const active = await loadActiveConnection(exec);
     expect(active).not.toBeNull();
     expect(active?.connectionId).toBe(connectionId);
-    expect(active?.status).toBe('awaiting_safeword');
+    expect(active?.status).toBe('paired');
   });
 
   it('ignores a row with an unexpected status (defensive against corruption)', async () => {

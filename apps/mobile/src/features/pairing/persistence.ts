@@ -17,7 +17,11 @@ export interface PersistedConnection {
 }
 
 /**
- * Persist a freshly paired connection row with status='awaiting_safeword'.
+ * Persist a freshly paired connection row with status='paired'.
+ *
+ * The Safe Word is no longer an onboarding gate (it's being redesigned into
+ * an optional roleplay term), so pairing lands directly in 'paired' and the
+ * caller builds the SyncEngine immediately.
  *
  * The id is derived deterministically so both devices compute the same
  * value without an extra exchange:
@@ -51,7 +55,7 @@ export async function persistConnection(
        channel_root_key_wrapped, paired_at, status
      ) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`,
-    [connectionId, partnerA, partnerB, pairing.rootKey, pairedAt, 'awaiting_safeword'],
+    [connectionId, partnerA, partnerB, pairing.rootKey, pairedAt, 'paired'],
   );
 
   // Seed the connection_ratchet row in the same logical step. Idempotent
