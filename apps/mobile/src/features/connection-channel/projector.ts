@@ -156,6 +156,95 @@ export async function applyCrdtOp(
       return;
     }
 
+    case 'connection.safeword.propose': {
+      // Author identity check, as with role.set: the proposer MUST be the
+      // sender, so a peer can't spoof a proposal as coming from the local
+      // user and flip their pending state.
+      if (op.proposerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.safeword.propose proposerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const proposer = hexToBytes(op.proposerPubkey);
+      // Receiver side: stash the incoming verifier to match a typed
+      // candidate against. proposal_term stays NULL — we don't learn the
+      // word until the local user types it and it matches.
+      await exec.execute(
+        `UPDATE connection
+            SET safeword_proposal_verifier = ?,
+                safeword_proposal_by       = ?,
+                safeword_proposal_at       = ?,
+                safeword_proposal_term     = NULL
+          WHERE partner_a_pubkey = ? OR partner_b_pubkey = ?`,
+        [hexToBytes(op.verifier), proposer, op.proposedAt, proposer, proposer],
+      );
+      return;
+    }
+
+    case 'connection.safeword.confirm': {
+      if (op.confirmerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.safeword.confirm confirmerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const confirmer = hexToBytes(op.confirmerPubkey);
+      // Proposer side: the partner confirmed our pending proposal. Promote
+      // it to the active term (term + verifier from the proposal we stashed
+      // locally; salt was written at propose time). The guards make a
+      // replayed confirm — or a confirm echoing the confirmer's OWN
+      // proposal (proposal_by == confirmer) — a no-op, so first-confirm-wins.
+      await exec.execute(
+        `UPDATE connection
+            SET safeword_verifier          = safeword_proposal_verifier,
+                safeword_term              = safeword_proposal_term,
+                safeword_confirmed_at      = ?,
+                safeword_proposal_verifier = NULL,
+                safeword_proposal_by       = NULL,
+                safeword_proposal_at       = NULL,
+                safeword_proposal_term     = NULL
+          WHERE (partner_a_pubkey = ? OR partner_b_pubkey = ?)
+            AND safeword_proposal_by IS NOT NULL
+            AND safeword_proposal_by != ?`,
+        [op.confirmedAt, confirmer, confirmer, confirmer],
+      );
+      return;
+    }
+
+    case 'connection.safeword.trigger':
+      // The trigger belongs to the sender; reject ops claiming someone
+      // else fired it. Add-only — INSERT OR IGNORE collapses replays.
+      if (op.triggeredByPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.safeword.trigger triggeredByPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `INSERT OR IGNORE INTO safeword_trigger (
+           id, triggered_by_pubkey, triggered_at, acked_at
+         ) VALUES (?, ?, ?, NULL)`,
+        [op.id, hexToBytes(op.triggeredByPubkey), op.triggeredAt],
+      );
+      return;
+
+    case 'connection.safeword.ack':
+      if (op.ackedByPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.safeword.ack ackedByPubkey does not match sender — refusing to apply`,
+        );
+      }
+      // First-ack-wins. Only the OTHER side acknowledges a trigger, so the
+      // triggered_by != acker guard rejects a crafted self-ack on top of
+      // the IS NULL replay guard.
+      await exec.execute(
+        `UPDATE safeword_trigger
+            SET acked_at = ?
+          WHERE id = ?
+            AND acked_at IS NULL
+            AND triggered_by_pubkey != ?`,
+        [op.ackedAt, op.id, hexToBytes(op.ackedByPubkey)],
+      );
+      return;
+
     default: {
       // Exhaustiveness guard: if a new op kind is added to the
       // CrdtOp discriminated union without a branch here, this

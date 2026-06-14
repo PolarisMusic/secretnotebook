@@ -18,6 +18,7 @@ const EXPECTED_TABLES = [
   'sync_seen',
   'connection_ratchet',
   'app_setting',
+  'safeword_trigger',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -43,6 +44,7 @@ describe('runMigrations', () => {
       'entitlement',
       'app-settings',
       'paired-coercion',
+      'safeword-term',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -77,6 +79,7 @@ describe('runMigrations', () => {
       'entitlement',
       'app-settings',
       'paired-coercion',
+      'safeword-term',
     ]);
   });
 
@@ -181,6 +184,7 @@ describe('runMigrations', () => {
         'prompt_assigned_to_idx',
         'ledger_entry_kind_idx',
         'sync_outbox_next_attempt_idx',
+        'safeword_trigger_active_idx',
       ]),
     );
     // Phase-1.5 R0 dropped this index along with the unlocked_at column.

@@ -20,6 +20,11 @@ export interface NotesComposeProps {
    *  Rejecting leaves the form intact with a generic message. */
   readonly onSubmit: (input: { kind: NoteKind; body: string }) => Promise<string | null>;
   readonly onCancel: () => void;
+  /** When true and the note is secret, show a dismissible nudge to set a
+   *  shared roleplay term. Purely informational — never gates saving. */
+  readonly termNotSet?: boolean;
+  /** Navigate to the roleplay-term flow (from the nudge). */
+  readonly onSetTerm?: () => void;
 }
 
 /**
@@ -33,6 +38,7 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promptDismissed, setPromptDismissed] = useState(false);
 
   const tooShort = body.trim().length === 0;
   const tooLong = body.length > MAX_LENGTH;
@@ -98,6 +104,30 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
             </Pressable>
           ))}
         </View>
+
+        {kind === 'secret' && props.termNotSet && !promptDismissed ? (
+          <View style={styles.prompt} testID="notes.term-prompt">
+            <Text style={styles.promptText}>Set a shared roleplay term with your partner?</Text>
+            <View style={styles.promptActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={props.onSetTerm}
+                hitSlop={8}
+                testID="notes.set-term"
+              >
+                <Text style={styles.promptLink}>Set one</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPromptDismissed(true)}
+                hitSlop={8}
+                testID="notes.dismiss-term"
+              >
+                <Text style={styles.promptDismiss}>Dismiss</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
         <TextInput
           value={body}
@@ -186,4 +216,16 @@ const styles = StyleSheet.create({
   statusRow: { paddingHorizontal: 16, paddingBottom: 16, gap: 6 },
   counter: { color: '#666', fontSize: 12, textAlign: 'right' },
   errorText: { color: '#ffb4b4', fontSize: 13 },
+  prompt: {
+    marginHorizontal: 16,
+    marginBottom: 4,
+    padding: 12,
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    gap: 8,
+  },
+  promptText: { color: '#cfcfcf', fontSize: 13, lineHeight: 18 },
+  promptActions: { flexDirection: 'row', gap: 18 },
+  promptLink: { color: '#9ec5ff', fontSize: 14, fontWeight: '600' },
+  promptDismiss: { color: '#7a7a7a', fontSize: 14, fontWeight: '600' },
 });

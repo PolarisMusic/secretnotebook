@@ -12,6 +12,7 @@ import {
   setMyRole,
   type ConnectionRole,
 } from '../../features/connection/role-store';
+import { getTermState, type SafeWordTermState } from '../../features/safeword/term-store';
 import { useConnectionStore } from '../../state/connection';
 import type { MainStackParamList } from '../../navigation/MainStack';
 
@@ -22,6 +23,19 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+
+function termSummary(state: SafeWordTermState | null): string {
+  switch (state?.kind) {
+    case 'set':
+      return `Set: ${state.term ?? '••••'}`;
+    case 'awaiting_partner':
+      return 'Waiting for partner to confirm…';
+    case 'incoming_proposal':
+      return 'Partner proposed a term — tap to confirm';
+    default:
+      return 'Not set';
+  }
 }
 
 /**
@@ -38,11 +52,13 @@ export function SettingsRoute(): JSX.Element {
   const paired = status === 'paired';
 
   const [myRole, setMyRoleState] = useState<ConnectionRole | null>(null);
+  const [termState, setTermState] = useState<SafeWordTermState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!exec || !engine) return;
+    setTermState(await getTermState(exec, engine.selfPub));
     const snap = await getConnectionRoles(exec);
     if (!snap) return;
     const rows = await exec.query<{ partner_a_pubkey: Uint8Array | ArrayBufferLike }>(
@@ -125,6 +141,20 @@ export function SettingsRoute(): JSX.Element {
             <Text style={styles.hint}>
               Your role affects what you see on the global feed (and points display, coming soon).
             </Text>
+
+            <Text style={styles.sectionLabel}>ROLEPLAY TERM</Text>
+            <Pressable
+              accessibilityRole="button"
+              style={styles.tile}
+              hitSlop={6}
+              onPress={() => navigation.navigate('SafeWord')}
+              testID="settings.safeword"
+            >
+              <Text style={styles.tileText}>{termSummary(termState)}</Text>
+              <Text style={styles.hint}>
+                An optional shared safe word. Tap to set, change, or use it.
+              </Text>
+            </Pressable>
           </>
         )}
       </ScrollView>

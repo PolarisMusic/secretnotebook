@@ -158,6 +158,63 @@ export const ConnectionRoleSetOpSchema = z.object({
 });
 export type ConnectionRoleSetOp = z.infer<typeof ConnectionRoleSetOpSchema>;
 
+/**
+ * Roleplay-term (Safe Word) handshake — propose half. The proposer derives
+ * the Argon2id verifier locally and sends only the hash; the salt is
+ * deterministic from the shared connection root, so the partner re-derives
+ * it and matches a typed candidate against this verifier ("type it back to
+ * match"). The plaintext word never rides the wire. Last-write-wins by
+ * ratchet order: a fresh propose supersedes an earlier in-flight one.
+ */
+export const ConnectionSafeWordProposeOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('connection.safeword.propose'),
+  proposerPubkey: HexString(32),
+  verifier: HexString(32),
+  proposedAt: z.number().int().nonnegative(),
+});
+export type ConnectionSafeWordProposeOp = z.infer<typeof ConnectionSafeWordProposeOpSchema>;
+
+/**
+ * Roleplay-term handshake — confirm half. Sent by the partner once their
+ * typed candidate matched the proposed verifier. Carries no word/verifier:
+ * it just tells the proposer "we agree", and the proposer promotes their own
+ * pending proposal to the active term. First-confirm-wins on the projector.
+ */
+export const ConnectionSafeWordConfirmOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('connection.safeword.confirm'),
+  confirmerPubkey: HexString(32),
+  confirmedAt: z.number().int().nonnegative(),
+});
+export type ConnectionSafeWordConfirmOp = z.infer<typeof ConnectionSafeWordConfirmOpSchema>;
+
+/**
+ * Manual "safe word used" signal. Add-only: the recipient INSERTs OR IGNOREs
+ * keyed on id, surfacing an active alert until they acknowledge receipt.
+ */
+export const ConnectionSafeWordTriggerOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('connection.safeword.trigger'),
+  id: z.string().uuid(),
+  triggeredByPubkey: HexString(32),
+  triggeredAt: z.number().int().nonnegative(),
+});
+export type ConnectionSafeWordTriggerOp = z.infer<typeof ConnectionSafeWordTriggerOpSchema>;
+
+/**
+ * Acknowledgement of a trigger. First-ack-wins: UPDATE acked_at WHERE id
+ * matches and acked_at IS NULL; clears the active alert on both devices.
+ */
+export const ConnectionSafeWordAckOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('connection.safeword.ack'),
+  id: z.string().uuid(),
+  ackedByPubkey: HexString(32),
+  ackedAt: z.number().int().nonnegative(),
+});
+export type ConnectionSafeWordAckOp = z.infer<typeof ConnectionSafeWordAckOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
@@ -166,6 +223,10 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   NoteSecretRevealOpSchema,
   NotePublishOpSchema,
   ConnectionRoleSetOpSchema,
+  ConnectionSafeWordProposeOpSchema,
+  ConnectionSafeWordConfirmOpSchema,
+  ConnectionSafeWordTriggerOpSchema,
+  ConnectionSafeWordAckOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 

@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MainStackParamList } from '../navigation/MainStack';
 import { useMenuStore } from '../state/menu';
@@ -32,6 +32,13 @@ export function AppMenu(): JSX.Element | null {
   const isOpen = useMenuStore((s) => s.isOpen);
   const close = useMenuStore((s) => s.close);
   const navigation = useNavigation<Nav>();
+  // Read the inset here, in the normal React tree under the root
+  // SafeAreaProvider. A <Modal> presents in a separate native window the
+  // provider can't measure, so a SafeAreaView *inside* the Modal reports a
+  // zero top inset (the panel would collide with the status bar). The hook
+  // value crosses the Modal boundary via context, so we apply it as plain
+  // padding on the panel instead.
+  const insets = useSafeAreaInsets();
 
   if (!isOpen) return null;
 
@@ -45,23 +52,23 @@ export function AppMenu(): JSX.Element | null {
       <Pressable style={styles.backdrop} onPress={close} testID="menu.backdrop">
         {/* Stop propagation: taps on the panel itself shouldn't close it. */}
         <Pressable style={styles.panelWrap} onPress={() => undefined}>
-          <SafeAreaView edges={['top', 'left']}>
-            <View style={styles.panel}>
-              <Text style={styles.heading}>Menu</Text>
-              {ITEMS.map((item) => (
-                <Pressable
-                  key={item.key}
-                  accessibilityRole="button"
-                  style={styles.item}
-                  hitSlop={6}
-                  onPress={() => go(item.target)}
-                  testID={`menu.${item.key}`}
-                >
-                  <Text style={styles.itemText}>{item.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </SafeAreaView>
+          <View
+            style={[styles.panel, { paddingTop: insets.top + 16, paddingLeft: insets.left + 20 }]}
+          >
+            <Text style={styles.heading}>Menu</Text>
+            {ITEMS.map((item) => (
+              <Pressable
+                key={item.key}
+                accessibilityRole="button"
+                style={styles.item}
+                hitSlop={6}
+                onPress={() => go(item.target)}
+                testID={`menu.${item.key}`}
+              >
+                <Text style={styles.itemText}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
@@ -73,8 +80,8 @@ const styles = StyleSheet.create({
   panelWrap: { width: '74%', maxWidth: 320, height: '100%' },
   panel: {
     backgroundColor: '#141414',
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    // paddingTop / paddingLeft are applied inline from safe-area insets.
+    paddingRight: 20,
     gap: 4,
     height: '100%',
   },

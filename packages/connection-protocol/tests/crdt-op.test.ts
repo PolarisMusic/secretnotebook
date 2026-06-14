@@ -69,6 +69,37 @@ const sampleConnectionRoleSet: CrdtOp = {
   setAt: 1_700_000_600,
 };
 
+const sampleSafeWordPropose: CrdtOp = {
+  v: 1,
+  kind: 'connection.safeword.propose',
+  proposerPubkey: '55'.repeat(32),
+  verifier: 'ab'.repeat(32),
+  proposedAt: 1_700_000_700,
+};
+
+const sampleSafeWordConfirm: CrdtOp = {
+  v: 1,
+  kind: 'connection.safeword.confirm',
+  confirmerPubkey: '66'.repeat(32),
+  confirmedAt: 1_700_000_800,
+};
+
+const sampleSafeWordTrigger: CrdtOp = {
+  v: 1,
+  kind: 'connection.safeword.trigger',
+  id: '99999999-9999-9999-9999-999999999999',
+  triggeredByPubkey: '77'.repeat(32),
+  triggeredAt: 1_700_000_900,
+};
+
+const sampleSafeWordAck: CrdtOp = {
+  v: 1,
+  kind: 'connection.safeword.ack',
+  id: '99999999-9999-9999-9999-999999999999',
+  ackedByPubkey: '88'.repeat(32),
+  ackedAt: 1_700_001_000,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
@@ -117,6 +148,29 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
 
   it('rejects a non-32-byte setterPubkey', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleConnectionRoleSet, setterPubkey: 'ab' })).toThrow();
+  });
+
+  it('round-trips the four safeword ops byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleSafeWordPropose))).toEqual(sampleSafeWordPropose);
+    expect(deserialiseOp(serialiseOp(sampleSafeWordConfirm))).toEqual(sampleSafeWordConfirm);
+    expect(deserialiseOp(serialiseOp(sampleSafeWordTrigger))).toEqual(sampleSafeWordTrigger);
+    expect(deserialiseOp(serialiseOp(sampleSafeWordAck))).toEqual(sampleSafeWordAck);
+  });
+
+  it('rejects a non-32-byte verifier on safeword.propose', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSafeWordPropose, verifier: 'ab' })).toThrow();
+  });
+
+  it('rejects a non-32-byte proposerPubkey on safeword.propose', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSafeWordPropose, proposerPubkey: 'zz' })).toThrow();
+  });
+
+  it('rejects a non-uuid id on safeword.trigger', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSafeWordTrigger, id: 'not-a-uuid' })).toThrow();
+  });
+
+  it('rejects a negative ackedAt on safeword.ack', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSafeWordAck, ackedAt: -1 })).toThrow();
   });
 });
 
