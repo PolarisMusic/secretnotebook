@@ -11,7 +11,6 @@ export interface NotesDetailProps {
   readonly error: string | null;
   readonly onBack: () => void;
   readonly onReveal: () => void;
-  readonly onPublish: () => void;
   readonly onOpenPublishedPost: (id: string) => void;
 }
 
@@ -77,30 +76,17 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
             </Pressable>
           ) : null}
 
-          {props.isAuthor ? (
+          {props.isAuthor && note.kind === 'secret' && note.revealedAt == null ? (
             <View style={styles.actionRow}>
-              {note.kind === 'secret' && note.revealedAt == null ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={props.busy}
-                  onPress={props.onReveal}
-                  testID="notes-detail.reveal"
-                  style={[styles.actionButton, props.busy && styles.actionDisabled]}
-                >
-                  <Text style={styles.actionText}>Reveal to partner</Text>
-                </Pressable>
-              ) : null}
-              {note.publishedAt == null ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={props.busy}
-                  onPress={props.onPublish}
-                  testID="notes-detail.publish"
-                  style={[styles.actionButton, props.busy && styles.actionDisabled]}
-                >
-                  <Text style={styles.actionText}>Publish to global feed</Text>
-                </Pressable>
-              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                disabled={props.busy}
+                onPress={props.onReveal}
+                testID="notes-detail.reveal"
+                style={[styles.actionButton, props.busy && styles.actionDisabled]}
+              >
+                <Text style={styles.actionText}>Reveal to partner</Text>
+              </Pressable>
             </View>
           ) : null}
 

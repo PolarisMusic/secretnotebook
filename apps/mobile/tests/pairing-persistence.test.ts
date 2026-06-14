@@ -27,7 +27,7 @@ describe('persistConnection', () => {
   const selfPub = new Uint8Array(32).fill(0x01);
   const peerPub = new Uint8Array(32).fill(0x02);
 
-  it('inserts a connection row with status awaiting_safeword and returns the self side', async () => {
+  it('inserts a connection row with status paired and returns the self side', async () => {
     const { db, exec } = await freshDb();
     const { connectionId, selfSide } = await persistConnection(
       exec,
@@ -41,7 +41,7 @@ describe('persistConnection', () => {
     const row = db
       .prepare('SELECT * FROM connection WHERE id = ?')
       .get(connectionId) as ConnectionRow;
-    expect(row.status).toBe('awaiting_safeword');
+    expect(row.status).toBe('paired');
     expect(row.paired_at).toBe(1_700_000_000);
     expect(Array.from(row.channel_root_key_wrapped)).toEqual(Array.from(rootKey));
 

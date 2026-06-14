@@ -324,7 +324,7 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
         )}
         {state.name === 'safeword_required' && (
           <Text style={styles.body} testID="pair.done">
-            Paired. Next, define your Safe Word.
+            Paired! Taking you back to your notes…
           </Text>
         )}
         {state.name === 'error' && (

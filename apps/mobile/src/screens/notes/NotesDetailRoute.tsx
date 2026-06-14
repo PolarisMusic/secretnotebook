@@ -5,10 +5,7 @@ import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
-import { useApiStore } from '../../features/api/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
-import { EntitlementError } from '../../features/iap/store';
-import { publishMyNote } from '../../features/notes/publish';
 import { getNote, revealSecretNote, type NoteRow } from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { NotesDetail } from './NotesDetail';
@@ -20,17 +17,16 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * Production wiring for NotesDetail. Reads the row by id, exposes the
- * Reveal / Publish affordances when the device is the author, and
- * funnels publish through `publishMyNote` (the canonical helper that
- * bundles requireEntitlement + apiClient.submitPost).
+ * Production wiring for NotesDetail. Reads the row by id and exposes the
+ * Reveal affordance when the device is the author. Publishing to the global
+ * feed now lives in the Feed's composer, not here — the focus of a note is
+ * the connected partner.
  */
 export function NotesDetailRoute(): JSX.Element {
   const route = useRoute<RouteProp<MainStackParamList, 'NotesDetail'>>();
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
-  const apiClient = useApiStore((s) => s.client);
   const [note, setNote] = useState<NoteRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -75,35 +71,6 @@ export function NotesDetailRoute(): JSX.Element {
     }
   }
 
-  async function handlePublish(): Promise<void> {
-    if (!engine || !apiClient || !note) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await publishMyNote(
-        {
-          exec: exec!,
-          engine: { selfPub: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
-          apiClient,
-        },
-        note.id,
-      );
-      await refresh();
-    } catch (e) {
-      if (e instanceof EntitlementError) {
-        setError(
-          e.code === 'expired'
-            ? 'Your subscription has lapsed. Renew to publish.'
-            : 'Subscribe to publish.',
-        );
-      } else {
-        setError((e as Error).message ?? 'Could not publish');
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <NotesDetail
       note={note}
@@ -113,7 +80,6 @@ export function NotesDetailRoute(): JSX.Element {
       error={error}
       onBack={() => navigation.goBack()}
       onReveal={() => void handleReveal()}
-      onPublish={() => void handlePublish()}
       onOpenPublishedPost={(id) => navigation.navigate('PostDetail', { id })}
     />
   );

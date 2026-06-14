@@ -67,12 +67,14 @@ export async function saveSafeWord(
   if (material.verifier.length !== SAFEWORD_VERIFIER_BYTES) {
     throw new Error(`verifier must be ${SAFEWORD_VERIFIER_BYTES} bytes`);
   }
+  // The Safe Word is no longer an onboarding gate, so saving it does not
+  // change the connection status (pairing already lands in 'paired'). It
+  // simply persists the verifier/salt for the optional roleplay-term flow.
   await exec.execute(
     `UPDATE connection
         SET safeword_verifier = ?,
-            safeword_salt     = ?,
-            status            = 'paired'
-      WHERE id = ? AND status = 'awaiting_safeword'`,
+            safeword_salt     = ?
+      WHERE id = ?`,
     [material.verifier, material.salt, connectionId],
   );
 }

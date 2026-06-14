@@ -19,6 +19,12 @@ export interface SubmitPostProps {
    *  generic error. */
   readonly onSubmit: (input: PostInput) => Promise<string | null>;
   readonly onCancel: () => void;
+  /** The device's own not-yet-published notes, offered as one-tap publish
+   *  targets. Empty/omitted hides the section (e.g. unpaired devices). */
+  readonly notes?: ReadonlyArray<{ id: string; preview: string }>;
+  /** Publish an existing note to the global feed. Returns an error string,
+   *  or null on success (the route then navigates away). */
+  readonly onPublishNote?: (id: string) => Promise<string | null>;
 }
 
 const MAX_LENGTH = 4000;
@@ -28,6 +34,23 @@ export function SubmitPost(props: SubmitPostProps): JSX.Element {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+
+  const notes = props.notes ?? [];
+
+  async function publishNoteById(id: string): Promise<void> {
+    if (!props.onPublishNote || publishingId !== null) return;
+    setPublishingId(id);
+    setError(null);
+    try {
+      const errMessage = await props.onPublishNote(id);
+      if (errMessage) setError(errMessage);
+    } catch (e) {
+      setError((e as Error).message ?? 'Could not publish note');
+    } finally {
+      setPublishingId(null);
+    }
+  }
 
   const tooShort = body.trim().length === 0;
   const tooLong = body.length > MAX_LENGTH;
@@ -76,6 +99,32 @@ export function SubmitPost(props: SubmitPostProps): JSX.Element {
             )}
           </Pressable>
         </View>
+
+        {props.onPublishNote && notes.length > 0 ? (
+          <View style={styles.notesSection}>
+            <Text style={styles.sectionLabel}>PUBLISH A NOTE</Text>
+            {notes.map((n) => (
+              <Pressable
+                key={n.id}
+                accessibilityRole="button"
+                disabled={publishingId !== null}
+                onPress={() => void publishNoteById(n.id)}
+                style={styles.noteRow}
+                testID={`submit-post.note.${n.id}`}
+              >
+                <Text style={styles.noteRowText} numberOfLines={1}>
+                  {n.preview}
+                </Text>
+                {publishingId === n.id ? (
+                  <ActivityIndicator color="#9ec5ff" />
+                ) : (
+                  <Text style={styles.noteRowCta}>Publish</Text>
+                )}
+              </Pressable>
+            ))}
+            <Text style={styles.sectionLabel}>OR WRITE A NEW POST</Text>
+          </View>
+        ) : null}
 
         <View style={styles.radioRow}>
           {(['text', 'link'] satisfies PostContentType[]).map((kind) => (
@@ -150,6 +199,20 @@ const styles = StyleSheet.create({
   },
   submitDisabled: { backgroundColor: '#2a2a2a' },
   submitText: { color: '#0a0a0a', fontWeight: '600' },
+  notesSection: { paddingHorizontal: 16, paddingTop: 8, gap: 8 },
+  sectionLabel: { color: '#7a7a7a', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  noteRowText: { color: '#f5f5f5', fontSize: 15, flex: 1 },
+  noteRowCta: { color: '#9ec5ff', fontSize: 14, fontWeight: '600' },
   radioRow: {
     flexDirection: 'row',
     gap: 8,

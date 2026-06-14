@@ -108,7 +108,7 @@ describe('bootstrap', () => {
 
     const result = await bootstrap(h.deps);
     expect(result.connection?.connectionId).toBe(connectionId);
-    expect(result.connection?.status).toBe('awaiting_safeword');
+    expect(result.connection?.status).toBe('paired');
   });
 
   it('derives a stable device signing keypair from the same device_master across boots', async () => {

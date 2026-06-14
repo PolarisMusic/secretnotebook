@@ -1,62 +1,44 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import { useBackgroundLock } from '../features/safeword/background-lock';
-import { isSafeWordSatisfied, useSafeWordSession } from '../features/safeword/session';
-import { SafeWordGateRoute } from '../screens/auth/SafeWordGateRoute';
+import { useAppLockBackground } from '../features/app-lock/background';
+import { isAppUnlocked, useAppLockSession } from '../features/app-lock/session';
+import { AppLockGateRoute } from '../screens/auth/AppLockGateRoute';
 import { useSecureScreen } from '../security/secure-screen';
-import { useConnectionStore } from '../state/connection';
 import { MainStack } from './MainStack';
-import { OnboardingStack } from './OnboardingStack';
 
 const Root = createNativeStackNavigator();
 
 /**
- * Three-way phase switch driven by:
- *   - connection.status   ('unpaired' / 'awaiting_safeword' / 'paired' / 'severed')
- *   - session.satisfiedAt  (in-memory; never persisted)
+ * Two-phase switch:
+ *   - locked : biometric app-lock not yet satisfied (cold launch, or
+ *              background > threshold). Shows the Face ID gate.
+ *   - main   : unlocked → the notes-first app (usable paired OR unpaired;
+ *              pairing is reached from the unpaired banner / Settings).
  *
- *   onboarding : connection not yet paired or still picking a Safe Word
- *   gate       : paired, but session is locked (cold launch, background>60s,
- *                screen-lock release)
- *   main       : paired + session satisfied
+ * The app no longer gates on pairing or on the Safe Word. The Safe Word is
+ * being redesigned into an optional roleplay term and is not an app gate.
+ * Privacy on app open is handled here by a required biometric unlock.
  */
 export function RootStack(): JSX.Element {
-  const status = useConnectionStore((s) => s.status);
-  // Subscribe to each session field individually so Zustand can use
-  // Object.is per field. Selecting an object literal here would
-  // return a fresh reference on every call, fail the default
-  // equality check, and trigger an infinite render loop that hangs
-  // the JS thread — the entire app loses its responder system, so
-  // every Pressable / TouchableOpacity / RNGH gesture silently dies
-  // while native scrolling keeps working (those don't need JS to
-  // advance).
-  const satisfiedAt = useSafeWordSession((s) => s.satisfiedAt);
-  const ttlMs = useSafeWordSession((s) => s.ttlMs);
-  const satisfied = isSafeWordSatisfied({ satisfiedAt, ttlMs });
+  // Subscribe to each scalar field individually so Zustand can run Object.is
+  // per field. Selecting a fresh object literal here would re-render every
+  // tick and (historically) hang the JS thread + kill all touches.
+  const unlockedAt = useAppLockSession((s) => s.unlockedAt);
+  const ttlMs = useAppLockSession((s) => s.ttlMs);
+  const unlocked = isAppUnlocked({ unlockedAt, ttlMs });
 
-  // Lock the session as soon as the app has been backgrounded for more
-  // than 60 s — the gate re-renders automatically on the next status
-  // selector tick.
-  useBackgroundLock();
+  // Re-lock after the app has been backgrounded past the threshold.
+  useAppLockBackground();
 
-  // Pin Android FLAG_SECURE on for the entire app surface. iOS is a
-  // no-op (the OS handles recents-thumbnail blurring). See
-  // apps/mobile/RUNBOOK.md §FLAG_SECURE for the prebuild patch that
-  // registers the native bridge — until it's applied the hook is a
-  // transparent no-op so dev / Expo-Go / Jest still work.
+  // Pin Android FLAG_SECURE across the whole app surface (iOS no-op).
   useSecureScreen();
-
-  const phase: 'onboarding' | 'gate' | 'main' =
-    status === 'paired' ? (satisfied ? 'main' : 'gate') : 'onboarding';
 
   return (
     <Root.Navigator screenOptions={{ headerShown: false }}>
-      {phase === 'main' ? (
+      {unlocked ? (
         <Root.Screen name="Main" component={MainStack} />
-      ) : phase === 'gate' ? (
-        <Root.Screen name="Gate" component={SafeWordGateRoute} />
       ) : (
-        <Root.Screen name="Onboarding" component={OnboardingStack} />
+        <Root.Screen name="AppLock" component={AppLockGateRoute} />
       )}
     </Root.Navigator>
   );

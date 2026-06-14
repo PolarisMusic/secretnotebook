@@ -9,16 +9,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScreenHeader } from '../../components/ScreenHeader';
 import type { NoteRow } from '../../features/notes/store';
 
 export interface NotesListProps {
   readonly items: ReadonlyArray<NoteRow>;
   readonly isLoading: boolean;
   readonly isRefreshing: boolean;
+  /** Whether this device is paired with a partner. */
+  readonly paired: boolean;
   readonly onRefresh: () => void;
   readonly onSelectNote: (id: string) => void;
   readonly onCompose: () => void;
-  readonly onBack: () => void;
+  /** Open the pairing modal (from the unpaired banner). */
+  readonly onPair: () => void;
 }
 
 function isoDate(secs: number): string {
@@ -33,27 +37,36 @@ function previewBody(row: NoteRow): string {
 }
 
 /**
- * Presentational notes list. State + side-effects live in
- * NotesListRoute, which wires `listNotes(exec)` and re-reads on
- * pull-to-refresh.
+ * Notes home — the app's landing surface. Hamburger menu in the header,
+ * a compose-forward "Write a note…" tile up top (Apple-Notes style), an
+ * unpaired banner that leads into pairing, and the list of notes below.
  */
 export function NotesList(props: NotesListProps): JSX.Element {
   return (
-    <SafeAreaView style={styles.container} testID="screen.notes">
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" onPress={props.onBack} testID="notes.back">
-          <Text style={styles.back}>← Back</Text>
-        </Pressable>
-        <Text style={styles.title}>Notes</Text>
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen.notes">
+      <ScreenHeader title="Notes" />
+
+      {!props.paired && (
         <Pressable
           accessibilityRole="button"
-          testID="notes.compose"
-          onPress={props.onCompose}
-          style={styles.composeButton}
+          style={styles.banner}
+          onPress={props.onPair}
+          testID="notes.pair_banner"
         >
-          <Text style={styles.composeButtonText}>+ Note</Text>
+          <Text style={styles.bannerText}>
+            You're not paired with a partner. Pair with one other person to share your notes.
+          </Text>
         </Pressable>
-      </View>
+      )}
+
+      <Pressable
+        accessibilityRole="button"
+        style={styles.composeTile}
+        onPress={props.onCompose}
+        testID="notes.compose"
+      >
+        <Text style={styles.composeTileText}>Write a note…</Text>
+      </Pressable>
 
       <FlatList
         data={props.items as NoteRow[]}
@@ -100,7 +113,7 @@ export function NotesList(props: NotesListProps): JSX.Element {
           ) : (
             <View style={styles.empty} testID="notes.empty">
               <Text style={styles.emptyTitle}>No notes yet</Text>
-              <Text style={styles.emptyBody}>Tap “+ Note” to write a shared or secret note.</Text>
+              <Text style={styles.emptyBody}>Tap “Write a note…” to start.</Text>
             </View>
           )
         }
@@ -111,23 +124,23 @@ export function NotesList(props: NotesListProps): JSX.Element {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  banner: {
+    backgroundColor: '#1c1c2a',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 10,
+  },
+  bannerText: { color: '#9ec5ff', fontSize: 13, lineHeight: 18 },
+  composeTile: {
+    backgroundColor: '#161616',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingVertical: 16,
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
+    borderRadius: 10,
   },
-  back: { color: '#9ec5ff', fontSize: 15, minWidth: 60 },
-  title: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
-  composeButton: {
-    backgroundColor: '#2a2a2a',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  composeButtonText: { color: '#f5f5f5', fontWeight: '600' },
+  composeTileText: { color: '#9a9a9a', fontSize: 16 },
   listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   row: {
     backgroundColor: '#161616',
@@ -137,19 +150,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rowTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  kindBadge: {
-    color: '#9ec5ff',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
+  kindBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   kindBadgeSecret: { color: '#ffb4b4' },
-  publishedBadge: {
-    color: '#9eff9e',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
+  publishedBadge: { color: '#9eff9e', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   rowBody: { color: '#f5f5f5', fontSize: 15, lineHeight: 20 },
   rowMeta: { color: '#808080', fontSize: 12 },
   empty: { paddingTop: 80, alignItems: 'center', gap: 8, paddingHorizontal: 32 },

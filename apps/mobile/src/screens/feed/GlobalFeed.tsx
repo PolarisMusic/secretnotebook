@@ -12,6 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Post } from '@secretnotebook/shared-types';
 
+import { ScreenHeader } from '../../components/ScreenHeader';
+
 export interface GlobalFeedProps {
   readonly items: ReadonlyArray<Post>;
   readonly isRefreshing: boolean;
@@ -22,24 +24,13 @@ export interface GlobalFeedProps {
   readonly onLoadMore: () => void;
   readonly onSelectPost: (id: string) => void;
   readonly onCompose: () => void;
-  /** Optional — hidden on unpaired devices (no Saved area to navigate to). */
-  readonly onOpenSaved?: () => void;
-  /** Optional — hidden on unpaired devices. Opens ConnectionHome. */
-  readonly onOpenConnection?: () => void;
-  /** Optional — hidden on unpaired devices. Opens NotesList. */
-  readonly onOpenNotes?: () => void;
 }
 
 /**
- * Presentational feed screen. State + side-effects live in the parent
- * (GlobalFeedRoute, which wires `usePostsFeed` from features/api).
- *
- * Two reasons it's structured this way:
- *   1. The query hook needs a QueryClientProvider in the tree; tests
- *      that focus on rendering can build a fixed `items` snapshot
- *      without spinning one up.
- *   2. The same screen renders both the empty state and the loaded
- *      state, so all conditional logic lives next to the JSX.
+ * Presentational feed screen. State + side-effects live in GlobalFeedRoute.
+ * Navigation between Notes/Saved/Settings is via the hamburger menu in the
+ * shared header; the only header action here is a comfortably-tappable Post
+ * button (the old tiny pill was nearly impossible to hit).
  */
 export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
   const renderItem = useCallback(
@@ -62,50 +53,21 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
   );
 
   return (
-    <SafeAreaView style={styles.container} testID="screen.global-feed">
-      <View style={styles.header}>
-        <Text style={styles.title}>Global feed</Text>
-        <View style={styles.headerActions}>
-          {props.onOpenConnection ? (
-            <Pressable
-              accessibilityRole="button"
-              testID="feed.open-connection"
-              onPress={props.onOpenConnection}
-              style={styles.savedButton}
-            >
-              <Text style={styles.savedButtonText}>Connection</Text>
-            </Pressable>
-          ) : null}
-          {props.onOpenNotes ? (
-            <Pressable
-              accessibilityRole="button"
-              testID="feed.open-notes"
-              onPress={props.onOpenNotes}
-              style={styles.savedButton}
-            >
-              <Text style={styles.savedButtonText}>Notes</Text>
-            </Pressable>
-          ) : null}
-          {props.onOpenSaved ? (
-            <Pressable
-              accessibilityRole="button"
-              testID="feed.open-saved"
-              onPress={props.onOpenSaved}
-              style={styles.savedButton}
-            >
-              <Text style={styles.savedButtonText}>Saved</Text>
-            </Pressable>
-          ) : null}
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen.global-feed">
+      <ScreenHeader
+        title="Feed"
+        right={
           <Pressable
             accessibilityRole="button"
             testID="feed.compose"
             onPress={props.onCompose}
-            style={styles.composeButton}
+            style={styles.postButton}
+            hitSlop={10}
           >
-            <Text style={styles.composeButtonText}>+ Post</Text>
+            <Text style={styles.postButtonText}>Post</Text>
           </Pressable>
-        </View>
-      </View>
+        }
+      />
 
       {props.error ? (
         <View testID="feed.error" style={styles.errorBox}>
@@ -133,7 +95,7 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
           <View testID="feed.empty" style={styles.empty}>
             <Text style={styles.emptyTitle}>No posts yet</Text>
             <Text style={styles.emptyBody}>
-              Tap “+ Post” to share something — or pull to refresh.
+              Tap “Post” to share something — or pull to refresh.
             </Text>
           </View>
         }
@@ -149,30 +111,15 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  postButton: {
+    backgroundColor: '#3a3a3a',
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  title: { color: '#f5f5f5', fontSize: 22, fontWeight: '600' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  savedButton: {
-    backgroundColor: '#1a1a1a',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: 44,
     borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  savedButtonText: { color: '#9ec5ff', fontWeight: '600' },
-  composeButton: {
-    backgroundColor: '#2a2a2a',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  composeButtonText: { color: '#f5f5f5', fontWeight: '600' },
+  postButtonText: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
   listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   row: {
     backgroundColor: '#161616',

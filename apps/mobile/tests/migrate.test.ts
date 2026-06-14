@@ -17,6 +17,7 @@ const EXPECTED_TABLES = [
   'sync_outbox',
   'sync_seen',
   'connection_ratchet',
+  'app_setting',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -40,6 +41,8 @@ describe('runMigrations', () => {
       'note-publish-cols',
       'connection-roles',
       'entitlement',
+      'app-settings',
+      'paired-coercion',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -72,6 +75,8 @@ describe('runMigrations', () => {
       'note-publish-cols',
       'connection-roles',
       'entitlement',
+      'app-settings',
+      'paired-coercion',
     ]);
   });
 
