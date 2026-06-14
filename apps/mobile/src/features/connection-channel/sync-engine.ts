@@ -105,6 +105,9 @@ export class SyncEngine {
   get connectionId(): string {
     return this.deps.connectionId;
   }
+  get connectionRoot(): Uint8Array {
+    return this.deps.connectionRoot;
+  }
   get exec(): SqlExecutor {
     return this.deps.exec;
   }

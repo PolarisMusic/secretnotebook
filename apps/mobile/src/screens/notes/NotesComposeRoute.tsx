@@ -1,11 +1,13 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { submitNoteCompose } from '../../features/notes/compose-wiring';
+import { getTermState } from '../../features/safeword/term-store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { NotesCompose } from './NotesCompose';
 
@@ -21,6 +23,18 @@ export function NotesComposeRoute(): JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
+  const [termNotSet, setTermNotSet] = useState(false);
+
+  useEffect(() => {
+    if (!exec || !engine) return;
+    let cancelled = false;
+    void getTermState(exec, engine.selfPub).then((s) => {
+      if (!cancelled) setTermNotSet(s.kind === 'none');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [exec, engine]);
 
   if (!exec || !engine) {
     return (
@@ -33,6 +47,8 @@ export function NotesComposeRoute(): JSX.Element {
 
   return (
     <NotesCompose
+      termNotSet={termNotSet}
+      onSetTerm={() => navigation.navigate('SafeWord')}
       onCancel={() => navigation.goBack()}
       onSubmit={async ({ kind, body }) => {
         try {

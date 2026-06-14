@@ -8,6 +8,7 @@ import { sql as connectionRolesSql } from './008-connection-roles';
 import { sql as entitlementSql } from './009-entitlement';
 import { sql as appSettingsSql } from './010-app-settings';
 import { sql as pairedCoercionSql } from './011-paired-coercion';
+import { sql as safewordTermSql } from './012-safeword-term';
 
 export interface Migration {
   readonly id: number;
@@ -28,4 +29,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 9, name: 'entitlement', sql: entitlementSql },
   { id: 10, name: 'app-settings', sql: appSettingsSql },
   { id: 11, name: 'paired-coercion', sql: pairedCoercionSql },
+  { id: 12, name: 'safeword-term', sql: safewordTermSql },
 ];

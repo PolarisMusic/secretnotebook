@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { SafeWordAlert } from '../components/SafeWordAlert';
 import { SavedByYouRoute } from '../screens/connection/SavedByYouRoute';
 import { GlobalFeedRoute } from '../screens/feed/GlobalFeedRoute';
 import { PostDetailRoute } from '../screens/feed/PostDetailRoute';
@@ -8,6 +9,7 @@ import { NotesComposeRoute } from '../screens/notes/NotesComposeRoute';
 import { NotesDetailRoute } from '../screens/notes/NotesDetailRoute';
 import { NotesListRoute } from '../screens/notes/NotesListRoute';
 import { PairWithPartnerRoute } from '../screens/onboarding/PairWithPartnerRoute';
+import { SafeWordRoute } from '../screens/safeword/SafeWordRoute';
 import { SettingsRoute } from '../screens/settings/SettingsRoute';
 
 export type MainStackParamList = {
@@ -19,6 +21,7 @@ export type MainStackParamList = {
   PostDetail: { id: string };
   SavedByYou: undefined;
   Settings: undefined;
+  SafeWord: undefined;
   Pairing: undefined;
 };
 
@@ -32,31 +35,37 @@ const Stack = createNativeStackNavigator<MainStackParamList>();
  */
 export function MainStack(): JSX.Element {
   return (
-    <Stack.Navigator
-      initialRouteName="NotesList"
-      screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }}
-    >
-      <Stack.Screen name="NotesList" component={NotesListRoute} />
-      <Stack.Screen
-        name="NotesCompose"
-        component={NotesComposeRoute}
-        options={{ presentation: 'modal' }}
-      />
-      <Stack.Screen name="NotesDetail" component={NotesDetailRoute} />
-      <Stack.Screen name="GlobalFeed" component={GlobalFeedRoute} />
-      <Stack.Screen
-        name="SubmitPost"
-        component={SubmitPostRoute}
-        options={{ presentation: 'modal' }}
-      />
-      <Stack.Screen name="PostDetail" component={PostDetailRoute} />
-      <Stack.Screen name="SavedByYou" component={SavedByYouRoute} />
-      <Stack.Screen name="Settings" component={SettingsRoute} />
-      <Stack.Screen
-        name="Pairing"
-        component={PairWithPartnerRoute}
-        options={{ presentation: 'modal' }}
-      />
-    </Stack.Navigator>
+    <>
+      <Stack.Navigator
+        initialRouteName="NotesList"
+        screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }}
+      >
+        <Stack.Screen name="NotesList" component={NotesListRoute} />
+        <Stack.Screen
+          name="NotesCompose"
+          component={NotesComposeRoute}
+          options={{ presentation: 'modal' }}
+        />
+        <Stack.Screen name="NotesDetail" component={NotesDetailRoute} />
+        <Stack.Screen name="GlobalFeed" component={GlobalFeedRoute} />
+        <Stack.Screen
+          name="SubmitPost"
+          component={SubmitPostRoute}
+          options={{ presentation: 'modal' }}
+        />
+        <Stack.Screen name="PostDetail" component={PostDetailRoute} />
+        <Stack.Screen name="SavedByYou" component={SavedByYouRoute} />
+        <Stack.Screen name="Settings" component={SettingsRoute} />
+        <Stack.Screen name="SafeWord" component={SafeWordRoute} />
+        <Stack.Screen
+          name="Pairing"
+          component={PairWithPartnerRoute}
+          options={{ presentation: 'modal' }}
+        />
+      </Stack.Navigator>
+      {/* App-wide: an inbound safe-word trigger overlays every screen until
+          it's acknowledged. */}
+      <SafeWordAlert />
+    </>
   );
 }
