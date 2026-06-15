@@ -82,7 +82,7 @@ export function SubmitPostRoute(): JSX.Element {
       }}
       onPublishNote={
         engine
-          ? async (id) => {
+          ? async (id, audience) => {
               try {
                 await publishMyNote(
                   {
@@ -91,6 +91,7 @@ export function SubmitPostRoute(): JSX.Element {
                     apiClient: client,
                   },
                   id,
+                  { audience },
                 );
                 navigation.goBack();
                 return null;

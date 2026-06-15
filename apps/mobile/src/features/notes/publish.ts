@@ -59,7 +59,7 @@ type ApiCompatibleEnqueue = (op: CrdtOp) => Promise<void>;
 export async function publishMyNote(
   deps: PublishMyNoteDeps,
   noteId: string,
-  opts: { contentType?: 'text' | 'link' } = {},
+  opts: { contentType?: 'text' | 'link'; audience?: 'everyone' | 'masculine' | 'feminine' } = {},
 ): Promise<PublishNoteResult> {
   return publishNote(
     {
@@ -79,6 +79,7 @@ export async function publishMyNote(
     },
     {
       contentType: opts.contentType,
+      audience: opts.audience,
       requireEntitlement: async () => {
         await requireCurrentEntitlement(deps.exec, deps.now);
       },

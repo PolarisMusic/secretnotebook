@@ -6,6 +6,7 @@ export interface StoredPost {
   anonAuthor: Uint8Array;
   createdAt: Date;
   popularity: number;
+  audience: string;
 }
 
 export interface NewPostInput {
@@ -15,11 +16,15 @@ export interface NewPostInput {
   bodyHash: Uint8Array;
   anonAuthor: Uint8Array;
   createdAt: Date;
+  audience: string;
 }
 
 export interface PostListOptions {
   cursor?: string;
   limit: number;
+  /** Role filter. When set, list returns posts tagged for this role plus
+   *  'everyone'. Omitted = no filter. */
+  audience?: 'masculine' | 'feminine';
 }
 
 export interface PostListResult {

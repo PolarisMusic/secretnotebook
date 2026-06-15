@@ -110,6 +110,22 @@ describe('ApiClient.listPosts', () => {
     expect(calls[0]!.url).toBe('http://example.test/v1/posts?cursor=abc&limit=10');
   });
 
+  it('appends the audience filter when provided', async () => {
+    const kp = await generateEd25519KeyPair();
+    const { fetch, calls } = makeFetch(() => ({
+      status: 200,
+      bodyText: JSON.stringify({ items: [], nextCursor: null }),
+    }));
+    const client = new ApiClient({
+      baseUrl: 'http://example.test',
+      keyPair: kp,
+      fetch,
+      nowMs: () => 1_700_000_000_000,
+    });
+    await client.listPosts({ limit: 20, audience: 'feminine' });
+    expect(calls[0]!.url).toBe('http://example.test/v1/posts?limit=20&audience=feminine');
+  });
+
   it('omits the querystring entirely when no opts are supplied', async () => {
     const kp = await generateEd25519KeyPair();
     const { fetch, calls } = makeFetch(() => ({

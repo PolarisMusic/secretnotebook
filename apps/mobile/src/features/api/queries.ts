@@ -21,7 +21,8 @@ import type { ApiClient } from './client';
 
 export const postsKeys = {
   all: ['posts'] as const,
-  list: (limit: number) => ['posts', 'list', limit] as const,
+  list: (limit: number, audience?: 'masculine' | 'feminine') =>
+    ['posts', 'list', limit, audience ?? 'all'] as const,
   detail: (id: string) => ['posts', 'detail', id] as const,
 };
 
@@ -38,6 +39,8 @@ export function usePostsFeed(args: {
   client: ApiClient;
   exec?: SqlExecutor | null;
   pageSize?: number;
+  /** Role filter; when set, the feed shows this role's posts plus 'everyone'. */
+  audience?: 'masculine' | 'feminine';
 }): UseInfiniteQueryResult<InfiniteData<PostListResponse>, Error> {
   const pageSize = args.pageSize ?? 20;
   return useInfiniteQuery<
@@ -47,13 +50,14 @@ export function usePostsFeed(args: {
     ReadonlyArray<unknown>,
     string | undefined
   >({
-    queryKey: postsKeys.list(pageSize),
+    queryKey: postsKeys.list(pageSize, args.audience),
     initialPageParam: undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     queryFn: async ({ pageParam }) => {
       const page = await args.client.listPosts({
         cursor: pageParam,
         limit: pageSize,
+        audience: args.audience,
       });
       if (args.exec && page.items.length > 0) {
         await cachePosts(args.exec, page.items);

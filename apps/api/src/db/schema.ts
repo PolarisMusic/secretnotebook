@@ -22,6 +22,9 @@ export const posts = pgTable('posts', {
   anonAuthor: bytea('anon_author').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   popularity: integer('popularity').notNull().default(0),
+  // Author-tagged intended audience ('everyone' | 'masculine' | 'feminine').
+  // Drives the feed's role filter; defaults to 'everyone' for legacy rows.
+  audience: text('audience').notNull().default('everyone'),
 });
 
 export const devices = pgTable('devices', {

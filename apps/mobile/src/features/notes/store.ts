@@ -92,6 +92,7 @@ export interface NoteStoreDeps {
 export type PublishToGlobalFeed = (input: {
   contentType: 'text' | 'link';
   body: string;
+  audience: 'everyone' | 'masculine' | 'feminine';
 }) => Promise<{ id: string }>;
 
 export interface PublishNoteResult {
@@ -272,6 +273,8 @@ export async function publishNote(
   publishToGlobalFeed: PublishToGlobalFeed,
   opts: {
     contentType?: 'text' | 'link';
+    /** Author-tagged audience for the global feed; defaults to 'everyone'. */
+    audience?: 'everyone' | 'masculine' | 'feminine';
     /** Resolves when the device has a current IAP entitlement,
      *  throws otherwise (paywall surface). Optional so unit tests
      *  that don't care about the gate can pass nothing; the
@@ -322,6 +325,7 @@ export async function publishNote(
   const { id: globalPostId } = await publishToGlobalFeed({
     contentType: opts.contentType ?? 'text',
     body: row.body,
+    audience: opts.audience ?? 'everyone',
   });
 
   const publishedAt = nowSec(deps);

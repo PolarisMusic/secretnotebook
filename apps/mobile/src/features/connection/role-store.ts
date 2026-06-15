@@ -116,3 +116,20 @@ export async function getConnectionRoles(
     partnerBRole: conn.partner_b_role,
   };
 }
+
+/**
+ * The caller's own role on the active connection, or null when there's no
+ * connection or the self-pubkey matches neither partner (unpaired / not yet
+ * bootstrapped). Resolves the a/b side internally so callers (the feed's role
+ * filter, Settings, future points display) don't repeat the byte-compare.
+ */
+export async function getMyRole(
+  exec: SqlExecutor,
+  selfPubkey: Uint8Array,
+): Promise<ConnectionRole | null> {
+  const conn = await loadConnectionForRoles(exec);
+  if (!conn) return null;
+  if (sameBytes(selfPubkey, bytesFromRow(conn.partner_a_pubkey))) return conn.partner_a_role;
+  if (sameBytes(selfPubkey, bytesFromRow(conn.partner_b_pubkey))) return conn.partner_b_role;
+  return null;
+}

@@ -16,6 +16,7 @@ function toApiPost(row: StoredPost): Post {
     id: row.id,
     contentType: row.contentType as Post['contentType'],
     body: row.body,
+    audience: row.audience as Post['audience'],
     anonAuthor: bytesToHex(row.anonAuthor),
     createdAt: row.createdAt.toISOString(),
   };
@@ -66,6 +67,7 @@ export const postsRoute: FastifyPluginAsyncZod<PostsRouteOptions> = async (fasti
         bodyHash: sha256(input.body),
         anonAuthor: pubkey,
         createdAt: now(),
+        audience: input.audience,
       });
       return { id: row.id, createdAt: row.createdAt.toISOString() };
     },
@@ -81,8 +83,8 @@ export const postsRoute: FastifyPluginAsyncZod<PostsRouteOptions> = async (fasti
       },
     },
     async (req) => {
-      const { cursor, limit } = req.query;
-      const result = await opts.store.list({ cursor, limit });
+      const { cursor, limit, audience } = req.query;
+      const result = await opts.store.list({ cursor, limit, audience });
       return {
         items: result.items.map(toApiPost),
         nextCursor: result.nextCursor,

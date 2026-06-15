@@ -19,6 +19,7 @@ function fixturePost(overrides: Partial<Post> = {}): Post {
     id: '11111111-1111-1111-1111-111111111111',
     contentType: 'text',
     body: 'hi from a paired device',
+    audience: 'everyone',
     anonAuthor: '00'.repeat(32),
     createdAt: '2026-05-20T00:00:00.000Z',
     ...overrides,
@@ -36,8 +37,16 @@ describe('cachePost', () => {
     expect(row.globalId).toBe(post.id);
     expect(row.body).toBe(post.body);
     expect(row.contentType).toBe(post.contentType);
+    expect(row.audience).toBe('everyone');
     expect(bytesToHex(row.anonAuthorId)).toBe(post.anonAuthor);
     expect(row.fetchedAt).toBe(1_700_000_000);
+  });
+
+  it('round-trips a non-default audience', async () => {
+    const exec = await freshExec();
+    await cachePost(exec, fixturePost({ audience: 'masculine' }), 1);
+    const got = await getCachedPost(exec, fixturePost().id);
+    expect(got?.audience).toBe('masculine');
   });
 
   it('upserts on a second write with the same id (server is source of truth)', async () => {

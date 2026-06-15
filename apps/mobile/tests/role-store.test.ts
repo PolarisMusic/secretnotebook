@@ -8,6 +8,7 @@ import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import {
   getConnectionRoles,
+  getMyRole,
   setMyRole,
   type RoleStoreDeps,
 } from '../src/features/connection/role-store';
@@ -125,6 +126,35 @@ describe('connection role store', () => {
         role: 'masculine',
         setAt: FIXED_NOW_SEC,
       });
+    });
+  });
+
+  describe('getMyRole', () => {
+    it('returns the caller-side role when self is side A', async () => {
+      const { exec, deps } = await freshHarness(A_PUB);
+      await setMyRole(deps, 'masculine');
+      expect(await getMyRole(exec, A_PUB)).toBe('masculine');
+    });
+
+    it('returns the caller-side role when self is side B', async () => {
+      const { exec, deps } = await freshHarness(B_PUB);
+      await setMyRole(deps, 'feminine');
+      expect(await getMyRole(exec, B_PUB)).toBe('feminine');
+    });
+
+    it('returns null before any role is set', async () => {
+      const { exec } = await freshHarness(A_PUB);
+      expect(await getMyRole(exec, A_PUB)).toBeNull();
+    });
+
+    it('returns null when self matches neither partner', async () => {
+      const { exec } = await freshHarness(A_PUB);
+      expect(await getMyRole(exec, STRANGER_PUB)).toBeNull();
+    });
+
+    it('returns null on a device without a connection row', async () => {
+      const { exec } = await freshHarness(A_PUB, { withConnection: false });
+      expect(await getMyRole(exec, A_PUB)).toBeNull();
     });
   });
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { posts } from '../db/schema.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
@@ -19,6 +19,7 @@ function rowToStored(row: typeof posts.$inferSelect): StoredPost {
     anonAuthor: row.anonAuthor,
     createdAt: row.createdAt,
     popularity: row.popularity,
+    audience: row.audience,
   };
 }
 
@@ -35,6 +36,7 @@ export class DrizzlePostsStore implements PostsStore {
         bodyHash: input.bodyHash,
         anonAuthor: input.anonAuthor,
         createdAt: input.createdAt,
+        audience: input.audience,
       })
       .onConflictDoUpdate({
         target: posts.bodyHash,
@@ -50,13 +52,21 @@ export class DrizzlePostsStore implements PostsStore {
     const cursorDate = decoded ? new Date(decoded.createdAt) : null;
     const cursorId = decoded?.id ?? null;
 
-    const where =
+    const cursorWhere =
       cursorDate && cursorId
         ? or(
             lt(posts.createdAt, cursorDate),
             and(eq(posts.createdAt, cursorDate), lt(posts.id, cursorId)),
           )
         : undefined;
+    // Role filter: posts tagged for the viewer's role OR for everyone.
+    const audienceWhere = opts.audience
+      ? inArray(posts.audience, [opts.audience, 'everyone'])
+      : undefined;
+    const where =
+      cursorWhere && audienceWhere
+        ? and(cursorWhere, audienceWhere)
+        : (cursorWhere ?? audienceWhere);
 
     const rows = await this.db
       .select()

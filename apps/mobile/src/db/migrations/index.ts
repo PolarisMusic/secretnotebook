@@ -9,6 +9,7 @@ import { sql as entitlementSql } from './009-entitlement';
 import { sql as appSettingsSql } from './010-app-settings';
 import { sql as pairedCoercionSql } from './011-paired-coercion';
 import { sql as safewordTermSql } from './012-safeword-term';
+import { sql as postAudienceSql } from './013-post-audience';
 
 export interface Migration {
   readonly id: number;
@@ -30,4 +31,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 10, name: 'app-settings', sql: appSettingsSql },
   { id: 11, name: 'paired-coercion', sql: pairedCoercionSql },
   { id: 12, name: 'safeword-term', sql: safewordTermSql },
+  { id: 13, name: 'post-audience', sql: postAudienceSql },
 ];
