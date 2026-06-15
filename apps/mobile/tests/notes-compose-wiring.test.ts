@@ -65,7 +65,11 @@ describe('submitNoteCompose', () => {
 
   it('rejects empty bodies for both kinds (NotesCompose surfaces this)', async () => {
     const { deps } = await freshDeps();
-    await expect(submitNoteCompose(deps, 'shared', '')).rejects.toThrow(/body required/);
-    await expect(submitNoteCompose(deps, 'secret', '')).rejects.toThrow(/body required/);
+    await expect(submitNoteCompose(deps, 'shared', '')).rejects.toThrow(
+      /body or attachment required/,
+    );
+    await expect(submitNoteCompose(deps, 'secret', '')).rejects.toThrow(
+      /body or attachment required/,
+    );
   });
 });

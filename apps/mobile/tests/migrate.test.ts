@@ -46,6 +46,7 @@ describe('runMigrations', () => {
       'paired-coercion',
       'safeword-term',
       'post-audience',
+      'attachments',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -82,6 +83,7 @@ describe('runMigrations', () => {
       'paired-coercion',
       'safeword-term',
       'post-audience',
+      'attachments',
     ]);
   });
 
