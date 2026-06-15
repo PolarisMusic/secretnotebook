@@ -1,5 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
-import { CrdtOpSchema, deserialiseOp, serialiseOp, type CrdtOp } from '../src/crdt/op.js';
+import {
+  ATTACHMENT_MAX_BYTES,
+  CrdtOpSchema,
+  deserialiseOp,
+  serialiseOp,
+  type AttachmentDescriptor,
+  type CrdtOp,
+} from '../src/crdt/op.js';
 
 const sampleSavedPostAdd: CrdtOp = {
   v: 1,
@@ -59,6 +66,50 @@ const sampleNotePublish: CrdtOp = {
   id: '77777777-7777-7777-7777-777777777777',
   publishedGlobalPostId: '88888888-8888-8888-8888-888888888888',
   publishedAt: 1_700_000_500,
+};
+
+const sampleAttachment: AttachmentDescriptor = {
+  id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  blobId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  mediaType: 'image',
+  mimeType: 'image/jpeg',
+  byteSize: 2048,
+  contentHash: 'cd'.repeat(32),
+  contentKey: 'ef'.repeat(32),
+  noncePrefix: 'ab'.repeat(16),
+  chunkSize: 65536,
+  width: 800,
+  height: 600,
+};
+
+const sampleNoteShareAddWithMedia: CrdtOp = {
+  v: 1,
+  kind: 'note.share.add',
+  id: 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1',
+  authorPubkey: '22'.repeat(32),
+  body: 'look at this',
+  attachments: [sampleAttachment],
+  createdAt: 1_700_000_210,
+};
+
+const sampleNoteShareAddMediaOnly: CrdtOp = {
+  v: 1,
+  kind: 'note.share.add',
+  id: 'a2a2a2a2-a2a2-a2a2-a2a2-a2a2a2a2a2a2',
+  authorPubkey: '22'.repeat(32),
+  attachments: [
+    { ...sampleAttachment, mediaType: 'audio', mimeType: 'audio/m4a', durationMs: 4200 },
+  ],
+  createdAt: 1_700_000_211,
+};
+
+const sampleNoteSecretRevealWithMedia: CrdtOp = {
+  v: 1,
+  kind: 'note.secret.reveal',
+  id: '66666666-6666-6666-6666-666666666666',
+  body: 'the photo I was holding back',
+  attachments: [sampleAttachment],
+  revealedAt: 1_700_000_410,
 };
 
 const sampleConnectionRoleSet: CrdtOp = {
@@ -192,6 +243,79 @@ describe('note.secret.announce body invariant', () => {
   it('keeps the serialised bytes free of any extra string fields', () => {
     const json = new TextDecoder().decode(serialiseOp(sampleNoteSecretAnnounce));
     expect(json).not.toContain('"body"');
+  });
+
+  it('refuses an announce op that smuggles attachments', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleNoteSecretAnnounce, attachments: [sampleAttachment] }),
+    ).toThrow();
+  });
+});
+
+describe('note attachments', () => {
+  it('round-trips a share.add op carrying media', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteShareAddWithMedia))).toEqual(
+      sampleNoteShareAddWithMedia,
+    );
+  });
+
+  it('round-trips a media-only share.add op (no body key)', () => {
+    const bytes = serialiseOp(sampleNoteShareAddMediaOnly);
+    expect(new TextDecoder().decode(bytes)).not.toContain('"body"');
+    expect(deserialiseOp(bytes)).toEqual(sampleNoteShareAddMediaOnly);
+  });
+
+  it('round-trips a secret.reveal op carrying media', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteSecretRevealWithMedia))).toEqual(
+      sampleNoteSecretRevealWithMedia,
+    );
+  });
+
+  it('omits the attachments key entirely when a note has no media', () => {
+    expect(new TextDecoder().decode(serialiseOp(sampleNoteShareAdd))).not.toContain('attachments');
+  });
+
+  it('rejects more than the per-note attachment cap', () => {
+    const tooMany = Array.from({ length: 9 }, () => sampleAttachment);
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleNoteShareAddWithMedia, attachments: tooMany }),
+    ).toThrow();
+  });
+
+  it('rejects an attachment over the byte-size cap', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        ...sampleNoteShareAddWithMedia,
+        attachments: [{ ...sampleAttachment, byteSize: ATTACHMENT_MAX_BYTES + 1 }],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an attachment with a malformed content key', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        ...sampleNoteShareAddWithMedia,
+        attachments: [{ ...sampleAttachment, contentKey: 'ab' }],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an unknown media type', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        ...sampleNoteShareAddWithMedia,
+        attachments: [{ ...sampleAttachment, mediaType: 'video' }],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an attachment with an unexpected extra field (strict)', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        ...sampleNoteShareAddWithMedia,
+        attachments: [{ ...sampleAttachment, sneaky: 'field' }],
+      }),
+    ).toThrow();
   });
 });
 

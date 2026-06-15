@@ -51,6 +51,61 @@ export type LedgerEntryAddOp = z.infer<typeof LedgerEntryAddOpSchema>;
 const NOTE_BODY_MAX = 4000;
 
 /**
+ * Hard caps on couple-note media. A photo is single-digit MB and a short
+ * voice note a few hundred KB; 25 MiB leaves generous headroom while keeping
+ * the v1 single-PUT blob path (no resumable upload yet) honest. Bumped
+ * together with the blob route's bodyLimit if richer media demands it.
+ */
+export const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+/** Cap attachments per note so one op can't fan out an unbounded set. */
+export const MAX_ATTACHMENTS_PER_NOTE = 8;
+
+/** Media kinds carried by this milestone. Widening requires a coordinated
+ *  renderer + picker change on the client, so it is an explicit enum. */
+export const AttachmentMediaTypeSchema = z.enum(['image', 'audio']);
+export type AttachmentMediaType = z.infer<typeof AttachmentMediaTypeSchema>;
+
+/**
+ * Pointer to one encrypted media blob, carried INSIDE the E2E-encrypted note
+ * op (never on the relay/blob server in the clear). It hands the partner
+ * everything needed to fetch and decrypt the bytes: the opaque server
+ * `blobId`, the per-blob `contentKey` + `noncePrefix` for the chunked AEAD
+ * (see @secretnotebook/crypto), the plaintext `byteSize` + `contentHash` to
+ * verify after reassembly, and light render hints (dimensions / duration).
+ *
+ * `.strict()`: an attachment must be exactly this shape — a future field
+ * cannot ride along unnoticed, mirroring the announce-op privacy lock.
+ */
+export const AttachmentDescriptorSchema = z
+  .object({
+    id: z.string().uuid(),
+    blobId: z.string().uuid(),
+    mediaType: AttachmentMediaTypeSchema,
+    mimeType: z.string().min(1).max(128),
+    byteSize: z.number().int().positive().max(ATTACHMENT_MAX_BYTES),
+    contentHash: HexString(32),
+    contentKey: HexString(32),
+    noncePrefix: HexString(16),
+    chunkSize: z.number().int().positive(),
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+    durationMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export type AttachmentDescriptor = z.infer<typeof AttachmentDescriptorSchema>;
+
+/**
+ * Optional attachment list on a body-bearing note op. Kept `.optional()` (not
+ * `.default([])`) so an op authored without media serialises with no
+ * `attachments` key at all — pre-media clients' ops still round-trip
+ * byte-for-byte and the wire stays minimal.
+ */
+const NoteAttachmentsSchema = z
+  .array(AttachmentDescriptorSchema)
+  .max(MAX_ATTACHMENTS_PER_NOTE)
+  .optional();
+
+/**
  * Shared-note creation. Body travels with the op — both sides see
  * substance as soon as the op is applied. Recipient INSERTs OR IGNOREs
  * keyed on id; replays + late deliveries collapse into one row.
@@ -60,7 +115,12 @@ export const NoteShareAddOpSchema = z.object({
   kind: z.literal('note.share.add'),
   id: z.string().uuid(),
   authorPubkey: HexString(32),
-  body: z.string().min(1).max(NOTE_BODY_MAX),
+  // Optional so a media-only note (a photo with no caption) is expressible.
+  // When present it is non-empty; writers enforce "non-empty body OR >=1
+  // attachment" — the wire schema can't (a discriminatedUnion member may not
+  // be `.refine`d), but an empty note is harmless if one ever slips through.
+  body: z.string().min(1).max(NOTE_BODY_MAX).optional(),
+  attachments: NoteAttachmentsSchema,
   createdAt: z.number().int().nonnegative(),
 });
 export type NoteShareAddOp = z.infer<typeof NoteShareAddOpSchema>;
@@ -105,7 +165,10 @@ export const NoteSecretRevealOpSchema = z.object({
   v: z.literal(1),
   kind: z.literal('note.secret.reveal'),
   id: z.string().uuid(),
-  body: z.string().min(1).max(NOTE_BODY_MAX),
+  // Optional, like share.add: a revealed secret may be media-only. The
+  // substance (body and/or attachments) appears only here, never on announce.
+  body: z.string().min(1).max(NOTE_BODY_MAX).optional(),
+  attachments: NoteAttachmentsSchema,
   revealedAt: z.number().int().nonnegative(),
 });
 export type NoteSecretRevealOp = z.infer<typeof NoteSecretRevealOpSchema>;
