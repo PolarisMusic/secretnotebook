@@ -1,3 +1,4 @@
+import type { PreparedAttachment } from '../attachments/types';
 import {
   writeSecretNote,
   writeSharedNote,
@@ -10,14 +11,17 @@ import {
  * Tiny dispatch helper extracted from NotesComposeRoute so the
  * Node-side Jest suite can verify the kind→store-function wiring
  * without spinning up React Native. The route forwards the form's
- * `{ kind, body }` straight to this helper; production wiring and
- * the unit test share the same code path.
+ * `{ kind, body }` (plus any already-prepared attachments) straight to
+ * this helper; production wiring and the unit test share the same code
+ * path. Attachments are encrypted + uploaded by the route BEFORE this is
+ * called, so the dispatch stays a thin, synchronous-shaped pass-through.
  */
 export async function submitNoteCompose(
   deps: NoteStoreDeps,
   kind: NoteKind,
   body: string,
+  attachments: readonly PreparedAttachment[] = [],
 ): Promise<NoteRow> {
-  if (kind === 'shared') return writeSharedNote(deps, body);
-  return writeSecretNote(deps, body);
+  if (kind === 'shared') return writeSharedNote(deps, body, attachments);
+  return writeSecretNote(deps, body, attachments);
 }

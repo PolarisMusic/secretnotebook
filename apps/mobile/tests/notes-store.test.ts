@@ -70,7 +70,7 @@ describe('notes store', () => {
 
     it('rejects an empty body', async () => {
       const { deps } = await freshHarness();
-      await expect(writeSharedNote(deps, '')).rejects.toThrow(/body required/);
+      await expect(writeSharedNote(deps, '')).rejects.toThrow(/body or attachment required/);
     });
   });
 
@@ -95,7 +95,7 @@ describe('notes store', () => {
 
     it('rejects an empty body', async () => {
       const { deps } = await freshHarness();
-      await expect(writeSecretNote(deps, '')).rejects.toThrow(/body required/);
+      await expect(writeSecretNote(deps, '')).rejects.toThrow(/body or attachment required/);
     });
   });
 

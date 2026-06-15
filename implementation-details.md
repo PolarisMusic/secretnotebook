@@ -36,31 +36,33 @@ secretnotebook/
 
 ## Key libraries (locked early)
 
-| Concern | Package |
-|---|---|
-| Encrypted SQLite | `op-sqlite` with SQLCipher build |
-| Hot KV | `react-native-mmkv` (encryptionKey from Keychain) |
-| Secure key storage | `react-native-keychain` |
-| Biometrics | `expo-local-authentication` |
-| BLE pairing | `react-native-ble-plx` |
-| Crypto | `react-native-libsodium` (preferred) or `@noble/curves` + `@noble/hashes` |
-| Double Ratchet | `@privacyresearch/libsignal-protocol-typescript` |
-| Navigation | `@react-navigation/native` v7 native-stack |
-| State | Zustand + TanStack Query |
-| Forms | `react-hook-form` + Zod resolver |
-| Screenshot block | `FLAG_SECURE` (Android), capture-detection + blur overlay (iOS) |
-| Background sync | `react-native-background-fetch` |
-| Testing | Jest + RNTL, Detox (E2E) |
-| API server | Fastify 4, `@fastify/rate-limit`, Drizzle ORM |
+| Concern            | Package                                                                   |
+| ------------------ | ------------------------------------------------------------------------- |
+| Encrypted SQLite   | `op-sqlite` with SQLCipher build                                          |
+| Hot KV             | `react-native-mmkv` (encryptionKey from Keychain)                         |
+| Secure key storage | `react-native-keychain`                                                   |
+| Biometrics         | `expo-local-authentication`                                               |
+| BLE pairing        | `react-native-ble-plx`                                                    |
+| Crypto             | `react-native-libsodium` (preferred) or `@noble/curves` + `@noble/hashes` |
+| Double Ratchet     | `@privacyresearch/libsignal-protocol-typescript`                          |
+| Navigation         | `@react-navigation/native` v7 native-stack                                |
+| State              | Zustand + TanStack Query                                                  |
+| Forms              | `react-hook-form` + Zod resolver                                          |
+| Screenshot block   | `FLAG_SECURE` (Android), capture-detection + blur overlay (iOS)           |
+| Background sync    | `react-native-background-fetch`                                           |
+| Testing            | Jest + RNTL, Detox (E2E)                                                  |
+| API server         | Fastify 4, `@fastify/rate-limit`, Drizzle ORM                             |
 
 ---
 
 ## Phase 1 — MVP (the core loop)
 
 ### Deliverables
+
 Two devices can pair over BLE with biometric confirmation, jointly define a Safe Word, browse a global post feed, save a post for the partner, complete + certify a relationship-deepening prompt, unlock one random saved post, **perform private 1–10 rating + mutual gratitude prompt, and both earn Couple Points**. This covers the full happy-path core loop (spec steps 1–6) end-to-end. Stateless posts API live. SQLCipher at rest. Safe Word re-auth on every cold start. No flagging, popularity, achievements, severing, or chain.
 
 ### Critical files to create
+
 - `apps/mobile/src/features/pairing/state-machine.ts` — BLE + biometric + X3DH handshake state machine (load-bearing correctness)
 - `apps/mobile/src/features/safeword/verifier.ts` — Argon2id verifier, constant-time compare, session lifecycle
 - `apps/mobile/src/features/couple-channel/sync-engine.ts` — outbox, dedup, retry, CRDT merge
@@ -77,6 +79,7 @@ Two devices can pair over BLE with biometric confirmation, jointly define a Safe
 - `infra/db/migrations/0001_init.sql` — `posts`, `devices` tables only
 
 ### Mobile local DB schema (SQLCipher)
+
 ```
 profiles(id, display_name, public_bio, partner_private_bio, created_at)
 couple(id, partner_a_pubkey, partner_b_pubkey, safeword_verifier, safeword_salt,
@@ -97,17 +100,21 @@ sync_seen(envelope_hash PK)
 ```
 
 ### Server schema (Postgres) — what the server IS allowed to know
+
 ```sql
 posts (id uuid pk, content_type text, body text, body_hash bytea,
        anon_author bytea, created_at timestamptz, popularity int default 0);
 devices (pubkey bytea pk, first_seen timestamptz, reputation int default 0);
 ```
+
 Storing the full `body` plaintext on the server is acceptable for Phase 1 (posts are explicitly public/global). **Phase 2 optimization**: switch to a content-addressed scheme (`body_hash` + signed encrypted blob URL) so the moderation tier handles only metadata, not the post text itself.
 
 **Explicitly NOT on server**: profiles, couple identity, Safe Word, saved posts, prompts, completions, ledger, points, ratings, gratitude, role-play.
 
 ### API surface (Phase 1)
+
 All requests carry `X-Device-Pubkey` + `X-Signature`.
+
 - `POST /v1/posts` → `{ id, createdAt }`
 - `GET /v1/posts?cursor=&limit=` → `{ items, nextCursor }`
 - `GET /v1/posts/:id` → `Post`
@@ -115,6 +122,7 @@ All requests carry `X-Device-Pubkey` + `X-Signature`.
 - `GET /v1/health` → `{ ok }`
 
 ### Pairing handshake (4.1)
+
 1. Each device generates per-couple Ed25519 + X25519 keypairs (never leave device)
 2. BLE advertise/scan; both screens show 6-digit code = `truncate(sha256(pubkey_A || pubkey_B), 3)`
 3. Both users biometric-confirm the matching code
@@ -123,21 +131,26 @@ All requests carry `X-Device-Pubkey` + `X-Signature`.
 6. Initialize Double Ratchet with `root_key`; persist couple row; status `paired`
 
 ### Couple Channel (recommendation: encrypted-blob relay + Double Ratchet)
+
 Rationale: pure libp2p fails on mobile (background suspension, NAT, battery); pure BLE forces proximity. A dumb relay storing ciphertext blobs keyed by a daily-rotated blinded recipient ID gives async delivery without the server holding decryptable couple data.
 
 Envelope:
+
 ```
 SyncEnvelope { v, recipientBlindedId, header(ratchet), ciphertext, sentAt }
 recipientBlindedId = HMAC(couple_root, recipient_pubkey, day)
 ```
+
 CRDT: per-entity LWW-register + add-only set for `saved_post` and `ledger_entry`. Writes are partitioned by author per entity type, so conflicts are trivial.
 
 Relay endpoints (added at the end of Phase 1):
+
 - `POST /v1/relay/inbox/:blindedId` (30-day TTL)
 - `GET /v1/relay/inbox/:blindedId?since=`
 - `DELETE /v1/relay/inbox/:blindedId/:envelopeId`
 
 ### Security architecture (Phase 1)
+
 Key chain: `biometric unlock → keychain-sealed device_master → device_master unwraps {sqlcipher_key, ratchet_state}`. TLS pinning. PII-scrubbed Sentry. Logs ship only stack frames + anonymized device id. Safe Word never leaves device, never logged.
 
 ### Step-by-step build order
@@ -147,6 +160,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 #### Foundation
 
 **F0 — Monorepo + tooling**
+
 - Init pnpm workspace + Turborepo (`pnpm-workspace.yaml`, `turbo.json`)
 - Scaffold `packages/config-tsconfig` (base + node + react-native presets) and `packages/config-eslint`
 - Wire `apps/mobile`, `apps/api`, `packages/{shared-types,crypto,couple-protocol,prompt-library}` placeholders with `package.json` + tsconfig extending the shared base
@@ -156,6 +170,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: —
 
 **F1 — Shared types + crypto primitives**
+
 - `packages/shared-types`: install Zod; export `PostSchema`, `PostInputSchema`, `DeviceRegisterSchema`, `SyncEnvelopeSchema` (envelope schema lives here so server can validate shape without reading content)
 - `packages/crypto`: typed wrappers around `react-native-libsodium` (X25519, Ed25519, XChaCha20-Poly1305, Argon2id, HKDF, HMAC); Node-side polyfill for unit tests
 - `packages/crypto/src/safeword.ts`: `deriveVerifier(safeword, salt)` using Argon2id (m=64MB, t=3, p=1); `verify(input, stored)` with constant-time compare
@@ -165,6 +180,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: F0
 
 **F2 — API service skeleton**
+
 - `apps/api`: Fastify 4 + `@fastify/sensible` + `fastify-type-provider-zod` + Drizzle ORM + `pg` driver
 - `infra/db/migrations/0001_init.sql` for `posts` + `devices`; Drizzle schema reflects it
 - `apps/api/src/auth/http-signature.ts`: middleware that verifies `X-Device-Pubkey` (Ed25519) signed `METHOD|PATH|sha256(body)|timestamp`; rejects timestamp drift > 5 min
@@ -174,6 +190,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: F0, F1
 
 **F3 — Mobile app skeleton + SQLCipher**
+
 - `apps/mobile`: Expo bare workflow + RN 0.74 + TypeScript; `@react-navigation/native` v7 native-stack; Zustand + TanStack Query
 - Install native modules: `op-sqlite` (SQLCipher build), `react-native-mmkv`, `react-native-keychain`, `expo-local-authentication`, `react-native-ble-plx`, `react-native-libsodium`; verify iOS Pod + Android Gradle integration builds clean on both
 - `apps/mobile/src/db/migrations/` runner; Phase-1 migrations create every table from the Mobile local DB schema above (including `roleplay_session`)
@@ -186,6 +203,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 #### Vertical slices
 
 **S1 — Pairing**
+
 - `apps/mobile/src/features/pairing/state-machine.ts`: states `idle → scanning → code_shown → biometric → handshake → safeword_required`; use XState or a typed reducer
 - BLE adapter (`packages/couple-protocol/src/transport/ble.ts`) with `react-native-ble-plx`; pluggable mock for unit tests
 - Compute 6-digit verification code = `truncate(sha256(pubkey_A || pubkey_B), 3)`; show on both screens
@@ -197,6 +215,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: F3
 
 **S2 — Safe Word & session**
+
 - `features/safeword/verifier.ts`: each side derives verifier locally; exchange via the freshly established couple channel; compare constant-time; on match, persist `safeword_verifier` + `safeword_salt`, advance `couple.status='paired'`
 - Screens: `onboarding/DefineSafeWord.tsx` (joint entry with partner-ready indicator), `auth/SafeWordGate.tsx` (gate on cold start, on background >60s, on screen-lock release)
 - `features/safeword/session.ts`: Zustand in-memory `session` (never persisted), TTL 30 min idle
@@ -205,6 +224,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: S1
 
 **S3 — Global posts feed (server + mobile)**
+
 - Server: `apps/api/src/routes/posts.ts` (POST/GET list/GET id) + `routes/devices.ts` (POST register); rate limit by device pubkey via `@fastify/rate-limit`
 - Mobile API client: TanStack Query hooks, signs every request with device Ed25519 key
 - Screens: `feed/GlobalFeed.tsx` (infinite scroll + pull-to-refresh), `feed/SubmitPost.tsx` (text or link, content-type radio), `feed/PostDetail.tsx`
@@ -214,6 +234,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: F2, F3, S2
 
 **S4 — Couple Channel (relay + sync engine)**
+
 - Server: `apps/api/src/routes/relay.ts` (`POST/GET/DELETE /v1/relay/inbox/:blindedId`), 30-day TTL enforced by cron in `apps/api/src/cron/relay-gc.ts`
 - `packages/couple-protocol/src/envelope.ts`: `SyncEnvelope` Zod schema; `blindedId(couple_root, recipient_pubkey, day) = HMAC(couple_root, recipient_pubkey || day)`
 - `packages/couple-protocol/src/ratchet.ts`: Double Ratchet wrappers (init from `root_key`, encrypt/decrypt CRDT ops)
@@ -224,6 +245,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: F2, S2
 
 **S5 — Save-for-Partner**
+
 - Mobile: "Save for partner" action on `PostDetail` → writes `saved_post` row locally (`saved_by_pubkey=me`, `saved_for_pubkey=partner`, `unlocked_at=NULL`) + enqueues sync envelope
 - Recipient screens: `couple/SavedByYou.tsx` (your own saves with status) and `couple/SavedForYou.tsx` (locked-count tile only — actual post hidden until unlocked)
 - SavedForYou CTA: "complete a prompt to unlock one"
@@ -232,6 +254,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: S3, S4
 
 **S6 — Prompts (assignment + certification)**
+
 - `packages/prompt-library/src/seed.json`: ~30 seed prompts each `{key, title, body, suggestedAssignee: 'either'|'curator'|'enactor'}`; assignee is a hint only
 - `features/prompts/assigner.ts`: weighted-random selection avoiding immediate repeats; writes `prompt` row with `state='assigned'`, `assigned_to_pubkey`, `assigned_by_pubkey`
 - Screens: `prompts/PromptList.tsx` (active prompts assigned to you), `prompts/ActivePrompt.tsx` (mark "I did it"), `prompts/CertifyCompletion.tsx` (partner side — "I confirm they completed it" button → `state='certified'`)
@@ -241,6 +264,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: S4
 
 **S7 — Random unlock**
+
 - `features/saved-posts/random-unlocker.ts`: on `prompt.state` transition to `certified`, atomically pick one random `saved_post` where `unlocked_at IS NULL AND saved_for_pubkey = assignee_of_prompt`, set `unlocked_at = now()`, `unlock_prompt_id = prompt.id`, enqueue sync envelope
 - Recipient UI: notification ("a post unlocked"); unlocked tile moves into `SavedForYou`; opening it fetches the body from the global feed; Safe Word gate enforced on view
 - Edge: zero unlockable posts — prompt still credits points but UI shows "ask your partner to save more"
@@ -249,6 +273,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: S5, S6, S2
 
 **S8 — Rating + gratitude + Couple Points**
+
 - `features/roleplay/rating-flow.ts`: opens after recipient taps "I tried it" on an unlocked post; curator privately enters 1–10; written to `roleplay_session.rating` only — **never sent to API, never in events**
 - `features/roleplay/gratitude-screen.tsx`: pulls a gratitude prompt from `prompt-library`; both sides must complete and tap "done"; sets `gratitude_enactor_done_at` / `gratitude_curator_done_at`
 - `features/ledger/couple-points.ts`: accrual rules — prompt certification = +10, save-for-partner = +2, completed role-play loop (both gratitude done) = +25; writes `ledger_entry` rows; syncs via couple channel
@@ -258,6 +283,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: S4, S7
 
 **S9 — End-to-end happy-path validation**
+
 - Detox spec covering the Phase 1 verification flow (pair → Safe Word → submit + save → complete + certify prompt → unlock → view → enact → rate → gratitude → points)
 - Security smoke: SQLCipher unreadable by `sqlite3` CLI; `FLAG_SECURE` on every couple-content screen on Android; biometric required after backgrounding
 - Sentry PII-scrubber unit test with sample payloads
@@ -266,6 +292,7 @@ Hybrid sequence: build the **foundation (F0–F3)** strictly in order, then ship
 - **Depends on**: S1–S8
 
 #### Dependency graph (at a glance)
+
 ```
 F0 → F1 → F2 ↘
           ↘ F3 → S1 → S2 → S3 → S5 ↘
@@ -274,12 +301,14 @@ F0 → F1 → F2 ↘
 ```
 
 ### Phase 1 testing
+
 - Unit (Jest): crypto KAT vectors, CRDT merge, Safe Word KDF, ledger math
 - Integration: two-simulator pairing harness (BLE mocked at adapter), relay sync with fake clock
 - E2E (Detox): pair → Safe Word → submit post → save for partner → complete prompt → certify → unlock
 - Security smoke: SQLCipher file unreadable by sqlite3 CLI, `FLAG_SECURE` on Android, biometric required after background
 
 ### Phase 1 risks / open questions
+
 - Safe Word recovery if both forget — acceptable as "must re-pair and lose ledger"?
 - iOS BLE peripheral background limits may force foreground-only pairing UI — acceptable?
 - Anonymous spam control beyond per-device rate limit — proof-of-work? Invite codes?
@@ -290,6 +319,7 @@ F0 → F1 → F2 ↘
 ## Phase 2 — V2 (moderation, popularity, safety hardening)
 
 ### Deliverables
+
 - Flagging UI + "hidden by default" rendering for flagged posts
 - **Partner-visible "flagged posts saved" counter shown in the profile view** (the only cross-user visibility into a partner's global activity, per spec 4.2 / 4.9)
 - Popularity Points reconciled into the **author's local profile ledger only** — Popularity Points are **author-scoped and never enter the Couple Ledger** (Couple Points and Popularity Points are tracked separately as the spec requires); deltas are delivered via k-anonymous aggregation
@@ -299,6 +329,7 @@ F0 → F1 → F2 ↘
 - Severing with mutual confirmation + 7-day grace + deterministic wipe
 
 ### Critical files to add
+
 - `apps/mobile/src/features/moderation/flag-dialog.tsx`
 - `apps/mobile/src/features/moderation/flagged-saves-counter.ts` — increments local `flagged_view_log` and syncs to partner only
 - `apps/mobile/src/screens/profile/PartnerProfileView.tsx` — surfaces partner's flagged-saves count
@@ -310,15 +341,18 @@ F0 → F1 → F2 ↘
 - `apps/api/src/routes/flags.ts`, `apps/api/src/routes/popularity.ts`, `apps/api/src/routes/relay.ts`
 
 ### Server schema additions
+
 ```sql
 flags(id, post_id, reporter, reason ENUM, detail, created_at, UNIQUE(post_id, reporter));
 post_saves_anon(post_id, saver_anon, day, count, PK(post_id, saver_anon, day));
 popularity_delta(id, anon_author, delta, reason ENUM('saved','viewed'), created_at);
 -- posts gains flag_count (denormalized, trigger-maintained)
 ```
+
 Popularity deltas are batched (hourly aggregation, k-anonymity threshold of 3 saves) before delivery to authors.
 
 ### API additions
+
 - `POST /v1/posts/:id/flag` (one flag per reporter per post)
 - `GET /v1/posts/:id` now returns `flagCount`, `flagged`, `topReasons`
 - `GET /v1/posts?includeFlagged=false` (default hides flagged)
@@ -327,6 +361,7 @@ Popularity deltas are batched (hourly aggregation, k-anonymity threshold of 3 sa
 - Relay endpoints formalized (see Phase 1)
 
 ### Mobile local schema additions
+
 - `flagged_view_log(post_id, opened_at)` — drives partner-visible flagged-saves counter
 - `achievement(id, key, kind ENUM('private','public'), unlocked_at)`
 - `author_ledger(id, kind ENUM('popularity_points'), delta, reason, ref_id, created_at)` — **separate from `ledger_entry`** which holds Couple Points only
@@ -335,15 +370,18 @@ Popularity deltas are batched (hourly aggregation, k-anonymity threshold of 3 sa
 Note: `roleplay_session(id, enactor_pubkey, curator_pubkey, rating, started_at, gratitude_prompt_id, ended_at)` was introduced in Phase 1 alongside the rating + gratitude flow.
 
 ### Severing wipe (deterministic)
+
 On `severed`: delete all couple-scoped rows → zeroize ratchet state → drop keychain entries → rotate SQLCipher master key (write-then-vacuum so old pages are unrecoverable). Either side can cancel during the 7-day grace.
 
 ### Phase 2 testing
+
 - CRDT property tests with severing tombstones (no resurrection bugs)
 - Adversarial moderation: cannot flag twice, cannot self-flag (drop where `reporter == anon_author`), per-device rate limit
 - Forensic test: SQLite file snapshot pre/post severing shows zeroized pages
 - Role-play privacy: ratings never sent to API, never in events
 
 ### Phase 2 risks / open questions
+
 - Flag-brigading heuristic for "hidden by default" — e.g., `flag_count >= 3 AND flag_count / max(views,1) >= 0.05`. Product call needed
 - iOS cannot prevent screenshots — partner notification as the control: document explicitly
 - Popularity correlation attacks even with rotated `saver_anon` — k-anonymity batching mitigates
@@ -353,9 +391,11 @@ On `severed`: delete all couple-scoped rows → zeroize ratchet state → drop k
 ## Phase 3 — V3 (blockchain abstraction, advanced safety)
 
 ### Deliverables
+
 `BlockchainAdapter` interface + three reference adapters (`NoopAdapter`, `LocalLogAdapter`, `EvmAdapter` stub). Public achievement export with Merkle proofs. Panic wipe (long-press + biometric). Duress Safe Word (decoy state). Per-screen re-auth for sensitive views. Optional Tor/proxy transport feasibility study.
 
 ### Critical files to add
+
 - `packages/eventbus/src/adapter.ts` — interface definition (see below)
 - `packages/eventbus/src/adapters/noop.ts`, `local-log.ts`, `evm-stub.ts`
 - `packages/eventbus/src/payload-schemas.ts` — Zod allowlist gates per event type (rejects fantasy content / Safe Word / gratitude)
@@ -364,38 +404,48 @@ On `severed`: delete all couple-scoped rows → zeroize ratchet state → drop k
 - `apps/mobile/src/features/achievements/public-export.ts` — Merkle proof generator
 
 ### BlockchainAdapter interface
+
 ```ts
 export type EventType =
-  | 'point_award' | 'popularity_award' | 'prompt_completion'
-  | 'achievement_unlock' | 'confirmed_action';
+  | 'point_award'
+  | 'popularity_award'
+  | 'prompt_completion'
+  | 'achievement_unlock'
+  | 'confirmed_action';
 
 export interface BlockchainEvent {
   type: EventType;
-  coupleHash: string;            // HMAC(couple_root, "chain") — not reversible
+  coupleHash: string; // HMAC(couple_root, "chain") — not reversible
   occurredAt: number;
-  payload: Record<string, unknown>;  // schema-validated, sensitive fields forbidden
+  payload: Record<string, unknown>; // schema-validated, sensitive fields forbidden
   nonce: string;
-  signature: string;             // Ed25519 over canonical JSON
+  signature: string; // Ed25519 over canonical JSON
 }
 
 export interface BlockchainAdapter {
   readonly id: string;
-  readonly capabilities: { onChain: boolean; supportsProofs: boolean;
-                           costEstimateUsd?: (e: BlockchainEvent) => Promise<number> };
+  readonly capabilities: {
+    onChain: boolean;
+    supportsProofs: boolean;
+    costEstimateUsd?: (e: BlockchainEvent) => Promise<number>;
+  };
   recordEvent(e: BlockchainEvent): Promise<{ txRef?: string; queued: boolean }>;
   verifyEvent(ref: string): Promise<{ valid: boolean; event?: BlockchainEvent }>;
   exportProof(e: BlockchainEvent): Promise<Uint8Array>;
 }
 ```
+
 Off-chain by default (`NoopAdapter` in production). Per-event opt-in with cost disclosure. Schema gate rejects any sensitive field at the boundary — fantasy content / Safe Word / gratitude cannot pass validation.
 
 ### Advanced safety
+
 - **Panic wipe**: configurable gesture (long-press Safe Word field + biometric) → Phase 2 wipe routine immediately, no partner confirmation, optionally synthesizing a fresh-install state
 - **Duress Safe Word**: second verifier; matches → app boots into decoy state with empty feed; records duress event to couple-only log
 - **Per-screen re-auth**: biometric prompt before opening any unlocked post
 - **Transport hardening**: feasibility check for Orbot (Android) / `arti-mobile` (iOS) bridge for relay traffic
 
 ### Phase 3 risks / open questions
+
 - Chain choice (EVM L2 vs Solana vs Polkadot) — user input needed before `EvmAdapter` becomes more than a stub
 - Gas/fees — user wallet integration via `@walletconnect/react-native-modal`?
 - Public-achievement timing correlation may identify couple — k-anonymity batching needed here too
@@ -406,22 +456,23 @@ Off-chain by default (`NoopAdapter` in production). Per-event opt-in with cost d
 
 ## Cross-phase threat model (summary)
 
-| Threat | Mitigation |
-|---|---|
-| Lost/stolen device | SQLCipher + biometric-sealed key; Safe Word every session; panic wipe (V3) |
-| Server compromise | No couple data on server; relay sees only ciphertext + blinded IDs; TLS pinning |
-| Partner coercion | Duress Safe Word (V3); severing with grace period; partner-visible flagged counter |
+| Threat                                                  | Mitigation                                                                                                                                                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lost/stolen device                                      | SQLCipher + biometric-sealed key; Safe Word every session; panic wipe (V3)                                                                                                                              |
+| Server compromise                                       | No couple data on server; relay sees only ciphertext + blinded IDs; TLS pinning                                                                                                                         |
+| Partner coercion                                        | Duress Safe Word (V3); severing with grace period; partner-visible flagged counter                                                                                                                      |
 | Partner uses flagged-saves counter as a coercion signal | Counter is per-spec partner-visible accountability, not punitive; in-app copy frames it neutrally; low-gamification toggle suppresses related notifications; severing remains available without penalty |
-| Screenshot leak | `FLAG_SECURE` Android; iOS detection + partner notification + blur on background |
-| Correlation via popularity | Daily-rotated `saver_anon` + k-anonymity batching of deltas |
-| Replay of sync envelopes | Double Ratchet counters + `sync_seen` dedup |
-| Identity link via chain | HMAC `coupleHash`, per-event opt-in, payload allowlist |
+| Screenshot leak                                         | `FLAG_SECURE` Android; iOS detection + partner notification + blur on background                                                                                                                        |
+| Correlation via popularity                              | Daily-rotated `saver_anon` + k-anonymity batching of deltas                                                                                                                                             |
+| Replay of sync envelopes                                | Double Ratchet counters + `sync_seen` dedup                                                                                                                                                             |
+| Identity link via chain                                 | HMAC `coupleHash`, per-event opt-in, payload allowlist                                                                                                                                                  |
 
 ---
 
 ## Verification
 
 ### Phase 1 end-to-end test
+
 1. `pnpm install && pnpm -w build`
 2. `pnpm --filter api dev` (Postgres via `infra/docker/docker-compose.yml`)
 3. Launch two iOS simulators / Android emulators via Detox: `pnpm --filter mobile e2e`
@@ -430,17 +481,20 @@ Off-chain by default (`NoopAdapter` in production). Per-event opt-in with cost d
 6. Manual: open SQLCipher file with `sqlite3` CLI → must fail to open
 
 ### Phase 2 additions
+
 - Detox: flag a post, confirm "hidden by default", open it anyway, confirm partner sees flagged-saves counter increment
 - Forensic test script: snapshot SQLite file → trigger severing → after grace expires confirm zeroized pages
 - Property tests (`fast-check`) on CRDT merges under severing tombstones
 - **Full Core Flow E2E** (must pass before Phase 2 GA): pair → Safe Word → submit/save post → flag a different post and open it → complete + certify prompt → unlock saved post → view (Safe Word gate) → enactor performs simulated action → curator rates 1–10 → both complete gratitude prompt → Couple Points + achievement unlock visible to both → trigger severing → wait through (fake-clock-accelerated) 7-day grace → confirm full wipe on both devices
 
 ### Phase 3 additions
+
 - Adapter conformance suite must pass for all three adapters (round-trip `record → verify → exportProof`)
 - Fuzz `payload-schemas.ts` with sensitive-field corpora — must reject 100%
 - Snapshot diff between fresh install and duress boot must be empty
 
 ### Continuous
+
 - Semgrep + osv-scanner in CI
 - MobSF run per release
 - External pentest before V2 and V3 GA
@@ -449,13 +503,96 @@ Off-chain by default (`NoopAdapter` in production). Per-event opt-in with cost d
 
 ### Core flow mapping (preview — full doc lives in `docs/CORE_FLOW_MAPPING.md`)
 
-| Spec step (§5) | Phase |
-|---|---|
-| 1. Pair → define Safe Word | 1 |
-| 2. Submit/browse Posts globally → flag if needed | Submit/browse: 1 · Flag: 2 |
-| 3. Save Posts for partner | 1 |
-| 4. Complete + certify prompt → unlock random partner Post | 1 |
-| 5. View Post (after Safe Word) → enact in real life | 1 |
+| Spec step (§5)                                                  | Phase                                                 |
+| --------------------------------------------------------------- | ----------------------------------------------------- |
+| 1. Pair → define Safe Word                                      | 1                                                     |
+| 2. Submit/browse Posts globally → flag if needed                | Submit/browse: 1 · Flag: 2                            |
+| 3. Save Posts for partner                                       | 1                                                     |
+| 4. Complete + certify prompt → unlock random partner Post       | 1                                                     |
+| 5. View Post (after Safe Word) → enact in real life             | 1                                                     |
 | 6. Rate + gratitude → earn Couple Points + possible achievement | Rate + gratitude + Couple Points: 1 · Achievements: 2 |
-| 7. (Optional) Bridge events to blockchain | 3 |
-| 8. Repeat. If severed → all couple data deleted | 2 |
+| 7. (Optional) Bridge events to blockchain                       | 3                                                     |
+| 8. Repeat. If severed → all couple data deleted                 | 2                                                     |
+
+---
+
+## Phase 1.5 — R6: Multimedia notes (couple-only media)
+
+Adds image + voice-note attachments to **shared and secret** notes. Scope is
+deliberately couple-only this milestone: published-feed media, video,
+and arbitrary files are out (the architecture below extends to them without
+a wire break). Source = pick from library + in-app capture (camera / mic).
+
+### Why media can't ride the existing paths
+
+The couple channel is a chain-ratchet relay for **small JSON CRDT ops**, and
+the Fastify body limit is the default 1 MB with the whole body buffered +
+JSON-parsed. Photos/voice notes are megabytes of binary, and couple media
+must never reach the server in cleartext. So media needs (a) large-payload
+encryption, (b) a binary transport the relay/CRDT layer doesn't provide, and
+(c) on-device encrypted-at-rest storage.
+
+### Design
+
+```
+pick/capture ─► read bytes ─► chunked XChaCha20-Poly1305 (random content key)
+                                   │
+                                   ├─► encrypted file on device (FileStore)
+                                   └─► ciphertext ─► POST /v1/blobs ─► { blobId }
+                                                                          │
+        note op (E2E, ratchet)  ◄── attachment descriptor: blobId + contentKey
+                                       + noncePrefix + hash + size + dims/dur
+                                   │
+partner: projector writes 'remote' attachment row ─► GET /v1/blobs/:id
+        ─► chunkedDecrypt (verifies every chunk + whole-file hash) ─► cache file
+```
+
+- **Chunked AEAD** (`packages/crypto/src/chunked-aead.ts`): the payload is
+  encrypted as length-prefixed XChaCha20-Poly1305 chunks under one random
+  32-byte content key. Each chunk binds its **index + final-flag** into the
+  AAD (and index into the nonce), so tamper / reorder / duplicate / truncate
+  all fail decryption; the whole-file SHA-256 is verified after reassembly.
+- **Attachment descriptor** (`packages/connection-protocol`,
+  `AttachmentDescriptorSchema`, `.strict()`): rides INSIDE the E2E note op
+  (`note.share.add`, `note.secret.reveal`) — never the relay or blob server.
+  Carries the opaque `blobId`, the per-blob `contentKey` + `noncePrefix`,
+  plaintext `byteSize` + `contentHash`, and render hints. Note `body` is now
+  optional (media-only notes); `note.secret.announce` stays `.strict()` and
+  empty so the secret-substance privacy invariant now also rejects smuggled
+  attachments. `attachments` is `.optional()` (not defaulted) so media-free
+  ops still round-trip byte-for-byte — fully backward compatible.
+- **Opaque blob store** (`apps/api`, `/v1/blobs`): mirrors the relay's
+  zero-knowledge posture — the server stores only ciphertext, addressed by a
+  random handle it assigns, with a 30-day TTL enforced at read time. A
+  per-route `bodyLimit` (`BLOB_MAX_BYTES`, 32 MiB) lifts uploads above the
+  global 1 MB JSON cap; an `application/octet-stream` parser captures
+  `rawBody` so the Ed25519 signature covers the exact wire bytes.
+- **On device** (`apps/mobile/src/features/attachments`): an `attachment`
+  table (migration 014) holds metadata + the per-blob key (inside SQLCipher);
+  the encrypted blob is a file on disk; decryption goes to a lock-cleared
+  cache file at view time. `MediaSource` / `AudioRecorder` / `FileStore` are
+  injected seams (expo-image-picker / expo-av / expo-file-system in
+  `native.ts`) so the whole pipeline is Node-tested with in-memory fakes.
+
+### Threat-model deltas
+
+| Concern                         | Mitigation                                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Server reads couple media       | Only chunk-AEAD ciphertext leaves the device; content key rides the E2E op, never the blob/relay server               |
+| Blob tamper / truncation        | Per-chunk AEAD with index+final bound in AAD; whole-file hash verified on decrypt — corrupt bytes throw, never render |
+| Media at rest on a lost device  | Encrypted blob files + the content key in SQLCipher; decrypted previews only in the lock-cleared cache dir            |
+| Linking blobs to a couple       | Random per-blob handles (no identity-derived addressing); ciphertext-only payloads; signed uploads gate by device     |
+| Secret-note media leaking early | Descriptor rides the **reveal**, never the **announce** (`.strict()` rejects it)                                      |
+
+### Deferred / follow-ups
+
+- Published-feed media (server-readable, public — a moderation surface), video
+  (needs resumable/range transfer + larger caps), arbitrary files.
+- Resumable uploads + a server-side GC sweep for `/v1/blobs` (TTL-at-read
+  backstops cleanup today).
+- **On-device verification is pending** a macOS/Detox pass: the native seam
+  (`native.ts`) can't run under the JS-only CI. Everything below it — chunked
+  AEAD, the descriptor wire format, the blob route, and the
+  encrypt→upload→download→decrypt pipeline — is covered by CI tests
+  (`chunked-aead.test.ts`, `crdt-op.test.ts`, `blobs.test.ts`,
+  `attachments.test.ts`). See `apps/mobile/RUNBOOK.md` §3.4.

@@ -43,9 +43,20 @@ export const relayInbox = pgTable('relay_inbox', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
 
+export const blobs = pgTable('blobs', {
+  id: uuid('id').primaryKey(),
+  // Opaque ciphertext (chunked-AEAD framed); the server never decrypts it.
+  data: bytea('data').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
 export type Device = typeof devices.$inferSelect;
 export type NewDevice = typeof devices.$inferInsert;
 export type RelayInboxRow = typeof relayInbox.$inferSelect;
 export type NewRelayInboxRow = typeof relayInbox.$inferInsert;
+export type BlobRow = typeof blobs.$inferSelect;
+export type NewBlobRow = typeof blobs.$inferInsert;

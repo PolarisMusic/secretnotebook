@@ -11,6 +11,7 @@ import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import { submitNoteCompose } from '../src/features/notes/compose-wiring';
 import type { NoteStoreDeps } from '../src/features/notes/store';
+import type { PreparedAttachment } from '../src/features/attachments/types';
 import { nodeExecutor } from './helpers/sqlite-executor';
 
 /**
@@ -63,9 +64,37 @@ describe('submitNoteCompose', () => {
     expect(enqueued[0] as object).not.toHaveProperty('body');
   });
 
+  it('threads prepared attachments into the note op (and allows a media-only note)', async () => {
+    const { deps, enqueued } = await freshDeps();
+    const prepared: PreparedAttachment = {
+      localUri: 'enc://staged.enc',
+      descriptor: {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        blobId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        mediaType: 'image',
+        mimeType: 'image/jpeg',
+        byteSize: 1234,
+        contentHash: 'aa'.repeat(32),
+        contentKey: 'bb'.repeat(32),
+        noncePrefix: 'cc'.repeat(16),
+        chunkSize: 65536,
+      },
+    };
+    const row = await submitNoteCompose(deps, 'shared', '', [prepared]);
+    expect(row.body).toBeNull();
+    expect(enqueued).toHaveLength(1);
+    const op = enqueued[0] as NoteShareAddOp;
+    expect(op.kind).toBe('note.share.add');
+    expect(op.attachments?.[0]?.blobId).toBe(prepared.descriptor.blobId);
+  });
+
   it('rejects empty bodies for both kinds (NotesCompose surfaces this)', async () => {
     const { deps } = await freshDeps();
-    await expect(submitNoteCompose(deps, 'shared', '')).rejects.toThrow(/body required/);
-    await expect(submitNoteCompose(deps, 'secret', '')).rejects.toThrow(/body required/);
+    await expect(submitNoteCompose(deps, 'shared', '')).rejects.toThrow(
+      /body or attachment required/,
+    );
+    await expect(submitNoteCompose(deps, 'secret', '')).rejects.toThrow(
+      /body or attachment required/,
+    );
   });
 });

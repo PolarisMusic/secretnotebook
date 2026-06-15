@@ -1,5 +1,6 @@
 export * from './aead.js';
 export * from './base64.js';
+export * from './chunked-aead.js';
 export * from './ed25519.js';
 export * from './handshake.js';
 export * from './hkdf.js';

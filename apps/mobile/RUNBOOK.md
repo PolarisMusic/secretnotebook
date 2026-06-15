@@ -249,6 +249,58 @@ runs in CI on every push and is the authority for whether the
 sync-layer contracts hold — the Detox walk is the UI verification
 layer on top.
 
+### 3.4 Multimedia notes (images + voice notes)
+
+Couple-only media on shared + secret notes. The bytes are chunk-AEAD
+encrypted on-device, uploaded as opaque ciphertext to `/v1/blobs`, and
+the per-blob key rides the E2E note op — the server never sees plaintext.
+
+> **Native modules.** This surface adds `expo-image-picker`, `expo-av`,
+> and `expo-file-system` (already in `apps/mobile/package.json`). They
+> are native, so they only exist after `expo prebuild` + `pod install`
+> (iOS) / a Gradle sync (Android). Library/camera/microphone permission
+> strings + the config plugins are wired in `app.json`. Everything below
+> the native seam — chunked AEAD (`packages/crypto`), the attachment
+> descriptor on the op (`packages/connection-protocol`), the blob route
+> (`apps/api`), and the encrypt→upload→download→decrypt pipeline
+> (`apps/mobile/src/features/attachments`) — is covered by CI tests
+> (`attachments.test.ts`, `blobs.test.ts`, `chunked-aead.test.ts`,
+> `crdt-op.test.ts`). `src/features/attachments/native.ts` is the only
+> piece CI can't run; verify it here.
+
+**Manual two-device walk (after the §3.2 setup):**
+
+1. **A** taps compose → `notes.add-photo` (library) or `notes.take-photo`
+   (camera) or `notes.record` (voice note; tap again to stop). A chip
+   appears showing `preparing` then settles — that's encrypt + upload.
+2. **A** can Save with media and no text (the media-only case): `notes.submit`
+   is enabled once at least one chip is ready.
+3. **B** opens the note (`screen.notes-detail`) → taps `notes-detail.load.*`.
+   The image renders (`notes-detail.image.*`) / the voice note plays
+   (`notes-detail.play.*`). First load downloads + decrypts; the decrypted
+   file lives only in the lock-cleared cache dir.
+4. **Secret + media:** A attaches media to a _secret_ note and saves. B sees
+   `notes-detail.locked` and NO media (the announce carries neither body nor
+   descriptor). A taps `notes-detail.reveal`; B now sees the body and can
+   load the media.
+
+**Security checks specific to media:**
+
+- **Server holds only ciphertext.** Pull a blob directly and confirm it is
+  not the plaintext image/audio:
+  ```bash
+  # blob id is the attachment's blob_id (inspect via the SQLCipher row, or
+  # capture the POST /v1/blobs response during step 1)
+  curl -s https://<host>/v1/blobs/<blob_id> -H 'x-device-pubkey: ...' ... \
+    -o /tmp/blob.bin
+  file /tmp/blob.bin   # NOT a JPEG/M4A — opaque bytes; flipping a byte makes
+                       # the on-device decrypt throw (chunk auth fails)
+  ```
+- **Keys at rest.** `content_key` / `nonce_prefix` live in the `attachment`
+  table inside SQLCipher — the §2.1 "file is not a database" proof covers them.
+- **Screen capture.** The media view is a connection-content surface, so the
+  §1.1 `FLAG_SECURE` check applies to it too.
+
 ---
 
 ## 4. Deploy the API for testers

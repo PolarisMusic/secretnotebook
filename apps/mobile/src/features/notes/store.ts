@@ -7,6 +7,12 @@ import type {
 import { bytesToHex } from '@secretnotebook/crypto';
 
 import type { SqlExecutor } from '../../db/executor';
+import {
+  descriptorFromRow,
+  insertAttachmentFromDescriptor,
+  listNoteAttachments,
+} from '../attachments/store';
+import type { PreparedAttachment } from '../attachments/types';
 import { randomUuidV4 } from '../connection-channel/uuid';
 
 export type NoteKind = 'shared' | 'secret';
@@ -123,22 +129,32 @@ async function getNoteInternal(exec: SqlExecutor, id: string): Promise<NoteRow |
  * never hear about (or vice versa: an op for a row that doesn't
  * exist locally).
  */
-export async function writeSharedNote(deps: NoteStoreDeps, body: string): Promise<NoteRow> {
-  if (body.length === 0) throw new Error('writeSharedNote: body required');
+export async function writeSharedNote(
+  deps: NoteStoreDeps,
+  body: string,
+  attachments: readonly PreparedAttachment[] = [],
+): Promise<NoteRow> {
+  if (body.length === 0 && attachments.length === 0) {
+    throw new Error('writeSharedNote: body or attachment required');
+  }
   const id = await randomUuidV4();
   const createdAt = nowSec(deps);
+  const hasBody = body.length > 0;
+  const descriptors = attachments.map((a) => a.descriptor);
   await deps.exec.transaction(async () => {
     await deps.exec.execute(
       `INSERT INTO note (id, kind, author_pubkey, body, created_at)
        VALUES (?, 'shared', ?, ?, ?)`,
-      [id, deps.selfPubkey, body, createdAt],
+      [id, deps.selfPubkey, hasBody ? body : null, createdAt],
     );
+    await insertOwnAttachments(deps.exec, id, attachments, createdAt);
     await deps.enqueue({
       v: 1,
       kind: 'note.share.add',
       id,
       authorPubkey: bytesToHex(deps.selfPubkey),
-      body,
+      ...(hasBody ? { body } : {}),
+      ...(descriptors.length > 0 ? { attachments: descriptors } : {}),
       createdAt,
     });
   });
@@ -154,16 +170,28 @@ export async function writeSharedNote(deps: NoteStoreDeps, body: string): Promis
  *
  * Same transaction story as writeSharedNote.
  */
-export async function writeSecretNote(deps: NoteStoreDeps, body: string): Promise<NoteRow> {
-  if (body.length === 0) throw new Error('writeSecretNote: body required');
+export async function writeSecretNote(
+  deps: NoteStoreDeps,
+  body: string,
+  attachments: readonly PreparedAttachment[] = [],
+): Promise<NoteRow> {
+  if (body.length === 0 && attachments.length === 0) {
+    throw new Error('writeSecretNote: body or attachment required');
+  }
   const id = await randomUuidV4();
   const createdAt = nowSec(deps);
+  const hasBody = body.length > 0;
   await deps.exec.transaction(async () => {
     await deps.exec.execute(
       `INSERT INTO note (id, kind, author_pubkey, body, created_at)
        VALUES (?, 'secret', ?, ?, ?)`,
-      [id, deps.selfPubkey, body, createdAt],
+      [id, deps.selfPubkey, hasBody ? body : null, createdAt],
     );
+    // Own attachment rows land locally now (state 'ready') so the author
+    // can view them immediately; the descriptors stay OFF the wire until
+    // revealSecretNote — the announce op carries existence only, never the
+    // substance (body or media).
+    await insertOwnAttachments(deps.exec, id, attachments, createdAt);
     await deps.enqueue({
       v: 1,
       kind: 'note.secret.announce',
@@ -173,6 +201,23 @@ export async function writeSecretNote(deps: NoteStoreDeps, body: string): Promis
     });
   });
   return (await getNoteInternal(deps.exec, id)) as NoteRow;
+}
+
+/** Persist the author's own copies of just-prepared attachments: state
+ *  'ready' with the local encrypted file already on disk. */
+async function insertOwnAttachments(
+  exec: SqlExecutor,
+  noteId: string,
+  attachments: readonly PreparedAttachment[],
+  createdAt: number,
+): Promise<void> {
+  for (const a of attachments) {
+    await insertAttachmentFromDescriptor(exec, noteId, a.descriptor, {
+      state: 'ready',
+      localUri: a.localUri,
+      createdAt,
+    });
+  }
 }
 
 /**
@@ -190,19 +235,25 @@ export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise
   const row = await getNoteInternal(deps.exec, id);
   if (!row) throw new Error(`revealSecretNote: no note with id ${id}`);
   if (row.kind !== 'secret') throw new Error(`revealSecretNote: note ${id} is not secret`);
-  if (row.body == null) {
+  // "Local content" = a body the author typed AND/OR media they attached
+  // (own attachment rows). Partner-side pre-reveal rows have neither, so
+  // this still rejects an attempt to reveal a note we don't own the
+  // substance of.
+  const attachments = await listNoteAttachments(deps.exec, id);
+  if (row.body == null && attachments.length === 0) {
     throw new Error(`revealSecretNote: cannot reveal a note whose body is not local`);
   }
   if (row.revealedAt != null) return; // already revealed → idempotent no-op
+  const descriptors = attachments.map(descriptorFromRow);
   const revealedAt = nowSec(deps);
   await deps.exec.transaction(async () => {
     // R6.3: re-read inside the txn before deciding to enqueue. Two
-    // concurrent calls would both pass the outer guard at line 195;
-    // without this re-check the second's UPDATE would no-op via
-    // WHERE revealed_at IS NULL, but the enqueue would still fire,
-    // putting a duplicate reveal op on the wire. The re-read is
-    // consistent with the UPDATE because the surrounding
-    // transaction holds a write lock for the whole sequence.
+    // concurrent calls would both pass the outer guard; without this
+    // re-check the second's UPDATE would no-op via WHERE revealed_at IS
+    // NULL, but the enqueue would still fire, putting a duplicate reveal
+    // op on the wire. The re-read is consistent with the UPDATE because
+    // the surrounding transaction holds a write lock for the whole
+    // sequence.
     const fresh = await getNoteInternal(deps.exec, id);
     if (fresh?.revealedAt != null) return;
     await deps.exec.execute(
@@ -213,7 +264,8 @@ export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise
       v: 1,
       kind: 'note.secret.reveal',
       id,
-      body: row.body as string,
+      ...(row.body != null ? { body: row.body } : {}),
+      ...(descriptors.length > 0 ? { attachments: descriptors } : {}),
       revealedAt,
     });
   });

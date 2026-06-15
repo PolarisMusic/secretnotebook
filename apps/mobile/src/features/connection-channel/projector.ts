@@ -2,6 +2,7 @@ import type { CrdtOp } from '@secretnotebook/connection-protocol';
 import { bytesToHex, hexToBytes } from '@secretnotebook/crypto';
 
 import type { SqlExecutor } from '../../db/executor';
+import { insertAttachmentFromDescriptor } from '../attachments/store';
 
 /**
  * Apply a decrypted CRDT op to the local SQLite tables.
@@ -79,8 +80,18 @@ export async function applyCrdtOp(
         `INSERT OR IGNORE INTO note (
            id, kind, author_pubkey, body, created_at
          ) VALUES (?, 'shared', ?, ?, ?)`,
-        [op.id, hexToBytes(op.authorPubkey), op.body, op.createdAt],
+        [op.id, hexToBytes(op.authorPubkey), op.body ?? null, op.createdAt],
       );
+      // Media rides as descriptors on the op; project them as 'remote'
+      // rows (no local file yet). INSERT OR IGNORE on the descriptor id
+      // keeps replays idempotent alongside the note row itself.
+      for (const attachment of op.attachments ?? []) {
+        await insertAttachmentFromDescriptor(exec, op.id, attachment, {
+          state: 'remote',
+          localUri: null,
+          createdAt: op.createdAt,
+        });
+      }
       return;
 
     case 'note.secret.announce':
@@ -112,8 +123,18 @@ export async function applyCrdtOp(
           WHERE id          = ?
             AND kind        = 'secret'
             AND revealed_at IS NULL`,
-        [op.body, op.revealedAt, op.id],
+        [op.body ?? null, op.revealedAt, op.id],
       );
+      // Secret-note media appears only on the reveal (never the announce).
+      // Project the descriptors as 'remote' rows; INSERT OR IGNORE keeps
+      // replays + the author's own echo idempotent.
+      for (const attachment of op.attachments ?? []) {
+        await insertAttachmentFromDescriptor(exec, op.id, attachment, {
+          state: 'remote',
+          localUri: null,
+          createdAt: op.revealedAt,
+        });
+      }
       return;
 
     case 'note.publish':

@@ -1,14 +1,17 @@
 import { decodeCursor, encodeCursor } from '../../src/storage/cursor.js';
 import type {
+  BlobStore,
   DevicesStore,
   EnvelopeListOptions,
   EnvelopeListResult,
+  NewBlobInput,
   NewEnvelopeInput,
   NewPostInput,
   PostListOptions,
   PostListResult,
   PostsStore,
   RelayStore,
+  StoredBlob,
   StoredEnvelope,
   StoredPost,
 } from '../../src/storage/types.js';
@@ -142,6 +145,39 @@ export class MemoryRelayStore implements RelayStore {
     const idx = this.rows.findIndex(
       (r) => bytesEqual(r.blindedId, blindedId) && r.id === envelopeId,
     );
+    if (idx === -1) return false;
+    this.rows.splice(idx, 1);
+    return true;
+  }
+
+  async purgeExpired(now: Date): Promise<number> {
+    const before = this.rows.length;
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      const row = this.rows[i];
+      if (row && row.expiresAt.getTime() <= now.getTime()) this.rows.splice(i, 1);
+    }
+    return before - this.rows.length;
+  }
+}
+
+export class MemoryBlobStore implements BlobStore {
+  readonly rows: StoredBlob[] = [];
+
+  async insert(input: NewBlobInput): Promise<StoredBlob> {
+    const row: StoredBlob = { ...input };
+    this.rows.push(row);
+    return row;
+  }
+
+  async get(id: string, now: Date): Promise<StoredBlob | null> {
+    const row = this.rows.find((r) => r.id === id);
+    if (!row) return null;
+    if (row.expiresAt.getTime() <= now.getTime()) return null;
+    return row;
+  }
+
+  async remove(id: string): Promise<boolean> {
+    const idx = this.rows.findIndex((r) => r.id === id);
     if (idx === -1) return false;
     this.rows.splice(idx, 1);
     return true;

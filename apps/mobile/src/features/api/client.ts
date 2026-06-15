@@ -1,5 +1,6 @@
 import type { Ed25519KeyPair } from '@secretnotebook/crypto';
 import type {
+  BlobUploadResponse,
   DeviceRegisterResponse,
   Post,
   PostInput,
@@ -18,7 +19,12 @@ export type FetchLike = (
     headers: Record<string, string>;
     body?: Uint8Array;
   },
-) => Promise<{ status: number; text: () => Promise<string> }>;
+) => Promise<{
+  status: number;
+  text: () => Promise<string>;
+  /** Raw response bytes; required for binary downloads (blob fetch). */
+  bytes?: () => Promise<Uint8Array>;
+}>;
 
 export class ApiError extends Error {
   constructor(
@@ -50,7 +56,11 @@ function defaultFetchAdapter(): FetchLike {
       headers: init.headers,
       body: init.body as BodyInit | undefined,
     });
-    return { status: res.status, text: () => res.text() };
+    return {
+      status: res.status,
+      text: () => res.text(),
+      bytes: async () => new Uint8Array(await res.arrayBuffer()),
+    };
   };
 }
 
@@ -167,5 +177,54 @@ export class ApiClient {
       method: 'DELETE',
       path: `/v1/relay/inbox/${blindedIdHex}/${envelopeId}`,
     });
+  }
+
+  /**
+   * Upload opaque ciphertext (a chunk-encrypted attachment) to the blob
+   * store. Body is raw octet-stream bytes; the signature covers exactly
+   * those bytes. The server assigns and returns the blob handle.
+   */
+  async uploadBlob(ciphertext: Uint8Array): Promise<BlobUploadResponse> {
+    const timestampSec = Math.floor(this.nowMs() / 1000);
+    const headers = await buildSignedHeaders({
+      method: 'POST',
+      url: '/v1/blobs',
+      bodyBytes: ciphertext,
+      timestampSec,
+      publicKey: this.keyPair.publicKey,
+      privateKey: this.keyPair.privateKey,
+    });
+    const res = await this.fetcher(`${this.baseUrl}/v1/blobs`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/octet-stream' },
+      body: ciphertext,
+    });
+    const text = await res.text();
+    if (res.status !== 200) throw new ApiError(res.status, text);
+    return JSON.parse(text) as BlobUploadResponse;
+  }
+
+  /** Fetch a blob's opaque ciphertext by handle. */
+  async downloadBlob(id: string): Promise<Uint8Array> {
+    const timestampSec = Math.floor(this.nowMs() / 1000);
+    const headers = await buildSignedHeaders({
+      method: 'GET',
+      url: `/v1/blobs/${id}`,
+      bodyBytes: undefined,
+      timestampSec,
+      publicKey: this.keyPair.publicKey,
+      privateKey: this.keyPair.privateKey,
+    });
+    const res = await this.fetcher(`${this.baseUrl}/v1/blobs/${id}`, {
+      method: 'GET',
+      headers: { ...headers },
+    });
+    if (res.status !== 200) {
+      throw new ApiError(res.status, await res.text());
+    }
+    if (!res.bytes) {
+      throw new Error('downloadBlob: fetch adapter does not expose response bytes');
+    }
+    return res.bytes();
   }
 }
