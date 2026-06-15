@@ -2,12 +2,13 @@
 
 > A decentralized couple-centric mobile app for two paired partners to share intimate content, complete relationship-deepening prompts, earn shared points, and (eventually) anchor non-sensitive events on a blockchain.
 
-**Status:** Phase 1.5 in progress. Foundation (F0–F3c) + the pairing / Safe Word / global-feed / connection-channel-sync slices are shipped. The Phase-1 role-play / prompts / save-for-partner / unlocked-saved loop has been retired (R0); the connection-channel surface is now shared + secret **notes** (R2), per-note **publish** (R3), per-partner **role** on the connection (R4), and **IAP-gated publish** (R5). See [Phased plan](#phased-plan) for the rest, and [`apps/mobile/RUNBOOK.md`](./apps/mobile/RUNBOOK.md) for the current end-to-end verification walk.
+**Status:** Phase 1.5 in progress. Foundation (F0–F3c) + the pairing / Safe Word / global-feed / connection-channel-sync slices are shipped. The Phase-1 role-play / prompts / save-for-partner / unlocked-saved loop has been retired (R0); the connection-channel surface is now shared + secret **notes** (R2), per-note **publish** (R3), per-partner **role** on the connection (R4), **IAP-gated publish** (R5), and couple-only **media attachments** — images + voice notes, end-to-end encrypted (R6). See [Phased plan](#phased-plan) for the rest, and [`apps/mobile/RUNBOOK.md`](./apps/mobile/RUNBOOK.md) for the current end-to-end verification walk.
 
 > **Note on staleness in this README:** the "How it works" + "Sync model" sections below describe the Phase-1 vision and are accurate for pairing / Safe Word / global feed / connection-channel transport. The Phase-1.5 refactor (R0–R5) replaced what used to come after "save a post for your partner" — those sections still reference the deleted surface. The sources of truth for the current model are:
 >
-> - **Schema:** `apps/mobile/src/db/migrations/` (migrations 001–009)
+> - **Schema:** `apps/mobile/src/db/migrations/` (migrations 001–014)
 > - **CRDT ops:** `packages/connection-protocol/src/crdt/op.ts`
+> - **Media:** `packages/crypto/src/chunked-aead.ts` + the opaque `/v1/blobs` store in `apps/api`; acceptance in `apps/mobile/tests/attachments.test.ts`
 > - **End-to-end acceptance:** `apps/mobile/tests/full-loop.test.ts`
 > - **Operator walk:** `apps/mobile/RUNBOOK.md`
 
@@ -114,6 +115,7 @@ secretnotebook/
 │   │   │   │   ├── connection/  # per-partner role store (R4)
 │   │   │   │   ├── iap/         # entitlement cache + receipt validator (R5)
 │   │   │   │   ├── notes/       # shared + secret notes, publish (R2 + R3)
+│   │   │   │   ├── attachments/ # couple-only media: chunked-AEAD pipeline + blob fetch (R6)
 │   │   │   │   ├── pairing/     # BLE state machine, X3DH orchestrator, connection-row persistence
 │   │   │   │   └── safeword/    # Argon2id verifier, session, lockout, background-lock policy
 │   │   │   ├── navigation/      # RootStack / OnboardingStack / MainStack
@@ -125,7 +127,7 @@ secretnotebook/
 │       ├── src/
 │       │   ├── auth/            # Ed25519 HTTP-signature middleware
 │       │   ├── db/              # Drizzle schema + pg client
-│       │   ├── routes/          # /v1/health, /v1/posts, /v1/devices, /v1/relay/inbox/:blindedId
+│       │   ├── routes/          # /v1/health, /v1/posts, /v1/devices, /v1/relay/inbox/:blindedId, /v1/blobs
 │       │   └── storage/         # PostsStore / DevicesStore / RelayStore + Drizzle impls
 │       └── tests/               # Integration tests with in-memory stores via app.inject()
 ├── packages/
@@ -141,20 +143,21 @@ secretnotebook/
 
 ### Tech stack (locked)
 
-| Concern                   | Choice                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------------------- |
-| Mobile                    | React Native 0.74 (TypeScript), Expo bare workflow                                          |
-| Encrypted local DB        | `op-sqlite` with SQLCipher build                                                            |
-| Secure key storage        | `react-native-keychain` (biometric-gated)                                                   |
-| Biometrics                | `expo-local-authentication`                                                                 |
-| BLE pairing               | `react-native-ble-plx` (central) — peripheral library TBD                                   |
-| Crypto                    | `react-native-libsodium` on device, libsodium-wrappers-sumo in Node tests                   |
-| Couple-channel encryption | Symmetric chain ratchet over libsodium primitives (Phase 1); DH half in Phase 2             |
-| Navigation                | `@react-navigation/native` v7 native-stack                                                  |
-| State                     | Zustand for app state, TanStack Query for server reads                                      |
-| API server                | Fastify 4 + `@fastify/rate-limit` + `fastify-type-provider-zod` + Drizzle ORM + Postgres 16 |
-| Build                     | pnpm workspace + Turborepo                                                                  |
-| Testing                   | Jest + ts-jest (Node), Detox (E2E, Mac runbook)                                             |
+| Concern                   | Choice                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Mobile                    | React Native 0.74 (TypeScript), Expo bare workflow                                                                              |
+| Encrypted local DB        | `op-sqlite` with SQLCipher build                                                                                                |
+| Secure key storage        | `react-native-keychain` (biometric-gated)                                                                                       |
+| Biometrics                | `expo-local-authentication`                                                                                                     |
+| BLE pairing               | `react-native-ble-plx` (central) — peripheral library TBD                                                                       |
+| Crypto                    | `react-native-libsodium` on device, libsodium-wrappers-sumo in Node tests                                                       |
+| Couple-channel encryption | Symmetric chain ratchet over libsodium primitives (Phase 1); DH half in Phase 2                                                 |
+| Note media (R6)           | Chunked XChaCha20-Poly1305 on device; opaque `/v1/blobs` ciphertext store; `expo-image-picker` + `expo-av` + `expo-file-system` |
+| Navigation                | `@react-navigation/native` v7 native-stack                                                                                      |
+| State                     | Zustand for app state, TanStack Query for server reads                                                                          |
+| API server                | Fastify 4 + `@fastify/rate-limit` + `fastify-type-provider-zod` + Drizzle ORM + Postgres 16                                     |
+| Build                     | pnpm workspace + Turborepo                                                                                                      |
+| Testing                   | Jest + ts-jest (Node), Detox (E2E, Mac runbook)                                                                                 |
 
 ---
 
