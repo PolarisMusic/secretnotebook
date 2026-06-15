@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import type { FastifyInstance } from 'fastify';
 import { loadEnv } from '../src/config.js';
 import { buildApp } from '../src/server.js';
-import { MemoryDevicesStore, MemoryPostsStore, MemoryRelayStore } from './helpers/memory-stores.js';
+import {
+  MemoryBlobStore,
+  MemoryDevicesStore,
+  MemoryPostsStore,
+  MemoryRelayStore,
+} from './helpers/memory-stores.js';
 
 const FIXED_NOW_MS = 1_700_000_000_000;
 
@@ -17,6 +22,7 @@ async function setupApp(): Promise<FastifyInstance> {
     postsStore: new MemoryPostsStore(),
     devicesStore: new MemoryDevicesStore(),
     relayStore: new MemoryRelayStore(),
+    blobsStore: new MemoryBlobStore(),
   });
 }
 

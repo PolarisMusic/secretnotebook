@@ -1,6 +1,7 @@
 import { loadEnv } from './config.js';
 import { createDb } from './db/client.js';
 import { buildApp } from './server.js';
+import { DrizzleBlobStore } from './storage/blobs-drizzle.js';
 import { DrizzleDevicesStore } from './storage/devices-drizzle.js';
 import { DrizzlePostsStore } from './storage/posts-drizzle.js';
 import { DrizzleRelayStore } from './storage/relay-drizzle.js';
@@ -17,6 +18,7 @@ async function main(): Promise<void> {
     postsStore: new DrizzlePostsStore(db),
     devicesStore: new DrizzleDevicesStore(db),
     relayStore: new DrizzleRelayStore(db),
+    blobsStore: new DrizzleBlobStore(db),
   });
 
   const closeOnSignal = async (signal: string): Promise<void> => {

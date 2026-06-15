@@ -90,3 +90,30 @@ export interface RelayStore {
   /** Sweep TTL-expired rows. Returns the number deleted. */
   purgeExpired(now: Date): Promise<number>;
 }
+
+export interface StoredBlob {
+  id: string;
+  /** Opaque ciphertext bytes; the server never decrypts these. */
+  data: Uint8Array;
+  byteSize: number;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface NewBlobInput {
+  id: string;
+  data: Uint8Array;
+  byteSize: number;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface BlobStore {
+  insert(input: NewBlobInput): Promise<StoredBlob>;
+  /** The blob if present and not expired at `now`, otherwise null. */
+  get(id: string, now: Date): Promise<StoredBlob | null>;
+  /** Returns true if a matching row was deleted, false otherwise. */
+  remove(id: string): Promise<boolean>;
+  /** Sweep TTL-expired rows. Returns the number deleted. */
+  purgeExpired(now: Date): Promise<number>;
+}

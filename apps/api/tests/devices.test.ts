@@ -3,7 +3,12 @@ import { bytesToHex, generateEd25519KeyPair } from '@secretnotebook/crypto';
 import type { FastifyInstance } from 'fastify';
 import { loadEnv } from '../src/config.js';
 import { buildApp } from '../src/server.js';
-import { MemoryDevicesStore, MemoryPostsStore, MemoryRelayStore } from './helpers/memory-stores.js';
+import {
+  MemoryBlobStore,
+  MemoryDevicesStore,
+  MemoryPostsStore,
+  MemoryRelayStore,
+} from './helpers/memory-stores.js';
 import { buildSignedRequest } from './helpers/signed-inject.js';
 
 const FIXED_NOW_MS = 1_700_000_000_000;
@@ -28,6 +33,7 @@ async function setupApp(): Promise<TestCtx> {
     postsStore: posts,
     devicesStore: devices,
     relayStore: new MemoryRelayStore(),
+    blobsStore: new MemoryBlobStore(),
   });
   return { app, posts, devices, now: () => FIXED_NOW_MS };
 }
