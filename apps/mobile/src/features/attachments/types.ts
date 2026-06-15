@@ -49,15 +49,24 @@ export interface PickedMedia {
 }
 
 /**
- * Injected media-access seam. Production wiring (native.ts) backs this with
- * expo-image-picker / expo-camera / expo-av; tests pass an in-memory fake.
- * Each method resolves null when the user cancels.
+ * Injected image-access seam. Production wiring (native.ts) backs this with
+ * expo-image-picker; tests pass an in-memory fake. Each method resolves null
+ * when the user cancels.
  */
 export interface MediaSource {
   pickImage(): Promise<PickedMedia | null>;
   captureImage(): Promise<PickedMedia | null>;
-  pickAudio(): Promise<PickedMedia | null>;
-  recordAudio(): Promise<PickedMedia | null>;
+}
+
+/**
+ * Injected voice-note recorder seam. `start` begins capture; `stop` ends it
+ * and returns the recorded clip (or null if nothing was captured); `cancel`
+ * discards an in-flight recording. Production wiring backs this with expo-av.
+ */
+export interface AudioRecorder {
+  start(): Promise<void>;
+  stop(): Promise<PickedMedia | null>;
+  cancel(): Promise<void>;
 }
 
 /**

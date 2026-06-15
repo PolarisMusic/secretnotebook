@@ -16,13 +16,21 @@
       "bundleIdentifier": "com.secretnotebook.app",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Face ID unlocks your connection notebook and confirms pairing.",
-        "NSCameraUsageDescription": "The camera is used to scan your partner's pairing QR code.",
+        "NSCameraUsageDescription": "The camera is used to scan your partner's pairing QR code and to take photos for your notes.",
+        "NSPhotoLibraryUsageDescription": "Choose photos from your library to attach to a note. Attachments are encrypted on your device before they ever leave it.",
+        "NSMicrophoneUsageDescription": "Record a voice note. Recordings are encrypted on your device before they ever leave it.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.secretnotebook.app",
-      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT", "CAMERA"]
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "plugins": [
       [
@@ -35,6 +43,19 @@
         "expo-camera",
         {
           "cameraPermission": "The camera is used to scan your partner's pairing QR code."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose photos from your library to attach to a note. Attachments are encrypted on your device before they ever leave it.",
+          "cameraPermission": "Take a photo to attach to a note. Attachments are encrypted on your device before they ever leave it."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Record a voice note. Recordings are encrypted on your device before they ever leave it."
         }
       ],
       [

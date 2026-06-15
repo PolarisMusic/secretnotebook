@@ -1,29 +1,48 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
+import { useApiStore } from '../../features/api/store';
+import {
+  createExpoAudioRecorder,
+  createExpoFileStore,
+  createExpoMediaSource,
+} from '../../features/attachments/native';
+import { prepareAttachment } from '../../features/attachments/pipeline';
+import type { PickedMedia, PreparedAttachment } from '../../features/attachments/types';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
+import { randomUuidV4 } from '../../features/connection-channel/uuid';
 import { submitNoteCompose } from '../../features/notes/compose-wiring';
 import { getTermState } from '../../features/safeword/term-store';
 import type { MainStackParamList } from '../../navigation/MainStack';
-import { NotesCompose } from './NotesCompose';
+import { NotesCompose, type StagedMedia } from './NotesCompose';
+
+interface StagedItem extends StagedMedia {
+  prepared?: PreparedAttachment;
+}
 
 /**
- * Production wiring for NotesCompose. Pulls the SqlExecutor and
- * SyncEngine off the singleton stores; routes the form's submit
- * through `submitNoteCompose` which forwards to
- * writeSharedNote / writeSecretNote based on `kind`. Splitting the
- * forwarding into a tiny pure helper lets the Node-side Jest suite
- * verify the dispatch without rendering React Native.
+ * Production wiring for NotesCompose. Pulls the SqlExecutor + SyncEngine off
+ * the singleton stores and the ApiClient off useApiStore. Media is encrypted
+ * and uploaded the moment it's picked/recorded (so the chip shows progress);
+ * submit then hands the ready PreparedAttachments to submitNoteCompose, which
+ * writes the note + attachment rows and enqueues the op.
  */
 export function NotesComposeRoute(): JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
+  const apiClient = useApiStore((s) => s.client);
   const [termNotSet, setTermNotSet] = useState(false);
+  const [staged, setStaged] = useState<StagedItem[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+
+  const mediaSource = useMemo(() => createExpoMediaSource(), []);
+  const recorder = useMemo(() => createExpoAudioRecorder(), []);
+  const fileStore = useMemo(() => createExpoFileStore(), []);
 
   useEffect(() => {
     if (!exec || !engine) return;
@@ -36,6 +55,39 @@ export function NotesComposeRoute(): JSX.Element {
     };
   }, [exec, engine]);
 
+  const stageAndPrepare = useCallback(
+    async (picked: PickedMedia | null) => {
+      if (!picked || !apiClient) return;
+      const id = await randomUuidV4();
+      setStaged((s) => [...s, { id, mediaType: picked.mediaType, status: 'preparing' }]);
+      try {
+        const prepared = await prepareAttachment(
+          { fileStore, uploadBlob: (ct) => apiClient.uploadBlob(ct) },
+          picked,
+        );
+        setStaged((s) => s.map((m) => (m.id === id ? { ...m, status: 'ready', prepared } : m)));
+      } catch {
+        setStaged((s) => s.map((m) => (m.id === id ? { ...m, status: 'error' } : m)));
+      }
+    },
+    [apiClient, fileStore],
+  );
+
+  const onToggleRecord = useCallback(async () => {
+    if (!isRecording) {
+      try {
+        await recorder.start();
+        setIsRecording(true);
+      } catch {
+        setIsRecording(false);
+      }
+      return;
+    }
+    setIsRecording(false);
+    const picked = await recorder.stop();
+    await stageAndPrepare(picked);
+  }, [isRecording, recorder, stageAndPrepare]);
+
   if (!exec || !engine) {
     return (
       <SafeAreaView style={styles.gate} testID="screen.notes-compose.waiting">
@@ -45,21 +97,31 @@ export function NotesComposeRoute(): JSX.Element {
     );
   }
 
+  const mediaReady = apiClient != null;
+
   return (
     <NotesCompose
       termNotSet={termNotSet}
       onSetTerm={() => navigation.navigate('SafeWord')}
       onCancel={() => navigation.goBack()}
+      staged={staged}
+      isRecording={isRecording}
+      onAddPhoto={mediaReady ? () => void mediaSource.pickImage().then(stageAndPrepare) : undefined}
+      onTakePhoto={
+        mediaReady ? () => void mediaSource.captureImage().then(stageAndPrepare) : undefined
+      }
+      onToggleRecord={mediaReady ? () => void onToggleRecord() : undefined}
+      onRemoveMedia={(id) => setStaged((s) => s.filter((m) => m.id !== id))}
       onSubmit={async ({ kind, body }) => {
+        const attachments = staged
+          .filter((m) => m.status === 'ready' && m.prepared)
+          .map((m) => m.prepared as PreparedAttachment);
         try {
           await submitNoteCompose(
-            {
-              exec,
-              selfPubkey: engine.selfPub,
-              enqueue: (op) => engine.enqueue(op),
-            },
+            { exec, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
             kind,
             body,
+            attachments,
           );
           navigation.goBack();
           return null;

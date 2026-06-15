@@ -1,7 +1,17 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { NoteRow } from '../../features/notes/store';
+
+/** One attachment as the detail screen needs to render it. `previewUri` is the
+ *  DECRYPTED cache file (set after the user loads it); until then we show a
+ *  load/spinner/retry control driven by `state`. */
+export interface DetailAttachment {
+  readonly id: string;
+  readonly mediaType: 'image' | 'audio';
+  readonly state: 'pending' | 'ready' | 'remote' | 'downloading' | 'failed';
+  readonly previewUri: string | null;
+}
 
 export interface NotesDetailProps {
   readonly note: NoteRow | null;
@@ -12,6 +22,11 @@ export interface NotesDetailProps {
   readonly onBack: () => void;
   readonly onReveal: () => void;
   readonly onOpenPublishedPost: (id: string) => void;
+  readonly attachments?: readonly DetailAttachment[];
+  /** Download (if needed) + decrypt the attachment to a preview file. */
+  readonly onOpenAttachment?: (id: string) => void;
+  /** Play a decrypted voice note. */
+  readonly onPlayAudio?: (id: string) => void;
 }
 
 function isoDate(secs: number): string {
@@ -61,6 +76,61 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
               {note.body}
             </Text>
           )}
+
+          {props.attachments && props.attachments.length > 0 ? (
+            <View style={styles.media} testID="notes-detail.media">
+              {props.attachments.map((a) => {
+                if (a.previewUri && a.mediaType === 'image') {
+                  return (
+                    <Image
+                      key={a.id}
+                      source={{ uri: a.previewUri }}
+                      style={styles.image}
+                      resizeMode="cover"
+                      testID={`notes-detail.image.${a.id}`}
+                    />
+                  );
+                }
+                if (a.previewUri && a.mediaType === 'audio') {
+                  return (
+                    <Pressable
+                      key={a.id}
+                      accessibilityRole="button"
+                      onPress={() => props.onPlayAudio?.(a.id)}
+                      style={styles.mediaButton}
+                      testID={`notes-detail.play.${a.id}`}
+                    >
+                      <Text style={styles.mediaButtonText}>Play voice note</Text>
+                    </Pressable>
+                  );
+                }
+                if (a.state === 'downloading') {
+                  return (
+                    <View key={a.id} style={styles.mediaButton}>
+                      <ActivityIndicator color="#9ec5ff" />
+                    </View>
+                  );
+                }
+                return (
+                  <Pressable
+                    key={a.id}
+                    accessibilityRole="button"
+                    onPress={() => props.onOpenAttachment?.(a.id)}
+                    style={styles.mediaButton}
+                    testID={`notes-detail.load.${a.id}`}
+                  >
+                    <Text style={styles.mediaButtonText}>
+                      {a.state === 'failed'
+                        ? 'Retry'
+                        : a.mediaType === 'image'
+                          ? 'Load photo'
+                          : 'Load voice note'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
 
           {note.publishedAt != null && note.publishedGlobalPostId != null ? (
             <Pressable
@@ -117,6 +187,17 @@ const styles = StyleSheet.create({
   },
   publishedBadgeText: { color: '#9eff9e', fontSize: 13, fontWeight: '600' },
   publishedBadgeMeta: { color: '#5e8e5e', fontSize: 11 },
+  media: { gap: 12 },
+  mediaItem: { gap: 8 },
+  image: { width: '100%', height: 220, borderRadius: 10, backgroundColor: '#161616' },
+  mediaButton: {
+    backgroundColor: '#161616',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  mediaButtonText: { color: '#9ec5ff', fontWeight: '600', fontSize: 14 },
   actionRow: { gap: 10, paddingTop: 8 },
   actionButton: {
     backgroundColor: '#9ec5ff',

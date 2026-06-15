@@ -15,6 +15,13 @@ import type { NoteKind } from '../../features/notes/store';
 
 const MAX_LENGTH = 4000; // matches NOTE_BODY_MAX in connection-protocol
 
+/** A media item staged on the compose form while it encrypts + uploads. */
+export interface StagedMedia {
+  readonly id: string;
+  readonly mediaType: 'image' | 'audio';
+  readonly status: 'preparing' | 'ready' | 'error';
+}
+
 export interface NotesComposeProps {
   /** Resolves to an error string to show inline, or null on success.
    *  Rejecting leaves the form intact with a generic message. */
@@ -25,6 +32,15 @@ export interface NotesComposeProps {
   readonly termNotSet?: boolean;
   /** Navigate to the roleplay-term flow (from the nudge). */
   readonly onSetTerm?: () => void;
+  /** Media staged so far. Drives the chips + enables a media-only save.
+   *  When the add-media handlers are omitted the whole media UI is hidden
+   *  (keeps the component usable without the native wiring). */
+  readonly staged?: readonly StagedMedia[];
+  readonly isRecording?: boolean;
+  readonly onAddPhoto?: () => void;
+  readonly onTakePhoto?: () => void;
+  readonly onToggleRecord?: () => void;
+  readonly onRemoveMedia?: (id: string) => void;
 }
 
 /**
@@ -40,9 +56,16 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [promptDismissed, setPromptDismissed] = useState(false);
 
+  const staged = props.staged ?? [];
+  const mediaEnabled = props.onAddPhoto != null;
+  const hasReadyMedia = staged.some((m) => m.status === 'ready');
+  const anyPreparing = staged.some((m) => m.status === 'preparing');
   const tooShort = body.trim().length === 0;
   const tooLong = body.length > MAX_LENGTH;
-  const canSubmit = !busy && !tooShort && !tooLong;
+  // A note needs SOME substance: text, or at least one uploaded attachment.
+  // Block while media is still encrypting/uploading or a recording is live.
+  const canSubmit =
+    !busy && !tooLong && !anyPreparing && !props.isRecording && (!tooShort || hasReadyMedia);
 
   async function submit(): Promise<void> {
     if (!canSubmit) return;
@@ -104,6 +127,60 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
             </Pressable>
           ))}
         </View>
+
+        {mediaEnabled ? (
+          <View style={styles.mediaSection} testID="notes.media">
+            <View style={styles.mediaButtons}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={props.onAddPhoto}
+                testID="notes.add-photo"
+                style={styles.mediaBtn}
+              >
+                <Text style={styles.mediaBtnText}>+ Photo</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={props.onTakePhoto}
+                testID="notes.take-photo"
+                style={styles.mediaBtn}
+              >
+                <Text style={styles.mediaBtnText}>Camera</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={props.onToggleRecord}
+                testID="notes.record"
+                style={[styles.mediaBtn, props.isRecording && styles.mediaBtnRecording]}
+              >
+                <Text style={styles.mediaBtnText}>{props.isRecording ? 'Stop' : 'Voice note'}</Text>
+              </Pressable>
+            </View>
+            {staged.length > 0 ? (
+              <View style={styles.chips}>
+                {staged.map((m) => (
+                  <View key={m.id} style={styles.chip} testID={`notes.media.chip.${m.id}`}>
+                    <Text style={styles.chipLabel}>
+                      {m.mediaType === 'image' ? 'Photo' : 'Voice'}
+                    </Text>
+                    {m.status === 'preparing' ? (
+                      <ActivityIndicator color="#9ec5ff" size="small" />
+                    ) : null}
+                    {m.status === 'error' ? <Text style={styles.chipError}>failed</Text> : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() => props.onRemoveMedia?.(m.id)}
+                      testID={`notes.media.remove.${m.id}`}
+                    >
+                      <Text style={styles.chipRemove}>✕</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         {kind === 'secret' && props.termNotSet && !promptDismissed ? (
           <View style={styles.prompt} testID="notes.term-prompt">
@@ -228,4 +305,27 @@ const styles = StyleSheet.create({
   promptActions: { flexDirection: 'row', gap: 18 },
   promptLink: { color: '#9ec5ff', fontSize: 14, fontWeight: '600' },
   promptDismiss: { color: '#7a7a7a', fontSize: 14, fontWeight: '600' },
+  mediaSection: { paddingHorizontal: 16, paddingTop: 4, gap: 10 },
+  mediaButtons: { flexDirection: 'row', gap: 8 },
+  mediaBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1a1a1a',
+  },
+  mediaBtnRecording: { backgroundColor: '#5a1a1a' },
+  mediaBtnText: { color: '#cfcfcf', fontWeight: '600', fontSize: 13 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#161616',
+  },
+  chipLabel: { color: '#cfcfcf', fontSize: 13 },
+  chipError: { color: '#ffb4b4', fontSize: 12 },
+  chipRemove: { color: '#9e9e9e', fontSize: 14, fontWeight: '700' },
 });
