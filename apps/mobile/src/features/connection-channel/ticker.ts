@@ -6,17 +6,29 @@ export interface SyncCycleResult {
   pulled: PullResult;
 }
 
-export type SyncStep = 'flush' | 'pull';
+export type SyncStep = 'flush' | 'pull' | 'reconcile';
+
+export interface RunSyncCycleOpts {
+  onError?: (err: Error, step: SyncStep) => void;
+  /**
+   * Optional hook run after pull() applies incoming ops. The projector
+   * can't enqueue, so features that must derive secondary state +
+   * outbound ops from freshly-applied ops (e.g. the R7 unlock loop's
+   * Couple-Points reconcile) do it here. Errors are forwarded to onError
+   * under the 'reconcile' step and never abort the cycle.
+   */
+  afterPull?: () => Promise<void>;
+}
 
 /**
- * One full sync cycle: flush() → pull(). Pure-ish — no timers, no React.
- * Errors thrown by either step are caught and forwarded to `onError`;
- * the cycle does not abort halfway so the read path still runs if a
- * transient write blip failed.
+ * One full sync cycle: flush() → pull() → afterPull(). Pure-ish — no
+ * timers, no React. Errors thrown by any step are caught and forwarded to
+ * `onError`; the cycle does not abort halfway so the read path still runs
+ * if a transient write blip failed.
  */
 export async function runSyncCycle(
   engine: SyncEngine,
-  opts: { onError?: (err: Error, step: SyncStep) => void } = {},
+  opts: RunSyncCycleOpts = {},
 ): Promise<SyncCycleResult> {
   let flushed: FlushResult = { attempted: 0, delivered: 0, failed: 0 };
   let pulled: PullResult = { fetched: 0, applied: 0, duplicates: 0 };
@@ -29,6 +41,13 @@ export async function runSyncCycle(
     pulled = await engine.pull();
   } catch (e) {
     opts.onError?.(e as Error, 'pull');
+  }
+  if (opts.afterPull) {
+    try {
+      await opts.afterPull();
+    } catch (e) {
+      opts.onError?.(e as Error, 'reconcile');
+    }
   }
   return { flushed, pulled };
 }
@@ -43,6 +62,8 @@ export interface UseSyncTickerOpts {
   readonly runOnMount?: boolean;
   /** Optional error sink — surfaced inline rather than crashing the timer. */
   readonly onError?: (err: Error, step: SyncStep) => void;
+  /** Optional post-pull hook (see RunSyncCycleOpts.afterPull). */
+  readonly afterPull?: () => Promise<void>;
 }
 
 /**
@@ -61,6 +82,7 @@ export function useSyncTicker(engine: SyncEngine | null, opts: UseSyncTickerOpts
   const intervalMs = opts.intervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
   const runOnMount = opts.runOnMount ?? true;
   const onError = opts.onError;
+  const afterPull = opts.afterPull;
   const inflight = useRef(false);
 
   useEffect(() => {
@@ -71,7 +93,7 @@ export function useSyncTicker(engine: SyncEngine | null, opts: UseSyncTickerOpts
       if (cancelled || inflight.current) return;
       inflight.current = true;
       try {
-        await runSyncCycle(engine, { onError });
+        await runSyncCycle(engine, { onError, afterPull });
       } finally {
         inflight.current = false;
       }
@@ -83,5 +105,5 @@ export function useSyncTicker(engine: SyncEngine | null, opts: UseSyncTickerOpts
       cancelled = true;
       clearInterval(handle);
     };
-  }, [engine, intervalMs, runOnMount, onError]);
+  }, [engine, intervalMs, runOnMount, onError, afterPull]);
 }

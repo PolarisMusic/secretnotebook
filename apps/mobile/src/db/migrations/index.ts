@@ -11,6 +11,7 @@ import { sql as pairedCoercionSql } from './011-paired-coercion';
 import { sql as safewordTermSql } from './012-safeword-term';
 import { sql as postAudienceSql } from './013-post-audience';
 import { sql as attachmentsSql } from './014-attachments';
+import { sql as secretUnlockSql } from './015-secret-unlock';
 
 export interface Migration {
   readonly id: number;
@@ -34,4 +35,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 12, name: 'safeword-term', sql: safewordTermSql },
   { id: 13, name: 'post-audience', sql: postAudienceSql },
   { id: 14, name: 'attachments', sql: attachmentsSql },
+  { id: 15, name: 'secret-unlock', sql: secretUnlockSql },
 ];
