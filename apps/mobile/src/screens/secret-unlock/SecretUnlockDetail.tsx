@@ -1,0 +1,371 @@
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import type { UnlockState } from '../../features/secret-unlock/store';
+
+export interface ReflectionView {
+  readonly appreciate: string;
+  readonly uncomfortable: string;
+  readonly stars: number | null;
+}
+
+export interface SecretUnlockDetailProps {
+  readonly loading: boolean;
+  readonly role: 'author' | 'unlocker';
+  readonly state: UnlockState;
+  readonly promptText: string;
+  /** The revealed secret's body, or null (media-only / not yet readable here). */
+  readonly revealedBody: string | null;
+  readonly revealedHasMedia: boolean;
+  /** Whether to render the revealed-secret block at all. */
+  readonly showSecret: boolean;
+  /** Author has reached reflection but hasn't disclosed which secret yet. */
+  readonly authorMustDisclose: boolean;
+  readonly myReflection: ReflectionView | null;
+  readonly partnerReflection: ReflectionView | null;
+  readonly complete: boolean;
+  readonly busy: boolean;
+  readonly onSubmit: () => void;
+  readonly onCancel: () => void;
+  readonly onVerify: () => void;
+  readonly onReject: () => void;
+  readonly onDisclose: () => void;
+  readonly onReflect: (appreciate: string, uncomfortable: string, stars: number | null) => void;
+  readonly onBack: () => void;
+}
+
+function Stars({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange?: (n: number) => void;
+}): JSX.Element {
+  return (
+    <View style={styles.starsRow}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Pressable
+          key={n}
+          disabled={onChange == null}
+          hitSlop={6}
+          onPress={() => onChange?.(n)}
+          testID={`unlock.star.${n}`}
+        >
+          <Text style={[styles.star, value != null && n <= value && styles.starOn]}>★</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function ReflectionForm(props: {
+  busy: boolean;
+  onSubmit: (a: string, u: string, s: number | null) => void;
+}): JSX.Element {
+  const [appreciate, setAppreciate] = useState('');
+  const [uncomfortable, setUncomfortable] = useState('');
+  const [stars, setStars] = useState<number | null>(null);
+  const canSubmit = appreciate.trim().length > 0 && uncomfortable.trim().length > 0 && !props.busy;
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Reflect together</Text>
+      <Text style={styles.question}>What did you appreciate about this note?</Text>
+      <TextInput
+        style={styles.input}
+        multiline
+        placeholder="Share what landed for you…"
+        placeholderTextColor="#5a5a5a"
+        value={appreciate}
+        onChangeText={setAppreciate}
+        testID="unlock.reflect.appreciate"
+      />
+      <Text style={styles.question}>Did anything make you feel uncomfortable about this note?</Text>
+      <TextInput
+        style={styles.input}
+        multiline
+        placeholder="Be honest — even “nothing” is an answer."
+        placeholderTextColor="#5a5a5a"
+        value={uncomfortable}
+        onChangeText={setUncomfortable}
+        testID="unlock.reflect.uncomfortable"
+      />
+      <Text style={styles.question}>Rate this note (optional — doesn't change points)</Text>
+      <Stars value={stars} onChange={setStars} />
+      <Pressable
+        accessibilityRole="button"
+        disabled={!canSubmit}
+        style={[styles.primaryBtn, !canSubmit && styles.btnDisabled]}
+        onPress={() => props.onSubmit(appreciate, uncomfortable, stars)}
+        testID="unlock.reflect.submit"
+      >
+        <Text style={[styles.primaryBtnText, !canSubmit && styles.btnTextDisabled]}>
+          Submit reflection
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function ReflectionReadout({
+  title,
+  reflection,
+}: {
+  title: string;
+  reflection: ReflectionView;
+}): JSX.Element {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>{title}</Text>
+      <Text style={styles.readLabel}>Appreciated</Text>
+      <Text style={styles.readText}>{reflection.appreciate}</Text>
+      <Text style={styles.readLabel}>Uncomfortable</Text>
+      <Text style={styles.readText}>{reflection.uncomfortable}</Text>
+      {reflection.stars != null && <Stars value={reflection.stars} />}
+    </View>
+  );
+}
+
+/**
+ * One unlock attempt, rendered for whichever role + state it's in. The
+ * prompt is always shown; the action block and the revealed-secret /
+ * reflection sections switch on state. The Author only sees which secret
+ * was drawn after they tap "Reveal which secret" at reflection time.
+ */
+export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element {
+  if (props.loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.center} testID="unlock.detail.loading">
+          <ActivityIndicator color="#f5f5f5" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+  const { role, state } = props;
+  return (
+    <SafeAreaView style={styles.container} edges={['top']} testID="screen.unlock_detail">
+      <View style={styles.bar}>
+        <Pressable
+          hitSlop={12}
+          onPress={props.onBack}
+          style={styles.back}
+          testID="unlock.detail.back"
+        >
+          <Text style={styles.backGlyph}>‹</Text>
+        </Pressable>
+        <Text style={styles.title}>Unlock</Text>
+        <View style={styles.back} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>
+            {role === 'unlocker' ? 'Your prompt' : 'Their prompt'}
+          </Text>
+          <Text style={styles.prompt}>{props.promptText}</Text>
+        </View>
+
+        {/* Action block by state. */}
+        {(state === 'assigned' || state === 'returned') && role === 'unlocker' && (
+          <View style={styles.card}>
+            {state === 'returned' && (
+              <Text style={styles.note}>Your partner sent this back. Give it another go.</Text>
+            )}
+            <Text style={styles.note}>Do the prompt in real life, then mark it done.</Text>
+            <Pressable
+              accessibilityRole="button"
+              disabled={props.busy}
+              style={[styles.primaryBtn, props.busy && styles.btnDisabled]}
+              onPress={props.onSubmit}
+              testID="unlock.submit"
+            >
+              <Text style={styles.primaryBtnText}>I did it — mark done</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={props.busy}
+              style={styles.ghostBtn}
+              onPress={props.onCancel}
+              testID="unlock.cancel"
+            >
+              <Text style={styles.ghostBtnText}>Cancel unlock</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {(state === 'assigned' || state === 'returned') && role === 'author' && (
+          <View style={styles.card}>
+            <Text style={styles.note}>Waiting for your partner to do the prompt.</Text>
+          </View>
+        )}
+
+        {state === 'submitted' && role === 'unlocker' && (
+          <View style={styles.card}>
+            <Text style={styles.note}>Done! Waiting for your partner to verify.</Text>
+            <Pressable
+              accessibilityRole="button"
+              disabled={props.busy}
+              style={styles.ghostBtn}
+              onPress={props.onCancel}
+              testID="unlock.cancel"
+            >
+              <Text style={styles.ghostBtnText}>Cancel unlock</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {state === 'submitted' && role === 'author' && (
+          <View style={styles.card}>
+            <Text style={styles.note}>
+              Your partner says they did it. Verify to reveal one of your secret notes to them (+500
+              Couple Points). You won't be told which one until you reflect.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              disabled={props.busy}
+              style={[styles.primaryBtn, props.busy && styles.btnDisabled]}
+              onPress={props.onVerify}
+              testID="unlock.verify"
+            >
+              <Text style={styles.primaryBtnText}>Verify &amp; reveal</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={props.busy}
+              style={styles.ghostBtn}
+              onPress={props.onReject}
+              testID="unlock.reject"
+            >
+              <Text style={styles.ghostBtnText}>Send back to redo</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {state === 'canceled' && (
+          <View style={styles.card}>
+            <Text style={styles.note}>This unlock was canceled.</Text>
+          </View>
+        )}
+
+        {/* Revealed: the secret + reflection. */}
+        {state === 'revealed' && (
+          <>
+            {props.authorMustDisclose ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>One of your secrets was unlocked</Text>
+                <Text style={styles.note}>
+                  Your partner has read one of your secret notes. Reveal which one to reflect on it
+                  together.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={props.busy}
+                  style={[styles.primaryBtn, props.busy && styles.btnDisabled]}
+                  onPress={props.onDisclose}
+                  testID="unlock.disclose"
+                >
+                  <Text style={styles.primaryBtnText}>Reveal which secret</Text>
+                </Pressable>
+              </View>
+            ) : props.showSecret ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>
+                  {role === 'unlocker' ? 'The secret you unlocked' : 'The secret that was unlocked'}
+                </Text>
+                {props.revealedBody != null && (
+                  <Text style={styles.secret}>{props.revealedBody}</Text>
+                )}
+                {props.revealedHasMedia && (
+                  <Text style={styles.note}>
+                    This note has media — open it in Notes to view{props.revealedBody ? ' it' : ''}.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
+            {props.complete && (
+              <View style={styles.bannerDone} testID="unlock.complete">
+                <Text style={styles.bannerDoneText}>
+                  Reflection complete — +500 Couple Points earned together. 💛
+                </Text>
+              </View>
+            )}
+
+            {/* Reflection: form until I've reflected, then a readout. The Author
+                must disclose first so they can reflect on the actual note. */}
+            {props.myReflection != null ? (
+              <ReflectionReadout title="Your reflection" reflection={props.myReflection} />
+            ) : !props.authorMustDisclose ? (
+              <ReflectionForm busy={props.busy} onSubmit={props.onReflect} />
+            ) : null}
+
+            {props.partnerReflection != null && (
+              <ReflectionReadout title="Their reflection" reflection={props.partnerReflection} />
+            )}
+            {props.myReflection != null && props.partnerReflection == null && (
+              <Text style={styles.note}>Waiting for your partner's reflection…</Text>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 },
+  back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  backGlyph: { color: '#f5f5f5', fontSize: 34, lineHeight: 36 },
+  title: { color: '#f5f5f5', fontSize: 20, fontWeight: '700', flex: 1, textAlign: 'center' },
+  scroll: { padding: 16, gap: 12, paddingBottom: 40 },
+  card: { backgroundColor: '#161616', borderRadius: 12, padding: 16, gap: 10 },
+  cardTitle: { color: '#9ec5ff', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  prompt: { color: '#f5f5f5', fontSize: 18, lineHeight: 25 },
+  note: { color: '#b5b5b5', fontSize: 14, lineHeight: 20 },
+  secret: { color: '#f5f5f5', fontSize: 16, lineHeight: 23 },
+  question: { color: '#cdcdcd', fontSize: 14, fontWeight: '600', marginTop: 4 },
+  input: {
+    backgroundColor: '#0f0f0f',
+    borderRadius: 8,
+    color: '#f5f5f5',
+    fontSize: 15,
+    padding: 12,
+    minHeight: 64,
+    textAlignVertical: 'top',
+  },
+  starsRow: { flexDirection: 'row', gap: 6, marginTop: 2 },
+  star: { color: '#3a3a3a', fontSize: 28 },
+  starOn: { color: '#ffd35a' },
+  primaryBtn: {
+    backgroundColor: '#2a2a3a',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  primaryBtnText: { color: '#cdd6ff', fontSize: 16, fontWeight: '700' },
+  btnDisabled: { opacity: 0.5 },
+  btnTextDisabled: { color: '#8a8a8a' },
+  ghostBtn: { paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  ghostBtnText: { color: '#9a9a9a', fontSize: 14, fontWeight: '600' },
+  readLabel: {
+    color: '#808080',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  readText: { color: '#e5e5e5', fontSize: 15, lineHeight: 21 },
+  bannerDone: { backgroundColor: '#16241a', borderRadius: 10, padding: 14 },
+  bannerDoneText: { color: '#9eff9e', fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+});

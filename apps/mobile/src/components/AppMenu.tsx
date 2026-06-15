@@ -16,6 +16,7 @@ interface MenuItem {
 
 const ITEMS: readonly MenuItem[] = [
   { key: 'notes', label: 'Notes', target: 'NotesList' },
+  { key: 'unlock', label: 'Unlock', target: 'SecretUnlockList' },
   { key: 'saved', label: 'Saved', target: 'SavedByYou' },
   { key: 'feed', label: 'Feed', target: 'GlobalFeed' },
   { key: 'settings', label: 'Settings', target: 'Settings' },
