@@ -221,7 +221,11 @@ describe('notes store', () => {
       const result = await publishNote(deps, note.id, publish);
       expect(result.globalPostId).toBe(GLOBAL_POST_ID);
       expect(result.publishedAt).toBe(FIXED_NOW_SEC);
-      expect(publish).toHaveBeenCalledWith({ contentType: 'text', body: 'going public' });
+      expect(publish).toHaveBeenCalledWith({
+        contentType: 'text',
+        body: 'going public',
+        audience: 'everyone',
+      });
 
       const updated = await getNote(deps.exec, note.id);
       expect(updated?.publishedAt).toBe(FIXED_NOW_SEC);
@@ -240,7 +244,11 @@ describe('notes store', () => {
       const note = await writeSharedNote(deps, 'https://example.com');
       const publish = fakePublish();
       await publishNote(deps, note.id, publish, { contentType: 'link' });
-      expect(publish).toHaveBeenCalledWith({ contentType: 'link', body: 'https://example.com' });
+      expect(publish).toHaveBeenCalledWith({
+        contentType: 'link',
+        body: 'https://example.com',
+        audience: 'everyone',
+      });
     });
 
     it('is idempotent: a second call returns the existing globalPostId without POSTing or enqueueing', async () => {

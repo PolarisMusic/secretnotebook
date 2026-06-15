@@ -112,6 +112,7 @@ describe('publishMyNote (production wiring helper)', () => {
     expect(submitPost).toHaveBeenCalledWith({
       contentType: 'text',
       body: 'paid up + going public',
+      audience: 'everyone',
     });
     expect(result.globalPostId).toBe('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
 

@@ -120,10 +120,13 @@ export class ApiClient {
     });
   }
 
-  async listPosts(opts: { cursor?: string; limit?: number } = {}): Promise<PostListResponse> {
+  async listPosts(
+    opts: { cursor?: string; limit?: number; audience?: 'masculine' | 'feminine' } = {},
+  ): Promise<PostListResponse> {
     const params = new URLSearchParams();
     if (opts.cursor !== undefined) params.set('cursor', opts.cursor);
     if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+    if (opts.audience !== undefined) params.set('audience', opts.audience);
     const qs = params.toString();
     const path = qs.length > 0 ? `/v1/posts?${qs}` : '/v1/posts';
     return this.sendSigned<PostListResponse>({ method: 'GET', path });

@@ -11,7 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { PostContentType, PostInput } from '@secretnotebook/shared-types';
+import type { PostAudience, PostContentType, PostInput } from '@secretnotebook/shared-types';
+
+const AUDIENCES = [
+  { value: 'everyone', label: 'Everyone' },
+  { value: 'masculine', label: 'Masculine' },
+  { value: 'feminine', label: 'Feminine' },
+] satisfies ReadonlyArray<{ value: PostAudience; label: string }>;
 
 export interface SubmitPostProps {
   /** Called when the user submits a valid post. Resolves to an error
@@ -22,15 +28,16 @@ export interface SubmitPostProps {
   /** The device's own not-yet-published notes, offered as one-tap publish
    *  targets. Empty/omitted hides the section (e.g. unpaired devices). */
   readonly notes?: ReadonlyArray<{ id: string; preview: string }>;
-  /** Publish an existing note to the global feed. Returns an error string,
-   *  or null on success (the route then navigates away). */
-  readonly onPublishNote?: (id: string) => Promise<string | null>;
+  /** Publish an existing note to the global feed with the chosen audience.
+   *  Returns an error string, or null on success (the route navigates away). */
+  readonly onPublishNote?: (id: string, audience: PostAudience) => Promise<string | null>;
 }
 
 const MAX_LENGTH = 4000;
 
 export function SubmitPost(props: SubmitPostProps): JSX.Element {
   const [contentType, setContentType] = useState<PostContentType>('text');
+  const [audience, setAudience] = useState<PostAudience>('everyone');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +50,7 @@ export function SubmitPost(props: SubmitPostProps): JSX.Element {
     setPublishingId(id);
     setError(null);
     try {
-      const errMessage = await props.onPublishNote(id);
+      const errMessage = await props.onPublishNote(id, audience);
       if (errMessage) setError(errMessage);
     } catch (e) {
       setError((e as Error).message ?? 'Could not publish note');
@@ -61,7 +68,7 @@ export function SubmitPost(props: SubmitPostProps): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      const errMessage = await props.onSubmit({ contentType, body: body.trim() });
+      const errMessage = await props.onSubmit({ contentType, body: body.trim(), audience });
       if (errMessage) setError(errMessage);
     } catch (e) {
       setError((e as Error).message ?? 'Could not submit post');
@@ -142,6 +149,24 @@ export function SubmitPost(props: SubmitPostProps): JSX.Element {
             </Pressable>
           ))}
         </View>
+
+        <View style={styles.radioRow}>
+          {AUDIENCES.map((a) => (
+            <Pressable
+              key={a.value}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: audience === a.value }}
+              testID={`submit-post.audience.${a.value}`}
+              onPress={() => setAudience(a.value)}
+              style={[styles.radio, audience === a.value && styles.radioActive]}
+            >
+              <Text style={[styles.radioText, audience === a.value && styles.radioTextActive]}>
+                {a.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Text style={styles.audienceHint}>Who it's for — drives the role filter on the feed.</Text>
 
         <TextInput
           value={body}
@@ -228,6 +253,7 @@ const styles = StyleSheet.create({
   radioActive: { backgroundColor: '#9ec5ff' },
   radioText: { color: '#9e9e9e', fontWeight: '600' },
   radioTextActive: { color: '#0a0a0a' },
+  audienceHint: { color: '#7a7a7a', fontSize: 12, paddingHorizontal: 16, paddingBottom: 4 },
   input: {
     flex: 1,
     margin: 16,

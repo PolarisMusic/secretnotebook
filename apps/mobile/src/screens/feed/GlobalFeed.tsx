@@ -24,6 +24,10 @@ export interface GlobalFeedProps {
   readonly onLoadMore: () => void;
   readonly onSelectPost: (id: string) => void;
   readonly onCompose: () => void;
+  /** Role filter state, or null when the viewer has no role (neutral /
+   *  unpaired) — in which case no toggle is shown and the feed is unfiltered. */
+  readonly roleFilter?: { readonly on: boolean } | null;
+  readonly onSetFilter?: (on: boolean) => void;
 }
 
 /**
@@ -45,7 +49,8 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
           {item.body}
         </Text>
         <Text style={styles.rowMeta}>
-          {item.contentType.toUpperCase()} · {item.anonAuthor.slice(0, 8)}…
+          {item.contentType.toUpperCase()} · {item.audience.toUpperCase()} ·{' '}
+          {item.anonAuthor.slice(0, 8)}…
         </Text>
       </Pressable>
     ),
@@ -68,6 +73,31 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
           </Pressable>
         }
       />
+
+      {props.roleFilter ? (
+        <View style={styles.filterRow}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => props.onSetFilter?.(true)}
+            style={[styles.filterPill, props.roleFilter.on && styles.filterPillActive]}
+            testID="feed.filter.forme"
+          >
+            <Text style={[styles.filterText, props.roleFilter.on && styles.filterTextActive]}>
+              For me
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => props.onSetFilter?.(false)}
+            style={[styles.filterPill, !props.roleFilter.on && styles.filterPillActive]}
+            testID="feed.filter.everyone"
+          >
+            <Text style={[styles.filterText, !props.roleFilter.on && styles.filterTextActive]}>
+              Everyone
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {props.error ? (
         <View testID="feed.error" style={styles.errorBox}>
@@ -120,6 +150,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   postButtonText: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
+  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#1a1a1a',
+  },
+  filterPillActive: { backgroundColor: '#9ec5ff' },
+  filterText: { color: '#9e9e9e', fontWeight: '600', fontSize: 13 },
+  filterTextActive: { color: '#0a0a0a' },
   listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   row: {
     backgroundColor: '#161616',

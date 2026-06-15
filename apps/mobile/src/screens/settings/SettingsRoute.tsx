@@ -7,23 +7,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
-import {
-  getConnectionRoles,
-  setMyRole,
-  type ConnectionRole,
-} from '../../features/connection/role-store';
+import { getMyRole, setMyRole, type ConnectionRole } from '../../features/connection/role-store';
 import { getTermState, type SafeWordTermState } from '../../features/safeword/term-store';
 import { useConnectionStore } from '../../state/connection';
 import type { MainStackParamList } from '../../navigation/MainStack';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 const ROLES: readonly ConnectionRole[] = ['masculine', 'feminine', 'neutral'];
-
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
 
 function termSummary(state: SafeWordTermState | null): string {
   switch (state?.kind) {
@@ -59,17 +49,7 @@ export function SettingsRoute(): JSX.Element {
   const refresh = useCallback(async () => {
     if (!exec || !engine) return;
     setTermState(await getTermState(exec, engine.selfPub));
-    const snap = await getConnectionRoles(exec);
-    if (!snap) return;
-    const rows = await exec.query<{ partner_a_pubkey: Uint8Array | ArrayBufferLike }>(
-      `SELECT partner_a_pubkey FROM connection WHERE id = ?`,
-      [snap.connectionId],
-    );
-    const aRaw = rows[0]?.partner_a_pubkey;
-    if (aRaw == null) return;
-    const aPub = aRaw instanceof Uint8Array ? aRaw : new Uint8Array(aRaw);
-    const isA = sameBytes(engine.selfPub, aPub);
-    setMyRoleState(isA ? snap.partnerARole : snap.partnerBRole);
+    setMyRoleState(await getMyRole(exec, engine.selfPub));
   }, [exec, engine]);
 
   useEffect(() => {

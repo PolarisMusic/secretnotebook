@@ -1,12 +1,15 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
 import { usePostsFeed } from '../../features/api/queries';
+import { useSyncEngineStore } from '../../features/connection-channel/store';
+import { getMyRole, type ConnectionRole } from '../../features/connection/role-store';
+import { effectiveAudience } from '../../features/feed/audience';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { GlobalFeed } from './GlobalFeed';
 
@@ -22,7 +25,28 @@ import { GlobalFeed } from './GlobalFeed';
 export function GlobalFeedRoute(): JSX.Element {
   const client = useApiStore((s) => s.client);
   const exec = useDatabaseStore((s) => s.exec);
+  const engine = useSyncEngineStore((s) => s.engine);
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
+
+  // The viewer's connection role drives the default-on feed filter. Null when
+  // unpaired/neutral — in which case no toggle is shown and the feed is unfiltered.
+  const [myRole, setMyRole] = useState<ConnectionRole | null>(null);
+  const [filterOn, setFilterOn] = useState(true);
+  useEffect(() => {
+    if (!exec || !engine) {
+      setMyRole(null);
+      return;
+    }
+    let cancelled = false;
+    void getMyRole(exec, engine.selfPub).then((r) => {
+      if (!cancelled) setMyRole(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [exec, engine]);
+
+  const audience = effectiveAudience(myRole, filterOn);
 
   const feedHooks = useMemo(
     () => ({ client, exec }) as { client: NonNullable<typeof client>; exec: typeof exec },
@@ -35,6 +59,7 @@ export function GlobalFeedRoute(): JSX.Element {
     client: feedHooks.client!,
     exec: feedHooks.exec,
     pageSize: 20,
+    audience,
   });
 
   if (!client) {
@@ -47,6 +72,7 @@ export function GlobalFeedRoute(): JSX.Element {
   }
 
   const items = query.data?.pages.flatMap((p) => p.items) ?? [];
+  const roleFilter = myRole === 'masculine' || myRole === 'feminine' ? { on: filterOn } : null;
 
   return (
     <View style={styles.container}>
@@ -60,6 +86,8 @@ export function GlobalFeedRoute(): JSX.Element {
         onLoadMore={() => void query.fetchNextPage()}
         onSelectPost={(id) => navigation.navigate('PostDetail', { id })}
         onCompose={() => navigation.navigate('SubmitPost')}
+        roleFilter={roleFilter}
+        onSetFilter={setFilterOn}
       />
     </View>
   );

@@ -84,6 +84,48 @@ describe('POST /v1/posts', () => {
     expect(bytesToHex(stored!.bodyHash)).toBe(bytesToHex(sha256Bytes('hello world')));
   });
 
+  it('stores the author-tagged audience', async () => {
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'POST',
+      url: '/v1/posts',
+      body: { contentType: 'text', body: 'for him', audience: 'masculine' },
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      payload: req.body,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(ctx.posts.rows[0]?.audience).toBe('masculine');
+  });
+
+  it('defaults audience to everyone when omitted', async () => {
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'POST',
+      url: '/v1/posts',
+      body: { contentType: 'text', body: 'for anyone' },
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      payload: req.body,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(ctx.posts.rows[0]?.audience).toBe('everyone');
+  });
+
   it('dedups by body_hash and returns the existing id', async () => {
     const kp = await generateEd25519KeyPair();
     const ts = Math.floor(ctx.now() / 1000);
@@ -234,6 +276,7 @@ describe('GET /v1/posts', () => {
         anonAuthor: kp.publicKey,
         createdAt: new Date(FIXED_NOW_MS - (5 - i) * 1000),
         popularity: 0,
+        audience: 'everyone',
       });
     }
 
@@ -327,6 +370,35 @@ describe('GET /v1/posts', () => {
     expect(res.json()).toEqual({ items: [], nextCursor: null });
   });
 
+  it('filters by audience: returns the role plus everyone, excludes the other role', async () => {
+    const kp = await generateEd25519KeyPair();
+    const mk = (i: number, audience: 'everyone' | 'masculine' | 'feminine') => ({
+      id: `00000000-0000-0000-0000-00000000010${i}`,
+      contentType: 'text',
+      body: `${audience} ${i}`,
+      bodyHash: sha256Bytes(`${audience} ${i}`),
+      anonAuthor: kp.publicKey,
+      createdAt: new Date(FIXED_NOW_MS - (9 - i) * 1000),
+      popularity: 0,
+      audience,
+    });
+    ctx.posts.rows.push(mk(0, 'everyone'), mk(1, 'masculine'), mk(2, 'feminine'));
+
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'GET',
+      url: '/v1/posts?audience=masculine',
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({ method: req.method, url: req.url, headers: req.headers });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { items: Array<{ body: string; audience: string }> };
+    expect(body.items.map((i) => i.audience).sort()).toEqual(['everyone', 'masculine']);
+    expect(body.items.some((i) => i.audience === 'feminine')).toBe(false);
+  });
+
   it('treats a malformed cursor as no cursor (returns the newest page)', async () => {
     const kp = await generateEd25519KeyPair();
     ctx.posts.rows.push({
@@ -337,6 +409,7 @@ describe('GET /v1/posts', () => {
       anonAuthor: kp.publicKey,
       createdAt: new Date(FIXED_NOW_MS),
       popularity: 0,
+      audience: 'everyone',
     });
     const ts = Math.floor(ctx.now() / 1000);
     const req = await buildSignedRequest({
@@ -413,6 +486,7 @@ describe('GET /v1/posts/:id', () => {
       anonAuthor: kp.publicKey,
       createdAt: new Date(FIXED_NOW_MS),
       popularity: 0,
+      audience: 'everyone',
     };
     ctx.posts.rows.push(stored);
 

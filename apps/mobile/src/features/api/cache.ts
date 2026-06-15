@@ -6,6 +6,7 @@ export interface CachedPost {
   globalId: string;
   contentType: string;
   body: string;
+  audience: string;
   anonAuthorId: Uint8Array;
   fetchedAt: number;
 }
@@ -22,9 +23,16 @@ export async function cachePost(
   fetchedAtSec: number = Math.floor(Date.now() / 1000),
 ): Promise<void> {
   await exec.execute(
-    `INSERT OR REPLACE INTO post_cache (global_id, content_type, body, anon_author_id, fetched_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [post.id, post.contentType, post.body, hexToBytes(post.anonAuthor), fetchedAtSec],
+    `INSERT OR REPLACE INTO post_cache (global_id, content_type, body, audience, anon_author_id, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      post.id,
+      post.contentType,
+      post.body,
+      post.audience,
+      hexToBytes(post.anonAuthor),
+      fetchedAtSec,
+    ],
   );
 }
 
@@ -49,10 +57,11 @@ export async function getCachedPost(
     global_id: string;
     content_type: string;
     body: string;
+    audience: string;
     anon_author_id: Uint8Array;
     fetched_at: number;
   }>(
-    `SELECT global_id, content_type, body, anon_author_id, fetched_at
+    `SELECT global_id, content_type, body, audience, anon_author_id, fetched_at
       FROM post_cache WHERE global_id = ?`,
     [globalId],
   );
@@ -62,6 +71,7 @@ export async function getCachedPost(
     globalId: row.global_id,
     contentType: row.content_type,
     body: row.body,
+    audience: row.audience,
     anonAuthorId:
       row.anon_author_id instanceof Uint8Array
         ? row.anon_author_id

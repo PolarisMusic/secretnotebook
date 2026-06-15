@@ -41,6 +41,7 @@ export class MemoryPostsStore implements PostsStore {
       anonAuthor: input.anonAuthor,
       createdAt: input.createdAt,
       popularity: 0,
+      audience: input.audience,
     };
     this.rows.push(row);
     return row;
@@ -51,7 +52,10 @@ export class MemoryPostsStore implements PostsStore {
     const cursorDate = decoded ? new Date(decoded.createdAt) : null;
     const cursorId = decoded?.id ?? null;
 
-    const sorted = [...this.rows].sort(compareDesc);
+    const base = opts.audience
+      ? this.rows.filter((r) => r.audience === opts.audience || r.audience === 'everyone')
+      : this.rows;
+    const sorted = [...base].sort(compareDesc);
     const filtered =
       cursorDate && cursorId
         ? sorted.filter(
