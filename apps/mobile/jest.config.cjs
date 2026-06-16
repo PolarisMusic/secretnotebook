@@ -37,6 +37,8 @@ module.exports = {
     'src/features/connection-channel/ticker.ts',
     'src/features/connection-channel/uuid.ts',
     'src/features/connection/role-store.ts',
+    'src/features/connection/sever.ts',
+    'src/features/connection/wipe.ts',
     'src/features/iap/store.ts',
     'src/features/iap/restore.ts',
     'src/features/iap/dev-grant.ts',

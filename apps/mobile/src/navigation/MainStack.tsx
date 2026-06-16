@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { SafeWordAlert } from '../components/SafeWordAlert';
+import { SeverBanner } from '../components/SeverBanner';
 import { SavedByYouRoute } from '../screens/connection/SavedByYouRoute';
 import { GlobalFeedRoute } from '../screens/feed/GlobalFeedRoute';
 import { PostDetailRoute } from '../screens/feed/PostDetailRoute';
@@ -72,6 +73,9 @@ export function MainStack(): JSX.Element {
       {/* App-wide: an inbound safe-word trigger overlays every screen until
           it's acknowledged. */}
       <SafeWordAlert />
+      {/* App-wide: a pending connection sever shows a grace countdown +
+          undo/end-now until it resolves. */}
+      <SeverBanner />
     </>
   );
 }

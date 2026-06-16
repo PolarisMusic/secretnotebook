@@ -1,4 +1,4 @@
-import { getSodium } from '@secretnotebook/crypto';
+import { bytesToHex, getSodium } from '@secretnotebook/crypto';
 import { Platform } from 'react-native';
 
 import { openDatabase } from '../../db/client';
@@ -10,8 +10,10 @@ import { useConnectionStore } from '../../state/connection';
 import { ApiClient } from '../api/client';
 import { DEFAULT_API_CONFIG } from '../api/config';
 import { useApiStore } from '../api/store';
+import { wipeAttachmentDirs } from '../attachments/native';
 import { tryBuildSyncEngine } from '../connection-channel/build-engine';
 import { useSyncEngineStore } from '../connection-channel/store';
+import { getSeverState, maybeFinalizeSever } from '../connection/sever';
 import { DEV_GRANT_ENTITLEMENT } from '../iap/config';
 import { devGrantBridge, devGrantValidator, productionValidator } from '../iap/dev-grant';
 import { restoreEntitlementOnBoot } from '../iap/restore';
@@ -37,42 +39,57 @@ export async function runBoot(): Promise<void> {
   try {
     const result = await bootstrap(defaultDeps());
     useDatabaseStore.getState().setExec(result.executor);
-    if (result.connection) {
-      useConnectionStore.setState({
-        status: result.connection.status,
-        connectionId: result.connection.connectionId,
-      });
-      // Re-hydrate the pending root_key on a cold launch that boots straight
-      // into 'awaiting_safeword'. The live pairing flow sets this in memory;
-      // a restart before the Safe Word is defined would otherwise lose it and
-      // strand the user on DefineSafeWord's "pairing state is missing".
-      if (result.connection.status === 'awaiting_safeword') {
-        const pendingRootKey = await loadConnectionRootKey(
-          result.executor,
-          result.connection.connectionId,
-        );
-        if (pendingRootKey) {
-          useConnectionStore.setState({ pendingRootKey });
-        }
-      }
-    }
+
     const apiClient = new ApiClient({
       baseUrl: DEFAULT_API_CONFIG.baseUrl,
       keyPair: result.deviceSigningKey,
     });
     useApiStore.getState().setClient(apiClient);
 
-    // If the device is already paired and the connection_ratchet row exists
-    // from a prior session, lift the SyncEngine into the store now so
-    // S5 routes don't have to wait for the next post-pairing event.
-    // Unpaired devices boot with engine=null; pairing wires it in.
-    if (result.connection && result.connection.status === 'paired') {
-      const engine = await tryBuildSyncEngine({
+    if (result.connection) {
+      const { status, connectionId } = result.connection;
+      // R8: if a pending sever has come due while the app was closed,
+      // finish the wipe now — the device falls back to unpaired before the
+      // navigator mounts. Otherwise surface the connection + any pending
+      // sever so the grace banner can render its countdown.
+      const wiped = await maybeFinalizeSever({
         exec: result.executor,
-        api: apiClient,
-        connectionId: result.connection.connectionId,
+        deleteAttachmentFiles: wipeAttachmentDirs,
       });
-      useSyncEngineStore.getState().setEngine(engine);
+      if (wiped) {
+        useConnectionStore.getState().resetToUnpaired();
+        useSyncEngineStore.getState().setEngine(null);
+      } else {
+        useConnectionStore.setState({ status, connectionId });
+        const sever = await getSeverState(result.executor);
+        useConnectionStore
+          .getState()
+          .setSever(
+            sever?.severAt ?? null,
+            sever?.initiatedBy ? bytesToHex(sever.initiatedBy) : null,
+          );
+        // Re-hydrate the pending root_key on a cold launch that boots
+        // straight into 'awaiting_safeword'. The live pairing flow sets this
+        // in memory; a restart before the Safe Word is defined would
+        // otherwise lose it and strand the user on DefineSafeWord.
+        if (status === 'awaiting_safeword') {
+          const pendingRootKey = await loadConnectionRootKey(result.executor, connectionId);
+          if (pendingRootKey) {
+            useConnectionStore.setState({ pendingRootKey });
+          }
+        }
+        // If already paired and connection_ratchet exists from a prior
+        // session, lift the SyncEngine now so routes don't wait for the
+        // next post-pairing event. Unpaired devices boot with engine=null.
+        if (status === 'paired') {
+          const engine = await tryBuildSyncEngine({
+            exec: result.executor,
+            api: apiClient,
+            connectionId,
+          });
+          useSyncEngineStore.getState().setEngine(engine);
+        }
+      }
     }
 
     // R5 publish gate restore. Two paths:

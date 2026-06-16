@@ -42,6 +42,13 @@ import {
   verifyUnlock,
   type SecretUnlockStoreDeps,
 } from '../src/features/secret-unlock/store';
+import {
+  SEVER_GRACE_SECONDS,
+  cancelSever,
+  getSeverState,
+  maybeFinalizeSever,
+  scheduleSever,
+} from '../src/features/connection/sever';
 import { cacheReceipt, requireCurrentEntitlement } from '../src/features/iap/store';
 import { fixedValidator } from './helpers/iap-validators';
 import { nodeExecutor } from './helpers/sqlite-executor';
@@ -1020,5 +1027,82 @@ describe('Phase-1.5 R5 — publish is IAP-gated', () => {
     });
     expect(gateCalls).toHaveLength(0);
     expect(second.globalPostId).toBe(first.globalPostId);
+  });
+});
+
+/**
+ * R8 connection sever — unilateral with a 7-day grace window:
+ *   - A schedules; the pending sever syncs to B (sever_at + initiator).
+ *   - nothing wipes until the grace elapses; then BOTH devices wipe all
+ *     connection-scoped data independently once their clock passes severAt.
+ *   - the initiator can cancel within the window (clears on both sides);
+ *     the partner cannot cancel a sever they didn't start.
+ */
+describe('Phase-1.5 R8 — connection sever (grace + wipe)', () => {
+  function severDeps(side: Side, selfPub: Uint8Array) {
+    return {
+      exec: side.exec,
+      selfPubkey: selfPub,
+      now: () => FIXED_NOW,
+      enqueue: (op: Parameters<typeof side.engine.enqueue>[0]) => side.engine.enqueue(op),
+    };
+  }
+
+  it('A schedules; B sees it; both wipe once the grace elapses', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    // Seed couple data so the wipe has something to clear.
+    await writeSecretNote(noteDeps(a, A_PUB), 'a secret to lose');
+    await syncBoth(a, b);
+
+    const at = await scheduleSever(severDeps(a, A_PUB));
+    await syncBoth(a, b);
+
+    // The pending sever reached B.
+    const onB = await getSeverState(b.exec);
+    expect(onB?.severAt).toBe(at);
+    expect(onB?.initiatedBy && bytesToHex(onB.initiatedBy)).toBe(bytesToHex(A_PUB));
+
+    // Before the window elapses, nothing wipes.
+    expect(await maybeFinalizeSever({ exec: b.exec, now: () => FIXED_NOW })).toBe(false);
+
+    // Once it elapses, each device wipes on its own due-check.
+    const after = (): Date => new Date(FIXED_NOW.getTime() + (SEVER_GRACE_SECONDS + 1) * 1000);
+    expect(await maybeFinalizeSever({ exec: a.exec, now: after })).toBe(true);
+    expect(await maybeFinalizeSever({ exec: b.exec, now: after })).toBe(true);
+
+    expect(await getSeverState(a.exec)).toBeNull();
+    expect(await getSeverState(b.exec)).toBeNull();
+    expect(await listNotes(a.exec)).toEqual([]);
+    expect(await listNotes(b.exec)).toEqual([]);
+  });
+
+  it('the initiator can cancel within the window; the partner clears too', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await scheduleSever(severDeps(a, A_PUB));
+    await syncBoth(a, b);
+    expect((await getSeverState(b.exec))?.severAt).not.toBeNull();
+
+    await cancelSever(severDeps(a, A_PUB));
+    await syncBoth(a, b);
+    expect((await getSeverState(a.exec))?.severAt).toBeNull();
+    expect((await getSeverState(b.exec))?.severAt).toBeNull();
+  });
+
+  it('the partner cannot cancel a sever they did not start', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await scheduleSever(severDeps(a, A_PUB));
+    await syncBoth(a, b);
+
+    await expect(cancelSever(severDeps(b, B_PUB))).rejects.toThrow(/only the partner who started/);
+    expect((await getSeverState(b.exec))?.severAt).not.toBeNull();
   });
 });

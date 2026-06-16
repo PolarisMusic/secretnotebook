@@ -1,13 +1,16 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { bytesToHex } from '@secretnotebook/crypto';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getMyRole, setMyRole, type ConnectionRole } from '../../features/connection/role-store';
+import { scheduleSever } from '../../features/connection/sever';
+import { sumConnectionPoints } from '../../features/ledger/store';
 import { getTermState, type SafeWordTermState } from '../../features/safeword/term-store';
 import { useConnectionStore } from '../../state/connection';
 import type { MainStackParamList } from '../../navigation/MainStack';
@@ -37,6 +40,8 @@ function termSummary(state: SafeWordTermState | null): string {
 export function SettingsRoute(): JSX.Element {
   const navigation = useNavigation<Nav>();
   const status = useConnectionStore((s) => s.status);
+  const severAt = useConnectionStore((s) => s.severAt);
+  const setSever = useConnectionStore((s) => s.setSever);
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
   const paired = status === 'paired';
@@ -55,6 +60,36 @@ export function SettingsRoute(): JSX.Element {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const onTerminate = useCallback(async () => {
+    if (!exec || !engine) return;
+    const points = await sumConnectionPoints(exec);
+    Alert.alert(
+      'Terminate connection?',
+      `You've earned ${points.toLocaleString()} Couple Points together.\n\nThis wipes all shared notes, secrets, and points on both devices after a 7-day grace period — you can undo any time before then.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Terminate',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                const at = await scheduleSever({
+                  exec,
+                  selfPubkey: engine.selfPub,
+                  enqueue: (op) => engine.enqueue(op),
+                });
+                setSever(at, bytesToHex(engine.selfPub));
+              } catch (e) {
+                Alert.alert('Could not terminate', (e as Error).message);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [exec, engine, setSever]);
 
   const handleSetRole = useCallback(
     async (role: ConnectionRole) => {
@@ -135,6 +170,30 @@ export function SettingsRoute(): JSX.Element {
                 An optional shared safe word. Tap to set, change, or use it.
               </Text>
             </Pressable>
+
+            <Text style={styles.sectionLabel}>DANGER ZONE</Text>
+            {severAt != null ? (
+              <View style={styles.tile}>
+                <Text style={styles.tileText}>Termination scheduled</Text>
+                <Text style={styles.hint}>
+                  Manage it from the banner at the top of the screen (undo or end now).
+                </Text>
+              </View>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.dangerBtn}
+                hitSlop={8}
+                onPress={() => void onTerminate()}
+                testID="settings.terminate"
+              >
+                <Text style={styles.dangerText}>Terminate connection</Text>
+              </Pressable>
+            )}
+            <Text style={styles.hint}>
+              Ends the pairing and erases all shared data on both devices. Your private device keeps
+              nothing of the connection; you can pair again afterward.
+            </Text>
           </>
         )}
       </ScrollView>
@@ -169,4 +228,13 @@ const styles = StyleSheet.create({
   roleTextActive: { color: '#0a0a0a' },
   error: { color: '#ff6b6b', fontSize: 14 },
   hint: { color: '#7a7a7a', fontSize: 13, lineHeight: 18, marginTop: 4 },
+  dangerBtn: {
+    backgroundColor: '#2a1414',
+    borderRadius: 10,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#5a2a2a',
+  },
+  dangerText: { color: '#ffb4b4', fontSize: 16, fontWeight: '700' },
 });

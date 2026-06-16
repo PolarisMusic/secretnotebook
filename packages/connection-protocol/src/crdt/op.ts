@@ -401,6 +401,40 @@ export const SecretUnlockReflectOpSchema = z
   .strict();
 export type SecretUnlockReflectOp = z.infer<typeof SecretUnlockReflectOpSchema>;
 
+/**
+ * Connection termination (R8). Unilateral with a grace window: either
+ * partner can schedule the sever; both devices then wipe all
+ * connection-scoped data once `severAt` passes (a local, E2E action —
+ * points and everything else are wiped, there is no server authority).
+ * The initiator may `cancel` (undo) any time before `severAt`.
+ *
+ * Last-write-wins by ratchet order, like role.set: a later schedule
+ * (e.g. "end now", `severAt = now`) supersedes an earlier one. Each op
+ * carries `byPubkey` so the projector can enforce actor == ratchet
+ * sender. No own id — the connection row IS the target.
+ */
+export const ConnectionSeverScheduleOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('connection.sever.schedule'),
+    byPubkey: HexString(32),
+    /** Unix seconds when the wipe becomes due (initiated + grace, or now). */
+    severAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ConnectionSeverScheduleOp = z.infer<typeof ConnectionSeverScheduleOpSchema>;
+
+/** Initiator-only undo of a pending sever (valid until `severAt`). */
+export const ConnectionSeverCancelOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('connection.sever.cancel'),
+    byPubkey: HexString(32),
+    canceledAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ConnectionSeverCancelOp = z.infer<typeof ConnectionSeverCancelOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
@@ -419,6 +453,8 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SecretUnlockVerifyOpSchema,
   SecretUnlockCancelOpSchema,
   SecretUnlockReflectOpSchema,
+  ConnectionSeverScheduleOpSchema,
+  ConnectionSeverCancelOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 
