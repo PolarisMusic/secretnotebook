@@ -52,6 +52,7 @@ module.exports = {
     'src/features/pairing/state-machine.ts',
     'src/features/pairing/orchestrator.ts',
     'src/features/pairing/persistence.ts',
+    'src/features/pairing/config.ts',
     'src/features/safeword/verifier.ts',
     'src/features/safeword/session.ts',
     'src/features/safeword/lockout.ts',

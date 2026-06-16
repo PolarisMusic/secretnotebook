@@ -1,8 +1,15 @@
 import { deriveRootKey, pairingCode } from '@secretnotebook/crypto';
 import type { PairingTransport } from '@secretnotebook/connection-protocol';
 
+import { ALLOW_SELF_PAIR } from './config';
 import type { PairingEvent, PairingState, SelfKeys } from './state-machine';
 import { INITIAL_STATE, pairingReducer } from './state-machine';
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 /**
  * Orchestrates the pairing handshake by wiring the pure reducer to the
@@ -28,6 +35,9 @@ export interface OrchestratorOptions {
   readonly transport: PairingTransport;
   readonly hooks: PairingHooks;
   readonly selfKeys: SelfKeys;
+  /** Permit pairing a device with itself (same identity key). Defaults to
+   *  the build-time ALLOW_SELF_PAIR flag; overridable for tests. */
+  readonly allowSelfPair?: boolean;
   /** Test-only hook: invoked after every reducer transition. */
   readonly onTransition?: (state: PairingState, event: PairingEvent) => void;
 }
@@ -44,9 +54,17 @@ export function runPairing(opts: OrchestratorOptions): PairingRun {
   const result = new Promise<PairingState>((resolve) => {
     resolveResult = resolve;
   });
+  const allowSelfPair = opts.allowSelfPair ?? ALLOW_SELF_PAIR;
 
   const unsubMsg = opts.transport.onMessage((msg) => {
     // The only message we accept in S1 is `hello`.
+    // Self-pair guard: refuse a peer whose identity key is our own — a
+    // device trying to pair with itself. Permitted only under the dev flag
+    // so single-device testing still works.
+    if (!allowSelfPair && bytesEqual(opts.selfKeys.identityPub, msg.identityPub)) {
+      dispatch({ type: 'TRANSPORT_ERROR', reason: 'cannot pair a device with itself' });
+      return;
+    }
     void pairingCode(opts.selfKeys.identityPub, msg.identityPub).then((code) => {
       dispatch({
         type: 'PEER_FOUND',
