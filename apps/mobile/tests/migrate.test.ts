@@ -19,6 +19,8 @@ const EXPECTED_TABLES = [
   'connection_ratchet',
   'app_setting',
   'safeword_trigger',
+  'secret_unlock',
+  'secret_unlock_reflection',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -47,6 +49,7 @@ describe('runMigrations', () => {
       'safeword-term',
       'post-audience',
       'attachments',
+      'secret-unlock',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -84,6 +87,7 @@ describe('runMigrations', () => {
       'safeword-term',
       'post-audience',
       'attachments',
+      'secret-unlock',
     ]);
   });
 
@@ -176,6 +180,20 @@ describe('runMigrations', () => {
     ).toThrow(/CHECK/);
   });
 
+  it('enforces the secret_unlock.state CHECK constraint', async () => {
+    const db = new Database(':memory:');
+    await runMigrations(nodeExecutor(db), MIGRATIONS);
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO secret_unlock (id, author_pubkey, unlocker_pubkey,
+              prompt_key, state, created_at)
+           VALUES ('u', X'01', X'02', 'k', 'bogus', 0)`,
+        )
+        .run(),
+    ).toThrow(/CHECK/);
+  });
+
   it('creates the indexes the runtime queries rely on', async () => {
     const db = new Database(':memory:');
     await runMigrations(nodeExecutor(db), MIGRATIONS);
@@ -189,6 +207,8 @@ describe('runMigrations', () => {
         'ledger_entry_kind_idx',
         'sync_outbox_next_attempt_idx',
         'safeword_trigger_active_idx',
+        'secret_unlock_author_idx',
+        'secret_unlock_unlocker_idx',
       ]),
     );
     // Phase-1.5 R0 dropped this index along with the unlocked_at column.

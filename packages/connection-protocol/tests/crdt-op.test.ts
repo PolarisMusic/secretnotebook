@@ -19,10 +19,9 @@ const sampleSavedPostAdd: CrdtOp = {
 };
 
 /**
- * Retired in R6.2 — kept here only to ensure the schema still
- * parses a stale envelope from a pre-R6.2 client (so pull can
- * delete it instead of looping). The projector swallows applies
- * as a no-op; see projector tests.
+ * Revived in R7 — carries Couple-Points awards for the unlock loop.
+ * Must round-trip cleanly (a stale pre-R7 envelope still parses too).
+ * The projector applies it as INSERT OR IGNORE; see projector tests.
  */
 const sampleLedgerEntryAdd: CrdtOp = {
   v: 1,
@@ -151,16 +150,92 @@ const sampleSafeWordAck: CrdtOp = {
   ackedAt: 1_700_001_000,
 };
 
+const ATTEMPT_ID = 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1';
+const REVEALED_NOTE_ID = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1';
+
+const sampleUnlockStart: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.start',
+  id: ATTEMPT_ID,
+  authorPubkey: '11'.repeat(32),
+  unlockerPubkey: '22'.repeat(32),
+  promptKey: 'pq_unhurried_walk',
+  createdAt: 1_700_002_000,
+};
+
+const sampleUnlockSubmit: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.submit',
+  attemptId: ATTEMPT_ID,
+  unlockerPubkey: '22'.repeat(32),
+  submittedAt: 1_700_002_100,
+};
+
+const sampleUnlockReject: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.reject',
+  attemptId: ATTEMPT_ID,
+  authorPubkey: '11'.repeat(32),
+  rejectedAt: 1_700_002_150,
+};
+
+const sampleUnlockVerify: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.verify',
+  attemptId: ATTEMPT_ID,
+  authorPubkey: '11'.repeat(32),
+  revealedNoteId: REVEALED_NOTE_ID,
+  body: 'the secret you earned',
+  verifiedAt: 1_700_002_200,
+};
+
+const sampleUnlockVerifyWithMedia: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.verify',
+  attemptId: ATTEMPT_ID,
+  authorPubkey: '11'.repeat(32),
+  revealedNoteId: REVEALED_NOTE_ID,
+  body: 'the secret photo',
+  attachments: [sampleAttachment],
+  verifiedAt: 1_700_002_201,
+};
+
+const sampleUnlockCancel: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.cancel',
+  attemptId: ATTEMPT_ID,
+  unlockerPubkey: '22'.repeat(32),
+  canceledAt: 1_700_002_300,
+};
+
+const sampleUnlockReflect: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.reflect',
+  attemptId: ATTEMPT_ID,
+  byPubkey: '22'.repeat(32),
+  appreciate: 'I loved that you trusted me with this.',
+  uncomfortable: 'Nothing — it felt safe.',
+  stars: 5,
+  reflectedAt: 1_700_002_400,
+};
+
+const sampleUnlockReflectNoStars: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.reflect',
+  attemptId: ATTEMPT_ID,
+  byPubkey: '11'.repeat(32),
+  appreciate: 'Thank you for doing the prompt.',
+  uncomfortable: 'A little vulnerable, but good.',
+  reflectedAt: 1_700_002_401,
+};
+
 describe('serialiseOp / deserialiseOp round-trip', () => {
   it('round-trips a saved_post.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleSavedPostAdd);
     expect(deserialiseOp(bytes)).toEqual(sampleSavedPostAdd);
   });
 
-  it('still round-trips the retired ledger_entry.add op (pull-loop safety)', () => {
-    // Deserialise must keep working for stale envelopes, otherwise
-    // pull's catch-and-leave-on-relay path retries them every cycle
-    // until TTL. The projector treats this kind as a no-op.
+  it('round-trips the revived ledger_entry.add op byte-for-byte', () => {
     const bytes = serialiseOp(sampleLedgerEntryAdd);
     expect(deserialiseOp(bytes)).toEqual(sampleLedgerEntryAdd);
   });
@@ -340,6 +415,50 @@ describe('CrdtOpSchema rejects malformed ops', () => {
 
   it('rejects a non-integer delta on a stale ledger_entry.add (schema is still strict)', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleLedgerEntryAdd, delta: 1.5 })).toThrow();
+  });
+});
+
+describe('secret-unlock ops round-trip', () => {
+  it('round-trips start / submit / reject / cancel byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleUnlockStart))).toEqual(sampleUnlockStart);
+    expect(deserialiseOp(serialiseOp(sampleUnlockSubmit))).toEqual(sampleUnlockSubmit);
+    expect(deserialiseOp(serialiseOp(sampleUnlockReject))).toEqual(sampleUnlockReject);
+    expect(deserialiseOp(serialiseOp(sampleUnlockCancel))).toEqual(sampleUnlockCancel);
+  });
+
+  it('round-trips verify with and without media', () => {
+    expect(deserialiseOp(serialiseOp(sampleUnlockVerify))).toEqual(sampleUnlockVerify);
+    expect(deserialiseOp(serialiseOp(sampleUnlockVerifyWithMedia))).toEqual(
+      sampleUnlockVerifyWithMedia,
+    );
+  });
+
+  it('round-trips reflect; omits the optional stars key when absent', () => {
+    expect(deserialiseOp(serialiseOp(sampleUnlockReflect))).toEqual(sampleUnlockReflect);
+    const noStars = serialiseOp(sampleUnlockReflectNoStars);
+    expect(new TextDecoder().decode(noStars)).not.toContain('stars');
+    expect(deserialiseOp(noStars)).toEqual(sampleUnlockReflectNoStars);
+  });
+
+  it('rejects stars outside 1–5', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 6 })).toThrow();
+    expect(() => CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 0 })).toThrow();
+  });
+
+  it('rejects an empty reflection answer', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleUnlockReflect, appreciate: '' })).toThrow();
+  });
+
+  it('rejects a verify op that smuggles an unknown field (strict)', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleUnlockVerify, sneaky: 'x' })).toThrow();
+  });
+
+  it('rejects a non-32-byte unlockerPubkey on start', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleUnlockStart, unlockerPubkey: 'ab' })).toThrow();
+  });
+
+  it('rejects a non-uuid attemptId on submit', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleUnlockSubmit, attemptId: 'nope' })).toThrow();
   });
 });
 

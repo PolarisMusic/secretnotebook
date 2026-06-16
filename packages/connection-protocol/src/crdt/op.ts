@@ -23,13 +23,18 @@ export const SavedPostAddOpSchema = z.object({
 export type SavedPostAddOp = z.infer<typeof SavedPostAddOpSchema>;
 
 /**
- * Add-only set op for a `ledger_entry` row. **Retired in Phase-1.5 R6.2.**
- * The only writer (`awardCouplePoints`) was deleted in R0; the
- * schema is kept here so a stale envelope from a pre-R6.2 client
- * still parses cleanly and gets swallowed as a projector no-op
- * (see projector.ts) — without it, deserialiseOp would throw, pull
- * would not delete the envelope, and it would retry every cycle
- * until TTL eviction. New code MUST NOT emit this op.
+ * Add-only set op for a `ledger_entry` row. **Revived in R7** to carry
+ * Couple-Points awards for the secret-note unlock loop (one award on
+ * verify, one on mutual reflection). The Author's device is the single
+ * writer per attempt (`awardCouplePoints`, idempotent on the
+ * (reason, refId) pair); the recipient applies it with INSERT OR IGNORE
+ * keyed on id, so replays + the author's own echo collapse into one
+ * row. `refId` points at the `secret_unlock` attempt the award belongs
+ * to.
+ *
+ * History: retired in R6.2 (projector no-op) after R0 deleted the
+ * Phase-1 writer; R7 restores both the writer (ledger/store.ts) and the
+ * projector INSERT. A stale pre-R7 envelope still parses cleanly.
  */
 export const LedgerEntryAddOpSchema = z.object({
   v: z.literal(1),
@@ -278,6 +283,124 @@ export const ConnectionSafeWordAckOpSchema = z.object({
 });
 export type ConnectionSafeWordAckOp = z.infer<typeof ConnectionSafeWordAckOpSchema>;
 
+/** Cap on a single reflection answer — generous for a couple of
+ *  paragraphs without letting one op fan out unbounded text. */
+const REFLECTION_TEXT_MAX = 2000;
+
+/**
+ * Secret-note unlock loop (R7). A multi-step, two-party interaction:
+ * the Unlocker draws a relationship prompt + completes a real-world
+ * task; the Author (the secret's owner) verifies it, which draws ONE
+ * random unrevealed secret and ships its body to the Unlocker; then
+ * both partners reflect. Couple Points are awarded on verify and again
+ * on mutual reflection (carried by ledger_entry.add).
+ *
+ * Privacy: the draw happens on the Author's device at verify time, and
+ * the chosen `revealedNoteId` rides only this E2E op (never the relay
+ * in clear, never a notification). The Author's UI withholds which note
+ * was drawn until they open reflection — "blind until reflection" is a
+ * UI contract, not a cryptographic one (a curious Author could read
+ * their own local row). `.strict()` on every op locks the shape so a
+ * future field can't smuggle the choice onto the wire unnoticed.
+ *
+ * Each op carries the actor's pubkey so the projector can enforce
+ * actor == ratchet sender, exactly like role.set / saved_post.add.
+ * State-transition ops key off `attemptId` and carry no own row id;
+ * the `start` op is the add-only row-create and owns the attempt id.
+ */
+export const SecretUnlockStartOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.start'),
+    id: z.string().uuid(),
+    /** Whose secret pool is being unlocked (the partner, from the
+     *  Unlocker's POV). */
+    authorPubkey: HexString(32),
+    /** Who is doing the task — the actor; must equal the ratchet sender. */
+    unlockerPubkey: HexString(32),
+    /** Stable key into the static prompt library; text resolved on read. */
+    promptKey: z.string().min(1).max(120),
+    createdAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockStartOp = z.infer<typeof SecretUnlockStartOpSchema>;
+
+export const SecretUnlockSubmitOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.submit'),
+    attemptId: z.string().uuid(),
+    unlockerPubkey: HexString(32),
+    submittedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockSubmitOp = z.infer<typeof SecretUnlockSubmitOpSchema>;
+
+/** Author "send-back": the task wasn't done to their satisfaction.
+ *  Returns the attempt to the Unlocker to redo. Unlimited. */
+export const SecretUnlockRejectOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.reject'),
+    attemptId: z.string().uuid(),
+    authorPubkey: HexString(32),
+    rejectedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockRejectOp = z.infer<typeof SecretUnlockRejectOpSchema>;
+
+/**
+ * Author verifies the task AND reveals the drawn secret in one step.
+ * Body + attachments are the secret's substance, shipped to the
+ * Unlocker only here (mirrors note.secret.reveal — never on announce).
+ * Body is optional so a media-only secret can be drawn.
+ */
+export const SecretUnlockVerifyOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.verify'),
+    attemptId: z.string().uuid(),
+    authorPubkey: HexString(32),
+    revealedNoteId: z.string().uuid(),
+    body: z.string().min(1).max(NOTE_BODY_MAX).optional(),
+    attachments: NoteAttachmentsSchema,
+    verifiedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockVerifyOp = z.infer<typeof SecretUnlockVerifyOpSchema>;
+
+/** Unlocker abandons the attempt before the reveal. No points. */
+export const SecretUnlockCancelOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.cancel'),
+    attemptId: z.string().uuid(),
+    unlockerPubkey: HexString(32),
+    canceledAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockCancelOp = z.infer<typeof SecretUnlockCancelOpSchema>;
+
+/**
+ * One partner's reflection on the revealed note. Add-only, keyed on
+ * (attemptId, byPubkey) by the projector. The mutual-reflection award
+ * fires once both partners' reflections exist (see ledger_entry.add).
+ * `stars` is an optional 1–5 rating — cosmetic, never affects points.
+ */
+export const SecretUnlockReflectOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.reflect'),
+    attemptId: z.string().uuid(),
+    byPubkey: HexString(32),
+    appreciate: z.string().min(1).max(REFLECTION_TEXT_MAX),
+    uncomfortable: z.string().min(1).max(REFLECTION_TEXT_MAX),
+    stars: z.number().int().min(1).max(5).optional(),
+    reflectedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockReflectOp = z.infer<typeof SecretUnlockReflectOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
@@ -290,6 +413,12 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   ConnectionSafeWordConfirmOpSchema,
   ConnectionSafeWordTriggerOpSchema,
   ConnectionSafeWordAckOpSchema,
+  SecretUnlockStartOpSchema,
+  SecretUnlockSubmitOpSchema,
+  SecretUnlockRejectOpSchema,
+  SecretUnlockVerifyOpSchema,
+  SecretUnlockCancelOpSchema,
+  SecretUnlockReflectOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 

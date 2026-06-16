@@ -42,6 +42,8 @@ module.exports = {
     'src/features/iap/dev-grant.ts',
     'src/features/iap/config.ts',
     'src/features/ledger/store.ts',
+    'src/features/secret-unlock/store.ts',
+    'src/features/secret-unlock/prompts.ts',
     'src/features/notes/store.ts',
     'src/features/notes/publish.ts',
     'src/features/notes/compose-wiring.ts',

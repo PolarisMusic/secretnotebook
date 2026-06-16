@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +8,7 @@ import { runBoot } from './src/features/boot/run';
 import { useBootStore } from './src/features/boot/store';
 import { useSyncEngineStore } from './src/features/connection-channel/store';
 import { useSyncTicker } from './src/features/connection-channel/ticker';
+import { reconcileUnlockRewards } from './src/features/secret-unlock/store';
 import { RootStack } from './src/navigation/RootStack';
 import { queryClient } from './src/query/client';
 import { BootScreen } from './src/screens/boot/BootScreen';
@@ -20,7 +21,22 @@ import { BootScreen } from './src/screens/boot/BootScreen';
  */
 function SyncTicker(): null {
   const engine = useSyncEngineStore((s) => s.engine);
-  useSyncTicker(engine);
+  // After each pull, let the Author's device reconcile R7 unlock-loop
+  // Couple-Points awards (the projector can't enqueue). Memoised on the
+  // engine so the ticker effect isn't torn down every render.
+  const afterPull = useMemo(
+    () =>
+      engine
+        ? (): Promise<void> =>
+            reconcileUnlockRewards({
+              exec: engine.exec,
+              selfPubkey: engine.selfPub,
+              enqueue: (op) => engine.enqueue(op),
+            })
+        : undefined,
+    [engine],
+  );
+  useSyncTicker(engine, { afterPull });
   return null;
 }
 

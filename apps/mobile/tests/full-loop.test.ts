@@ -31,6 +31,17 @@ import {
   setMyRole,
   type RoleStoreDeps,
 } from '../src/features/connection/role-store';
+import {
+  discloseRevealedNoteToAuthor,
+  getUnlock,
+  isReflectionComplete,
+  reconcileUnlockRewards,
+  reflectOnUnlock,
+  startUnlock,
+  submitUnlock,
+  verifyUnlock,
+  type SecretUnlockStoreDeps,
+} from '../src/features/secret-unlock/store';
 import { cacheReceipt, requireCurrentEntitlement } from '../src/features/iap/store';
 import { fixedValidator } from './helpers/iap-validators';
 import { nodeExecutor } from './helpers/sqlite-executor';
@@ -148,6 +159,39 @@ function roleDeps(side: Side, selfPub: Uint8Array): RoleStoreDeps {
     now: () => FIXED_NOW,
     enqueue: (op) => side.engine.enqueue(op),
   };
+}
+
+function unlockDeps(side: Side, selfPub: Uint8Array, peerPub: Uint8Array): SecretUnlockStoreDeps {
+  return {
+    exec: side.exec,
+    selfPubkey: selfPub,
+    peerPubkey: peerPub,
+    now: () => FIXED_NOW,
+    enqueue: (op) => side.engine.enqueue(op),
+  };
+}
+
+/**
+ * A full sync cycle for the unlock loop: flush + pull both ways, then run
+ * each side's post-pull reconcile — mirroring production's afterPull hook
+ * (App.tsx), which is what writes the Author's Couple-Points awards after
+ * the partner's reflect/verify ops land via the projector.
+ */
+async function syncLoop(a: Side, b: Side): Promise<void> {
+  await a.engine.flush();
+  await b.engine.flush();
+  await a.engine.pull();
+  await b.engine.pull();
+  await reconcileUnlockRewards({
+    exec: a.exec,
+    selfPubkey: A_PUB,
+    enqueue: (op) => a.engine.enqueue(op),
+  });
+  await reconcileUnlockRewards({
+    exec: b.exec,
+    selfPubkey: B_PUB,
+    enqueue: (op) => b.engine.enqueue(op),
+  });
 }
 
 interface RawOutboxEnvelope {
@@ -674,15 +718,13 @@ describe('Phase-1.5 R4 — connection roles', () => {
 });
 
 /**
- * R6.2 cleanup: a stale ledger_entry.add op from a pre-R6.2 client
- * must be applied as a projector no-op (no row inserted, no error
- * propagated to the pull loop). Without that contract, the pull
- * loop would either burn a retry every cycle (if deserialise threw)
- * or silently materialise an unsourced ledger row (if the projector
- * still INSERTed).
+ * R7 revives ledger_entry.add: the projector applies it as an add-only
+ * INSERT OR IGNORE so the Author's Couple-Points award reaches the
+ * partner's device. (Supersedes the R6.2 no-op contract.) Replays + the
+ * author's own echo collapse on the id.
  */
-describe('Phase-1.5 R6.2 — retired ledger_entry.add is a projector no-op', () => {
-  it('applies cleanly and inserts no row', async () => {
+describe('Phase-1.5 R7 — ledger_entry.add applies as an add-only insert', () => {
+  it('inserts the awarded row and is idempotent on replay', async () => {
     const relay = new FakeRelay();
     const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
 
@@ -694,17 +736,159 @@ describe('Phase-1.5 R6.2 — retired ledger_entry.add is a projector no-op', () 
         kind: 'ledger_entry.add',
         id: '99999999-9999-4999-8999-999999999999',
         ledgerKind: 'couple_points',
-        delta: 10,
-        reason: 'should-not-materialise',
-        refId: null,
+        delta: 500,
+        reason: 'unlock_verified',
+        refId: 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1',
         createdAt: 1_900_000_000,
       },
       B_PUB,
     );
+    expect(await sumConnectionPoints(a.exec)).toBe(500);
 
-    expect(await sumConnectionPoints(a.exec)).toBe(0);
-    const rows = await a.exec.query<{ id: string }>(`SELECT id FROM ledger_entry`);
-    expect(rows).toEqual([]);
+    // Replay the identical op — INSERT OR IGNORE keeps it at one row.
+    await applyCrdtOp(
+      a.exec,
+      {
+        v: 1,
+        kind: 'ledger_entry.add',
+        id: '99999999-9999-4999-8999-999999999999',
+        ledgerKind: 'couple_points',
+        delta: 500,
+        reason: 'unlock_verified',
+        refId: 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1',
+        createdAt: 1_900_000_000,
+      },
+      B_PUB,
+    );
+    expect(await sumConnectionPoints(a.exec)).toBe(500);
+  });
+});
+
+/**
+ * R7 secret-note unlock loop — the full two-device round-trip:
+ *   A authors secrets → B (Unlocker) starts + does the prompt + submits
+ *   → A verifies, which draws ONE random secret and ships its body to B
+ *   (Couple Points +500) → both reflect (Couple Points +500). Plus the
+ *   two privacy invariants: B reads the secret only after verify, and A's
+ *   own device stays blind to WHICH secret until they disclose it at
+ *   reflection.
+ */
+describe('Phase-1.5 R7 — secret-note unlock loop', () => {
+  it('runs end to end: start → submit → verify(+500) → mutual reflect(+500)', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    // A authors two secrets; B learns they exist (bodies stay on A).
+    const s1 = await writeSecretNote(noteDeps(a, A_PUB), 'I still keep your first note');
+    await writeSecretNote(noteDeps(a, A_PUB), 'I want us to move closer to the sea');
+    await syncLoop(a, b);
+    expect((await getNote(b.exec, s1.id))?.body).toBeNull();
+
+    // B starts the loop and submits the task. rng=0 → first prompt.
+    const attempt = await startUnlock(unlockDeps(b, B_PUB, A_PUB), { rng: () => 0 });
+    await syncLoop(a, b);
+    expect((await getUnlock(a.exec, attempt.id))?.state).toBe('assigned');
+
+    await submitUnlock(unlockDeps(b, B_PUB, A_PUB), attempt.id);
+    await syncLoop(a, b);
+    expect((await getUnlock(a.exec, attempt.id))?.state).toBe('submitted');
+
+    // A verifies → draws a secret, reveals it to B, +500 to the couple.
+    const { revealedNoteId } = await verifyUnlock(unlockDeps(a, A_PUB, B_PUB), attempt.id, {
+      rng: () => 0,
+    });
+    expect(await sumConnectionPoints(a.exec)).toBe(500);
+    // A is blind: their own copy of the drawn note is not revealed yet.
+    expect((await getNote(a.exec, revealedNoteId))?.revealedAt).toBeNull();
+
+    await syncLoop(a, b);
+    // B can now READ the secret, and both sides agree on +500.
+    const revealedOnB = await getNote(b.exec, revealedNoteId);
+    expect(revealedOnB?.body).not.toBeNull();
+    expect(revealedOnB?.revealedAt).not.toBeNull();
+    expect((await getUnlock(b.exec, attempt.id))?.state).toBe('revealed');
+    expect(await sumConnectionPoints(b.exec)).toBe(500);
+
+    // Reflection. B (Unlocker) reflects first; no award yet (needs both).
+    await reflectOnUnlock(unlockDeps(b, B_PUB, A_PUB), attempt.id, {
+      appreciate: 'I felt trusted',
+      uncomfortable: 'nothing really',
+      stars: 5,
+    });
+    await syncLoop(a, b);
+    expect(await sumConnectionPoints(a.exec)).toBe(500); // still just verify
+
+    // A discloses the note to themselves (reflection step), then reflects.
+    await discloseRevealedNoteToAuthor(unlockDeps(a, A_PUB, B_PUB), attempt.id);
+    expect((await getNote(a.exec, revealedNoteId))?.revealedAt).not.toBeNull();
+    await reflectOnUnlock(unlockDeps(a, A_PUB, B_PUB), attempt.id, {
+      appreciate: 'you really did the prompt',
+      uncomfortable: 'a little exposed, but glad',
+    });
+    await syncLoop(a, b);
+
+    // Mutual reflection complete → +500 again, converged on both devices.
+    expect(await isReflectionComplete(a.exec, attempt.id)).toBe(true);
+    expect(await isReflectionComplete(b.exec, attempt.id)).toBe(true);
+    expect(await sumConnectionPoints(a.exec)).toBe(1000);
+    expect(await sumConnectionPoints(b.exec)).toBe(1000);
+  });
+
+  it('gates the secret until verify and never puts it in plaintext on the wire', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    const MARKER = 'UNLOCK_SECRET_MARKER_qux_77';
+    const MARKER_BYTES = new TextEncoder().encode(MARKER);
+    const note = await writeSecretNote(noteDeps(a, A_PUB), MARKER);
+    await syncLoop(a, b);
+    // B has the announce but cannot read the body.
+    expect((await getNote(b.exec, note.id))?.body).toBeNull();
+
+    const attempt = await startUnlock(unlockDeps(b, B_PUB, A_PUB), { rng: () => 0 });
+    await syncLoop(a, b);
+    await submitUnlock(unlockDeps(b, B_PUB, A_PUB), attempt.id);
+    await syncLoop(a, b);
+    // Still gated through the whole task phase.
+    expect((await getNote(b.exec, note.id))?.body).toBeNull();
+
+    // A verifies → the body ships, but only inside the encrypted verify op.
+    await verifyUnlock(unlockDeps(a, A_PUB, B_PUB), attempt.id, { rng: () => 0 });
+    await a.engine.flush(); // envelope now on the relay, not yet pulled by B
+    expect(bytesInclude(relayCiphertextBlob(relay), MARKER_BYTES)).toBe(false);
+
+    await syncLoop(a, b);
+    // Now — and only now — B can read it.
+    expect((await getNote(b.exec, note.id))?.body).toBe(MARKER);
+  });
+
+  it('Author send-back returns the task; the Unlocker resubmits and the loop proceeds', async () => {
+    const relay = new FakeRelay();
+    const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
+    const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
+
+    await writeSecretNote(noteDeps(a, A_PUB), 'a secret to earn');
+    await syncLoop(a, b);
+    const attempt = await startUnlock(unlockDeps(b, B_PUB, A_PUB), { rng: () => 0 });
+    await syncLoop(a, b);
+    await submitUnlock(unlockDeps(b, B_PUB, A_PUB), attempt.id);
+    await syncLoop(a, b);
+
+    const { rejectUnlock } = await import('../src/features/secret-unlock/store');
+    await rejectUnlock(unlockDeps(a, A_PUB, B_PUB), attempt.id);
+    await syncLoop(a, b);
+    expect((await getUnlock(b.exec, attempt.id))?.state).toBe('returned');
+
+    await submitUnlock(unlockDeps(b, B_PUB, A_PUB), attempt.id);
+    await syncLoop(a, b);
+    expect((await getUnlock(a.exec, attempt.id))?.state).toBe('submitted');
+
+    await verifyUnlock(unlockDeps(a, A_PUB, B_PUB), attempt.id, { rng: () => 0 });
+    await syncLoop(a, b);
+    expect((await getUnlock(b.exec, attempt.id))?.state).toBe('revealed');
+    expect(await sumConnectionPoints(b.exec)).toBe(500);
   });
 });
 

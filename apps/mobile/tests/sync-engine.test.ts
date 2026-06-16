@@ -435,14 +435,12 @@ describe('SyncEngine — outbox retry on POST failure', () => {
   });
 });
 
-describe('CrdtOp dispatch — retired ledger_entry.add (R6.2)', () => {
-  it('swallows a stale ledger_entry.add as a projector no-op — relay envelope still gets delivered + deleted (no infinite retry)', async () => {
-    // R0 retired the only writer of ledger_entry rows; R6.2 keeps
-    // the schema in the union so a stale envelope from a pre-R6.2
-    // client still parses (otherwise pull would loop on it until
-    // TTL eviction) but the projector inserts NOTHING. We assert
-    // both halves: no row inserted, AND the relay envelope is
-    // gone after pull (proving the no-op path completed cleanly).
+describe('CrdtOp dispatch — revived ledger_entry.add (R7)', () => {
+  it('applies a ledger_entry.add as an INSERT and delivers + deletes the relay envelope', async () => {
+    // R7 revived the op to carry Couple-Points awards. The projector
+    // now INSERTs the row (add-only, keyed on id); we assert both
+    // halves: the row materialises on the receiver, AND the relay
+    // envelope is gone after pull (the dispatch path completed cleanly).
     const relay = new FakeRelay();
     const { a, b } = await pair(relay);
     const op: CrdtOp = {
@@ -450,8 +448,8 @@ describe('CrdtOp dispatch — retired ledger_entry.add (R6.2)', () => {
       kind: 'ledger_entry.add',
       id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
       ledgerKind: 'couple_points',
-      delta: 25,
-      reason: 'completed-loop',
+      delta: 500,
+      reason: 'unlock_verified',
       refId: null,
       createdAt: 1_700_000_000,
     };
@@ -461,7 +459,7 @@ describe('CrdtOp dispatch — retired ledger_entry.add (R6.2)', () => {
 
     await b.engine.pull();
     const rows = await b.exec.query<{ id: string }>(`SELECT id FROM ledger_entry`);
-    expect(rows).toEqual([]);
+    expect(rows).toEqual([{ id: 'ffffffff-ffff-ffff-ffff-ffffffffffff' }]);
     expect(relay.rows).toHaveLength(0);
   });
 });

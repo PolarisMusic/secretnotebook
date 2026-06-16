@@ -10,6 +10,8 @@ import { NotesDetailRoute } from '../screens/notes/NotesDetailRoute';
 import { NotesListRoute } from '../screens/notes/NotesListRoute';
 import { PairWithPartnerRoute } from '../screens/onboarding/PairWithPartnerRoute';
 import { SafeWordRoute } from '../screens/safeword/SafeWordRoute';
+import { SecretUnlockDetailRoute } from '../screens/secret-unlock/SecretUnlockDetailRoute';
+import { SecretUnlockListRoute } from '../screens/secret-unlock/SecretUnlockListRoute';
 import { SettingsRoute } from '../screens/settings/SettingsRoute';
 
 export type MainStackParamList = {
@@ -20,6 +22,8 @@ export type MainStackParamList = {
   SubmitPost: undefined;
   PostDetail: { id: string };
   SavedByYou: undefined;
+  SecretUnlockList: undefined;
+  SecretUnlockDetail: { id: string };
   Settings: undefined;
   SafeWord: undefined;
   Pairing: undefined;
@@ -55,6 +59,8 @@ export function MainStack(): JSX.Element {
         />
         <Stack.Screen name="PostDetail" component={PostDetailRoute} />
         <Stack.Screen name="SavedByYou" component={SavedByYouRoute} />
+        <Stack.Screen name="SecretUnlockList" component={SecretUnlockListRoute} />
+        <Stack.Screen name="SecretUnlockDetail" component={SecretUnlockDetailRoute} />
         <Stack.Screen name="Settings" component={SettingsRoute} />
         <Stack.Screen name="SafeWord" component={SafeWordRoute} />
         <Stack.Screen

@@ -27,9 +27,14 @@ import { insertAttachmentFromDescriptor } from '../attachments/store';
  *   - `connection.role.set`: last-write-wins by ratchet order
  *     (sync_seen + outbox-delete-on-success make replays practically
  *     impossible).
- *   - `ledger_entry.add`: retired in R6.2, projector no-ops so stale
- *     envelopes from pre-R6.2 clients can be deleted on the relay
- *     without inserting unsourced rows.
+ *   - `ledger_entry.add`: revived in R7 — add-only set keyed on id,
+ *     INSERT OR IGNORE so the Author's award echo + replays collapse
+ *     into one row (the Author's device is the only writer).
+ *   - `secret_unlock.*`: the unlock-loop state machine. `start` is an
+ *     add-only row create; `submit`/`reject`/`verify`/`cancel` are
+ *     guarded state transitions keyed on the attempt id; `reflect` is an
+ *     add-only set keyed (attempt_id, by_pubkey). Each carries the actor
+ *     pubkey, checked against the ratchet sender.
  */
 export async function applyCrdtOp(
   exec: SqlExecutor,
@@ -62,12 +67,18 @@ export async function applyCrdtOp(
       return;
 
     case 'ledger_entry.add':
-      // Deprecated in R6.2 — the only writer was retired with R0's
-      // couple-loop cleanup, so any incoming op is stale or hostile.
-      // We swallow it as a no-op rather than INSERT (no provenance,
-      // no idempotency authority) or throw (would prevent the
-      // envelope from being deleted on the relay and burn a retry
-      // every cycle). New code MUST NOT emit this op.
+      // Revived in R7. Add-only set keyed on id: the Author's device is
+      // the sole writer (awardCouplePoints), and the recipient collapses
+      // the author's own echo + any replay into one row. No author field
+      // on this op — provenance is the ratchet (only the partner can put
+      // an envelope on this half), and the (reason, refId) idempotency
+      // lives on the writer side.
+      await exec.execute(
+        `INSERT OR IGNORE INTO ledger_entry (
+           id, kind, delta, reason, ref_id, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [op.id, op.ledgerKind, op.delta, op.reason, op.refId, op.createdAt],
+      );
       return;
 
     case 'note.share.add':
@@ -263,6 +274,132 @@ export async function applyCrdtOp(
             AND acked_at IS NULL
             AND triggered_by_pubkey != ?`,
         [op.ackedAt, op.id, hexToBytes(op.ackedByPubkey)],
+      );
+      return;
+
+    case 'secret_unlock.start':
+      // The Unlocker is the actor; reject ops claiming someone else
+      // started it. Add-only row create — INSERT OR IGNORE collapses
+      // replays. author_pubkey is the recipient (this device); we trust
+      // the kind-shape contract and the ratchet for that side.
+      if (op.unlockerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.start unlockerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `INSERT OR IGNORE INTO secret_unlock (
+           id, author_pubkey, unlocker_pubkey, prompt_key, state, created_at
+         ) VALUES (?, ?, ?, ?, 'assigned', ?)`,
+        [
+          op.id,
+          hexToBytes(op.authorPubkey),
+          hexToBytes(op.unlockerPubkey),
+          op.promptKey,
+          op.createdAt,
+        ],
+      );
+      return;
+
+    case 'secret_unlock.submit':
+      // Unlocker-only transition. The WHERE pins the actor (unlocker
+      // column == sender) and the source state, so a replay or a
+      // hostile submit no-ops.
+      if (op.unlockerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.submit unlockerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `UPDATE secret_unlock SET state = 'submitted', submitted_at = ?
+          WHERE id = ? AND unlocker_pubkey = ? AND state IN ('assigned', 'returned')`,
+        [op.submittedAt, op.attemptId, hexToBytes(op.unlockerPubkey)],
+      );
+      return;
+
+    case 'secret_unlock.reject':
+      // Author send-back. submitted → returned; first-wins via the state
+      // guard.
+      if (op.authorPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.reject authorPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `UPDATE secret_unlock SET state = 'returned', returned_at = ?
+          WHERE id = ? AND author_pubkey = ? AND state = 'submitted'`,
+        [op.rejectedAt, op.attemptId, hexToBytes(op.authorPubkey)],
+      );
+      return;
+
+    case 'secret_unlock.verify':
+      // Author verifies + reveals. On the Unlocker's device this both
+      // advances the attempt and fills the drawn note's body/media so the
+      // Unlocker can finally read the secret. First-verify-wins via the
+      // attempt state guard; the note UPDATE is guarded by revealed_at IS
+      // NULL so a replay can't overwrite an already-revealed body.
+      if (op.authorPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.verify authorPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `UPDATE secret_unlock
+            SET state = 'revealed', verified_at = ?, revealed_note_id = ?
+          WHERE id = ? AND author_pubkey = ? AND state = 'submitted'`,
+        [op.verifiedAt, op.revealedNoteId, op.attemptId, hexToBytes(op.authorPubkey)],
+      );
+      await exec.execute(
+        `UPDATE note
+            SET body = ?, revealed_at = ?
+          WHERE id = ? AND kind = 'secret' AND revealed_at IS NULL`,
+        [op.body ?? null, op.verifiedAt, op.revealedNoteId],
+      );
+      for (const attachment of op.attachments ?? []) {
+        await insertAttachmentFromDescriptor(exec, op.revealedNoteId, attachment, {
+          state: 'remote',
+          localUri: null,
+          createdAt: op.verifiedAt,
+        });
+      }
+      return;
+
+    case 'secret_unlock.cancel':
+      if (op.unlockerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.cancel unlockerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `UPDATE secret_unlock SET state = 'canceled', canceled_at = ?
+          WHERE id = ? AND unlocker_pubkey = ?
+            AND state IN ('assigned', 'submitted', 'returned')`,
+        [op.canceledAt, op.attemptId, hexToBytes(op.unlockerPubkey)],
+      );
+      return;
+
+    case 'secret_unlock.reflect':
+      // Add-only set keyed (attempt_id, by_pubkey): one reflection per
+      // partner, INSERT OR IGNORE collapses replays + the author's own
+      // echo. No award here — the projector has no outbox; the Author's
+      // reconcileUnlockRewards pass writes the Couple-Points op.
+      if (op.byPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.reflect byPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `INSERT OR IGNORE INTO secret_unlock_reflection (
+           attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          op.attemptId,
+          hexToBytes(op.byPubkey),
+          op.appreciate,
+          op.uncomfortable,
+          op.stars ?? null,
+          op.reflectedAt,
+        ],
       );
       return;
 
