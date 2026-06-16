@@ -21,6 +21,7 @@ const EXPECTED_TABLES = [
   'safeword_trigger',
   'secret_unlock',
   'secret_unlock_reflection',
+  'hidden_post',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -51,6 +52,7 @@ describe('runMigrations', () => {
       'attachments',
       'secret-unlock',
       'sever-grace',
+      'hidden-posts',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -90,6 +92,7 @@ describe('runMigrations', () => {
       'attachments',
       'secret-unlock',
       'sever-grace',
+      'hidden-posts',
     ]);
   });
 

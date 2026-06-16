@@ -49,6 +49,44 @@ export async function cachePosts(
   });
 }
 
+/** Hide a global post for this device only (personal, local). Idempotent. */
+export async function hidePost(
+  exec: SqlExecutor,
+  globalId: string,
+  hiddenAtSec: number = Math.floor(Date.now() / 1000),
+): Promise<void> {
+  await exec.execute(
+    `INSERT OR IGNORE INTO hidden_post (global_post_id, hidden_at) VALUES (?, ?)`,
+    [globalId, hiddenAtSec],
+  );
+}
+
+export async function isPostHidden(exec: SqlExecutor, globalId: string): Promise<boolean> {
+  const rows = await exec.query<{ x: number }>(
+    `SELECT 1 AS x FROM hidden_post WHERE global_post_id = ?`,
+    [globalId],
+  );
+  return rows.length > 0;
+}
+
+/** The set of post ids hidden on this device, for filtering the feed. */
+export async function listHiddenPostIds(exec: SqlExecutor): Promise<Set<string>> {
+  const rows = await exec.query<{ global_post_id: string }>(
+    `SELECT global_post_id FROM hidden_post`,
+  );
+  return new Set(rows.map((r) => r.global_post_id));
+}
+
+/** Drop the locally-hidden posts from a fetched page. */
+export async function filterHiddenPosts(
+  exec: SqlExecutor,
+  posts: ReadonlyArray<Post>,
+): Promise<Post[]> {
+  if (posts.length === 0) return [];
+  const hidden = await listHiddenPostIds(exec);
+  return posts.filter((p) => !hidden.has(p.id));
+}
+
 export async function getCachedPost(
   exec: SqlExecutor,
   globalId: string,

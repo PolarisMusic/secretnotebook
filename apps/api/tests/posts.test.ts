@@ -522,3 +522,208 @@ describe('GET /v1/posts/:id', () => {
     expect(body.anonAuthor).toBe(bytesToHex(kp.publicKey));
   });
 });
+
+describe('POST /v1/posts/:id/flag', () => {
+  let ctx: TestCtx;
+
+  beforeEach(async () => {
+    ctx = await setupApp();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+  });
+
+  const POST_ID = '33333333-3333-3333-3333-333333333333';
+
+  function seedPost(body = 'flag me', audience = 'everyone'): void {
+    ctx.posts.rows.push({
+      id: POST_ID,
+      contentType: 'text',
+      body,
+      bodyHash: sha256Bytes(body),
+      anonAuthor: new Uint8Array(32).fill(0xaa),
+      createdAt: new Date(FIXED_NOW_MS),
+      popularity: 0,
+      audience,
+    });
+  }
+
+  it('rejects an unsigned request with 401', async () => {
+    seedPost();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/v1/posts/${POST_ID}/flag`,
+      payload: { category: 'spam' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('stores a signed flag against an existing post', async () => {
+    seedPost();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'POST',
+      url: `/v1/posts/${POST_ID}/flag`,
+      body: { category: 'spam' },
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      payload: req.body,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(ctx.posts.flags).toHaveLength(1);
+    expect(ctx.posts.flags[0]?.category).toBe('spam');
+    expect(bytesToHex(ctx.posts.flags[0]!.flaggedBy)).toBe(bytesToHex(kp.publicKey));
+  });
+
+  it('is idempotent per device: a repeat flag keeps a single row', async () => {
+    seedPost();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const flag = async (category: string) => {
+      const req = await buildSignedRequest({
+        method: 'POST',
+        url: `/v1/posts/${POST_ID}/flag`,
+        body: { category },
+        timestampSec: ts,
+        privateKey: kp.privateKey,
+        publicKey: kp.publicKey,
+      });
+      return ctx.app.inject({
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        payload: req.body,
+      });
+    };
+    expect((await flag('spam')).statusCode).toBe(200);
+    expect((await flag('other')).statusCode).toBe(200);
+    expect(ctx.posts.flags).toHaveLength(1);
+  });
+
+  it('returns 404 when flagging a post that does not exist', async () => {
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'POST',
+      url: '/v1/posts/00000000-0000-0000-0000-0000000000ff/flag',
+      body: { category: 'spam' },
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      payload: req.body,
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('rejects an invalid category with 400', async () => {
+    seedPost();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'POST',
+      url: `/v1/posts/${POST_ID}/flag`,
+      body: { category: 'not-a-category' },
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      payload: req.body,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('moderation obscuring on GET', () => {
+  let ctx: TestCtx;
+
+  beforeEach(async () => {
+    ctx = await setupApp();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+  });
+
+  const FLAGGED_ID = '44444444-4444-4444-4444-444444444444';
+  const CLEAN_ID = '55555555-5555-5555-5555-555555555555';
+
+  function seed(): void {
+    for (const [id, body] of [
+      [FLAGGED_ID, 'flagged content'],
+      [CLEAN_ID, 'clean content'],
+    ] as const) {
+      ctx.posts.rows.push({
+        id,
+        contentType: 'text',
+        body,
+        bodyHash: sha256Bytes(body),
+        anonAuthor: new Uint8Array(32).fill(0xbb),
+        createdAt: new Date(FIXED_NOW_MS),
+        popularity: 0,
+        audience: 'everyone',
+      });
+    }
+    ctx.posts.flags.push({
+      id: '66666666-6666-6666-6666-666666666666',
+      postId: FLAGGED_ID,
+      category: 'sexual',
+      flaggedBy: new Uint8Array(32).fill(0xcc),
+      createdAt: new Date(FIXED_NOW_MS),
+    });
+  }
+
+  it('withholds a flagged post body in the list and returns its reasons', async () => {
+    seed();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'GET',
+      url: '/v1/posts',
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({ method: req.method, url: req.url, headers: req.headers });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { items: Array<{ id: string; body: string; flags: string[] }> };
+    const flagged = body.items.find((i) => i.id === FLAGGED_ID);
+    const clean = body.items.find((i) => i.id === CLEAN_ID);
+    expect(flagged?.body).toBe('');
+    expect(flagged?.flags).toEqual(['sexual']);
+    expect(clean?.body).toBe('clean content');
+    expect(clean?.flags).toEqual([]);
+  });
+
+  it('withholds a flagged post body on detail and returns its reasons', async () => {
+    seed();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'GET',
+      url: `/v1/posts/${FLAGGED_ID}`,
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({ method: req.method, url: req.url, headers: req.headers });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { body: string; flags: string[] };
+    expect(body.body).toBe('');
+    expect(body.flags).toEqual(['sexual']);
+  });
+});

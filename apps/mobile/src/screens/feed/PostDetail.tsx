@@ -8,6 +8,10 @@ export interface PostDetailProps {
   readonly isLoading: boolean;
   readonly error: Error | null;
   readonly onBack: () => void;
+  /** Hide this post for me (local). */
+  readonly onHide: (id: string) => void;
+  /** Report this post for moderation (the Route prompts for a category). */
+  readonly onFlag: (id: string) => void;
 }
 
 function isLinkLike(body: string): boolean {
@@ -41,7 +45,11 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
             {props.post.contentType.toUpperCase()} ·{' '}
             {new Date(props.post.createdAt).toISOString().slice(0, 10)}
           </Text>
-          {props.post.contentType === 'link' && isLinkLike(props.post.body) ? (
+          {props.post.flags.length > 0 ? (
+            <Text style={styles.obscured} testID="post-detail.obscured">
+              ⚠️ Content hidden — flagged as {props.post.flags.join(', ')}
+            </Text>
+          ) : props.post.contentType === 'link' && isLinkLike(props.post.body) ? (
             <Pressable
               accessibilityRole="link"
               testID="post-detail.open-link"
@@ -58,6 +66,27 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
             </Text>
           )}
           <Text style={styles.author}>by {props.post.anonAuthor.slice(0, 16)}…</Text>
+
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => props.onHide(props.post!.id)}
+              testID="post-detail.hide"
+            >
+              <Text style={styles.actionText}>Hide for me</Text>
+            </Pressable>
+            {props.post.flags.length === 0 && (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => props.onFlag(props.post!.id)}
+                testID="post-detail.flag"
+              >
+                <Text style={styles.actionText}>Flag</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
       ) : null}
     </SafeAreaView>
@@ -71,6 +100,9 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 16 },
   meta: { color: '#808080', fontSize: 12, letterSpacing: 0.5 },
   body: { color: '#f5f5f5', fontSize: 17, lineHeight: 24 },
+  obscured: { color: '#ffb4b4', fontSize: 16, fontStyle: 'italic', lineHeight: 23 },
+  actions: { flexDirection: 'row', gap: 20, marginTop: 8 },
+  actionText: { color: '#9ec5ff', fontSize: 15, fontWeight: '600' },
   linkBox: {
     backgroundColor: '#161616',
     padding: 14,

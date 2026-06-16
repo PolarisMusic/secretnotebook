@@ -13,6 +13,7 @@ import { sql as postAudienceSql } from './013-post-audience';
 import { sql as attachmentsSql } from './014-attachments';
 import { sql as secretUnlockSql } from './015-secret-unlock';
 import { sql as severGraceSql } from './016-sever-grace';
+import { sql as hiddenPostsSql } from './017-hidden-posts';
 
 export interface Migration {
   readonly id: number;
@@ -38,4 +39,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 14, name: 'attachments', sql: attachmentsSql },
   { id: 15, name: 'secret-unlock', sql: secretUnlockSql },
   { id: 16, name: 'sever-grace', sql: severGraceSql },
+  { id: 17, name: 'hidden-posts', sql: hiddenPostsSql },
 ];

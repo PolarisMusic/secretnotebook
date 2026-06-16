@@ -12,11 +12,13 @@ import {
 import type {
   DeviceRegisterResponse,
   Post,
+  PostFlagCategory,
+  PostFlagResponse,
   PostInput,
   PostListResponse,
 } from '@secretnotebook/shared-types';
 import type { SqlExecutor } from '../../db/executor';
-import { cachePost, cachePosts } from './cache';
+import { cachePost, cachePosts, filterHiddenPosts, hidePost } from './cache';
 import type { ApiClient } from './client';
 
 export const postsKeys = {
@@ -59,8 +61,12 @@ export function usePostsFeed(args: {
         limit: pageSize,
         audience: args.audience,
       });
-      if (args.exec && page.items.length > 0) {
-        await cachePosts(args.exec, page.items);
+      if (args.exec) {
+        if (page.items.length > 0) await cachePosts(args.exec, page.items);
+        // Drop this device's locally-hidden posts from the rendered page;
+        // they're still cached above so an un-hide could restore them.
+        const items = await filterHiddenPosts(args.exec, page.items);
+        return { items, nextCursor: page.nextCursor };
       }
       return page;
     },
@@ -102,6 +108,39 @@ export function useSubmitPost(args: {
   const qc = args.queryClient ?? ctxQc;
   return useMutation<SubmitPostResult, Error, PostInput>({
     mutationFn: async (input) => args.client.submitPost(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: postsKeys.all });
+    },
+  });
+}
+
+/** Flag a post for moderation (global, server-side). Invalidates the feed
+ *  so the now-obscured post re-renders with its reason. */
+export function useFlagPost(args: {
+  client: ApiClient;
+  queryClient?: QueryClient;
+}): UseMutationResult<PostFlagResponse, Error, { id: string; category: PostFlagCategory }> {
+  const ctxQc = useQueryClient();
+  const qc = args.queryClient ?? ctxQc;
+  return useMutation<PostFlagResponse, Error, { id: string; category: PostFlagCategory }>({
+    mutationFn: async ({ id, category }) => args.client.flagPost(id, category),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: postsKeys.all });
+    },
+  });
+}
+
+/** Hide a post locally (personal). Invalidates the feed so it drops out. */
+export function useHidePost(args: {
+  exec: SqlExecutor | null;
+  queryClient?: QueryClient;
+}): UseMutationResult<void, Error, string> {
+  const ctxQc = useQueryClient();
+  const qc = args.queryClient ?? ctxQc;
+  return useMutation<void, Error, string>({
+    mutationFn: async (id) => {
+      if (args.exec) await hidePost(args.exec, id);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: postsKeys.all });
     },

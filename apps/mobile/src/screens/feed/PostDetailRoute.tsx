@@ -1,11 +1,13 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ActivityIndicator, StyleSheet, Text } from 'react-native';
+import type { PostFlagCategory } from '@secretnotebook/shared-types';
+import { useCallback } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
-import { usePostDetail } from '../../features/api/queries';
+import { useFlagPost, useHidePost, usePostDetail } from '../../features/api/queries';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { PostDetail } from './PostDetail';
 
@@ -26,6 +28,38 @@ export function PostDetailRoute(): JSX.Element {
     id: route.params.id,
     enabled: client != null,
   });
+  const hideMut = useHidePost({ exec });
+  const flagMut = useFlagPost({ client: client! });
+
+  const onHide = useCallback(
+    (id: string) => {
+      hideMut.mutate(id);
+      navigation.goBack(); // it's now hidden from the feed; nothing to show here
+    },
+    [hideMut, navigation],
+  );
+  const onFlag = useCallback(
+    (id: string) => {
+      const choices: ReadonlyArray<{ label: string; category: PostFlagCategory }> = [
+        { label: 'Sexual content', category: 'sexual' },
+        { label: 'Violence', category: 'violent' },
+        { label: 'Spam', category: 'spam' },
+        { label: 'Other', category: 'other' },
+      ];
+      Alert.alert(
+        'Flag this post',
+        'Why are you reporting it? This hides the content for everyone.',
+        [
+          ...choices.map((c) => ({
+            text: c.label,
+            onPress: () => flagMut.mutate({ id, category: c.category }),
+          })),
+          { text: 'Cancel', style: 'cancel' as const },
+        ],
+      );
+    },
+    [flagMut],
+  );
 
   if (!client) {
     return (
@@ -42,6 +76,8 @@ export function PostDetailRoute(): JSX.Element {
       isLoading={query.isLoading}
       error={query.error}
       onBack={() => navigation.goBack()}
+      onHide={onHide}
+      onFlag={onFlag}
     />
   );
 }

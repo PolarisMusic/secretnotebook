@@ -32,6 +32,22 @@ export interface PostListResult {
   nextCursor: string | null;
 }
 
+export interface StoredFlag {
+  id: string;
+  postId: string;
+  category: string;
+  flaggedBy: Uint8Array;
+  createdAt: Date;
+}
+
+export interface NewFlagInput {
+  id: string;
+  postId: string;
+  category: string;
+  flaggedBy: Uint8Array;
+  createdAt: Date;
+}
+
 export interface PostsStore {
   /**
    * Atomically create a post or — if a row with the same body_hash already
@@ -42,6 +58,17 @@ export interface PostsStore {
   insertOrGetByBodyHash(input: NewPostInput): Promise<StoredPost>;
   list(opts: PostListOptions): Promise<PostListResult>;
   findById(id: string): Promise<StoredPost | null>;
+  /**
+   * Record a moderation flag. Idempotent per (postId, flaggedBy): a repeat
+   * report from the same device returns the existing row (INSERT ... ON
+   * CONFLICT (post_id, flagged_by) DO UPDATE ... RETURNING).
+   */
+  createFlag(input: NewFlagInput): Promise<StoredFlag>;
+  /** Distinct flag categories on a single post (empty ⇒ not obscured). */
+  flagsForPost(postId: string): Promise<string[]>;
+  /** Distinct flag categories for a batch of posts, keyed by post id.
+   *  Posts with no flags are absent from the map. */
+  flagsForPosts(postIds: string[]): Promise<Map<string, string[]>>;
 }
 
 export interface DevicesStore {
