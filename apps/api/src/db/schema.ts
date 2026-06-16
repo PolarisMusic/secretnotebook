@@ -1,4 +1,4 @@
-import { customType, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { customType, integer, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 const bytea = customType<{ data: Uint8Array; default: false }>({
   dataType() {
@@ -27,6 +27,23 @@ export const posts = pgTable('posts', {
   audience: text('audience').notNull().default('everyone'),
 });
 
+export const postFlags = pgTable(
+  'post_flag',
+  {
+    id: uuid('id').primaryKey(),
+    postId: uuid('post_id')
+      .notNull()
+      .references(() => posts.id, { onDelete: 'cascade' }),
+    category: text('category').notNull(),
+    flaggedBy: bytea('flagged_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One report per (post, device); re-flagging is idempotent.
+    uniqByDevice: unique('post_flag_post_device_uniq').on(t.postId, t.flaggedBy),
+  }),
+);
+
 export const devices = pgTable('devices', {
   pubkey: bytea('pubkey').primaryKey(),
   firstSeen: timestamp('first_seen', { withTimezone: true }).notNull().defaultNow(),
@@ -54,6 +71,8 @@ export const blobs = pgTable('blobs', {
 
 export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
+export type PostFlag = typeof postFlags.$inferSelect;
+export type NewPostFlag = typeof postFlags.$inferInsert;
 export type Device = typeof devices.$inferSelect;
 export type NewDevice = typeof devices.$inferInsert;
 export type RelayInboxRow = typeof relayInbox.$inferSelect;

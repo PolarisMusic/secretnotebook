@@ -1,12 +1,13 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import type { PostFlagCategory } from '@secretnotebook/shared-types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
-import { usePostsFeed } from '../../features/api/queries';
+import { useFlagPost, useHidePost, usePostsFeed } from '../../features/api/queries';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getMyRole, type ConnectionRole } from '../../features/connection/role-store';
 import { effectiveAudience } from '../../features/feed/audience';
@@ -61,6 +62,32 @@ export function GlobalFeedRoute(): JSX.Element {
     pageSize: 20,
     audience,
   });
+  const hideMut = useHidePost({ exec });
+  const flagMut = useFlagPost({ client: feedHooks.client! });
+
+  const onHidePost = useCallback((id: string) => hideMut.mutate(id), [hideMut]);
+  const onFlagPost = useCallback(
+    (id: string) => {
+      const choices: ReadonlyArray<{ label: string; category: PostFlagCategory }> = [
+        { label: 'Sexual content', category: 'sexual' },
+        { label: 'Violence', category: 'violent' },
+        { label: 'Spam', category: 'spam' },
+        { label: 'Other', category: 'other' },
+      ];
+      Alert.alert(
+        'Flag this post',
+        'Why are you reporting it? This hides the content for everyone.',
+        [
+          ...choices.map((c) => ({
+            text: c.label,
+            onPress: () => flagMut.mutate({ id, category: c.category }),
+          })),
+          { text: 'Cancel', style: 'cancel' as const },
+        ],
+      );
+    },
+    [flagMut],
+  );
 
   if (!client) {
     return (
@@ -86,6 +113,8 @@ export function GlobalFeedRoute(): JSX.Element {
         onLoadMore={() => void query.fetchNextPage()}
         onSelectPost={(id) => navigation.navigate('PostDetail', { id })}
         onCompose={() => navigation.navigate('SubmitPost')}
+        onHidePost={onHidePost}
+        onFlagPost={onFlagPost}
         roleFilter={roleFilter}
         onSetFilter={setFilterOn}
       />

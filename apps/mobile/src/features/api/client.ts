@@ -3,6 +3,8 @@ import type {
   BlobUploadResponse,
   DeviceRegisterResponse,
   Post,
+  PostFlagCategory,
+  PostFlagResponse,
   PostInput,
   PostListResponse,
   RelayDeleteResponse,
@@ -144,6 +146,15 @@ export class ApiClient {
 
   async getPost(id: string): Promise<Post> {
     return this.sendSigned<Post>({ method: 'GET', path: `/v1/posts/${id}` });
+  }
+
+  /** Report a post for moderation. Idempotent server-side per device. */
+  async flagPost(id: string, category: PostFlagCategory): Promise<PostFlagResponse> {
+    return this.sendSigned<PostFlagResponse>({
+      method: 'POST',
+      path: `/v1/posts/${id}/flag`,
+      body: { category },
+    });
   }
 
   /**

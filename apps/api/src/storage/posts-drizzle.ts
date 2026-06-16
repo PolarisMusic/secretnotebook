@@ -1,12 +1,14 @@
 import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { posts } from '../db/schema.js';
+import { postFlags, posts } from '../db/schema.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import type {
+  NewFlagInput,
   NewPostInput,
   PostListOptions,
   PostListResult,
   PostsStore,
+  StoredFlag,
   StoredPost,
 } from './types.js';
 
@@ -86,5 +88,55 @@ export class DrizzlePostsStore implements PostsStore {
   async findById(id: string): Promise<StoredPost | null> {
     const rows = await this.db.select().from(posts).where(eq(posts.id, id)).limit(1);
     return rows[0] ? rowToStored(rows[0]) : null;
+  }
+
+  async createFlag(input: NewFlagInput): Promise<StoredFlag> {
+    // Idempotent per (post_id, flagged_by): the no-op DO UPDATE lets us
+    // RETURNING the existing row on a repeat report, like insertOrGet.
+    const [row] = await this.db
+      .insert(postFlags)
+      .values({
+        id: input.id,
+        postId: input.postId,
+        category: input.category,
+        flaggedBy: input.flaggedBy,
+        createdAt: input.createdAt,
+      })
+      .onConflictDoUpdate({
+        target: [postFlags.postId, postFlags.flaggedBy],
+        set: { postId: postFlags.postId },
+      })
+      .returning();
+    if (!row) throw new Error('createFlag returned no row');
+    return {
+      id: row.id,
+      postId: row.postId,
+      category: row.category,
+      flaggedBy: row.flaggedBy,
+      createdAt: row.createdAt,
+    };
+  }
+
+  async flagsForPost(postId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ category: postFlags.category })
+      .from(postFlags)
+      .where(eq(postFlags.postId, postId));
+    return rows.map((r) => r.category);
+  }
+
+  async flagsForPosts(postIds: string[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (postIds.length === 0) return out;
+    const rows = await this.db
+      .selectDistinct({ postId: postFlags.postId, category: postFlags.category })
+      .from(postFlags)
+      .where(inArray(postFlags.postId, postIds));
+    for (const r of rows) {
+      const list = out.get(r.postId);
+      if (list) list.push(r.category);
+      else out.set(r.postId, [r.category]);
+    }
+    return out;
   }
 }

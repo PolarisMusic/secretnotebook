@@ -24,6 +24,10 @@ export interface GlobalFeedProps {
   readonly onLoadMore: () => void;
   readonly onSelectPost: (id: string) => void;
   readonly onCompose: () => void;
+  /** Hide a post for this device only (local). */
+  readonly onHidePost: (id: string) => void;
+  /** Report a post for moderation (the Route prompts for a category). */
+  readonly onFlagPost: (id: string) => void;
   /** Role filter state, or null when the viewer has no role (neutral /
    *  unpaired) — in which case no toggle is shown and the feed is unfiltered. */
   readonly roleFilter?: { readonly on: boolean } | null;
@@ -38,22 +42,53 @@ export interface GlobalFeedProps {
  */
 export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
   const renderItem = useCallback(
-    ({ item }: { item: Post }) => (
-      <Pressable
-        accessibilityRole="button"
-        testID={`feed.post.${item.id}`}
-        onPress={() => props.onSelectPost(item.id)}
-        style={styles.row}
-      >
-        <Text style={styles.rowBody} numberOfLines={3}>
-          {item.body}
-        </Text>
-        <Text style={styles.rowMeta}>
-          {item.contentType.toUpperCase()} · {item.audience.toUpperCase()} ·{' '}
-          {item.anonAuthor.slice(0, 8)}…
-        </Text>
-      </Pressable>
-    ),
+    ({ item }: { item: Post }) => {
+      const obscured = item.flags.length > 0;
+      return (
+        <View style={styles.row}>
+          <Pressable
+            accessibilityRole="button"
+            testID={`feed.post.${item.id}`}
+            onPress={() => props.onSelectPost(item.id)}
+            style={styles.rowMain}
+          >
+            {obscured ? (
+              <Text style={styles.obscured} testID={`feed.post.${item.id}.obscured`}>
+                ⚠️ Content hidden — flagged as {item.flags.join(', ')}
+              </Text>
+            ) : (
+              <Text style={styles.rowBody} numberOfLines={3}>
+                {item.body}
+              </Text>
+            )}
+            <Text style={styles.rowMeta}>
+              {item.contentType.toUpperCase()} · {item.audience.toUpperCase()} ·{' '}
+              {item.anonAuthor.slice(0, 8)}…
+            </Text>
+          </Pressable>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => props.onHidePost(item.id)}
+              testID={`feed.post.${item.id}.hide`}
+            >
+              <Text style={styles.actionText}>Hide</Text>
+            </Pressable>
+            {!obscured && (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => props.onFlagPost(item.id)}
+                testID={`feed.post.${item.id}.flag`}
+              >
+                <Text style={styles.actionText}>Flag</Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      );
+    },
     [props],
   );
 
@@ -166,10 +201,21 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 10,
     marginBottom: 10,
-    gap: 6,
+    gap: 8,
   },
+  rowMain: { gap: 6 },
   rowBody: { color: '#f5f5f5', fontSize: 15, lineHeight: 20 },
+  obscured: { color: '#ffb4b4', fontSize: 14, fontStyle: 'italic', lineHeight: 20 },
   rowMeta: { color: '#808080', fontSize: 12 },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#262626',
+    paddingTop: 8,
+  },
+  actionText: { color: '#9ec5ff', fontSize: 13, fontWeight: '600' },
   empty: { paddingTop: 80, alignItems: 'center', gap: 8 },
   emptyTitle: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
   emptyBody: { color: '#808080', fontSize: 14, textAlign: 'center', paddingHorizontal: 32 },

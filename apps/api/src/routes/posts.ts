@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { bytesToHex } from '@secretnotebook/crypto';
 import {
+  PostFlagInputSchema,
+  PostFlagResponseSchema,
   PostInputSchema,
   PostListQuerySchema,
   PostListResponseSchema,
@@ -11,14 +13,22 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { PostsStore, StoredPost } from '../storage/types.js';
 
-function toApiPost(row: StoredPost): Post {
+// Threshold (distinct reporting devices) at which a post's content is
+// withheld from the feed. 1 ⇒ a single flag obscures it.
+const FLAG_HIDE_THRESHOLD = 1;
+
+function toApiPost(row: StoredPost, flags: string[]): Post {
+  const obscured = flags.length >= FLAG_HIDE_THRESHOLD;
   return {
     id: row.id,
     contentType: row.contentType as Post['contentType'],
-    body: row.body,
+    // Once flagged, the body is withheld; the client renders `flags` in
+    // its place so the post stays visible-as-existing but unreadable.
+    body: obscured ? '' : row.body,
     audience: row.audience as Post['audience'],
     anonAuthor: bytesToHex(row.anonAuthor),
     createdAt: row.createdAt.toISOString(),
+    flags: flags as Post['flags'],
   };
 }
 
@@ -85,8 +95,9 @@ export const postsRoute: FastifyPluginAsyncZod<PostsRouteOptions> = async (fasti
     async (req) => {
       const { cursor, limit, audience } = req.query;
       const result = await opts.store.list({ cursor, limit, audience });
+      const flagMap = await opts.store.flagsForPosts(result.items.map((r) => r.id));
       return {
-        items: result.items.map(toApiPost),
+        items: result.items.map((r) => toApiPost(r, flagMap.get(r.id) ?? [])),
         nextCursor: result.nextCursor,
       };
     },
@@ -104,7 +115,37 @@ export const postsRoute: FastifyPluginAsyncZod<PostsRouteOptions> = async (fasti
     async (req) => {
       const row = await opts.store.findById(req.params.id);
       if (!row) throw fastify.httpErrors.notFound('post not found');
-      return toApiPost(row);
+      const flags = await opts.store.flagsForPost(row.id);
+      return toApiPost(row, flags);
+    },
+  );
+
+  fastify.post(
+    '/v1/posts/:id/flag',
+    {
+      preHandler: fastify.requireSignature,
+      schema: {
+        params: PostIdParamsSchema,
+        body: PostFlagInputSchema,
+        response: { 200: PostFlagResponseSchema },
+      },
+    },
+    async (req) => {
+      const pubkey = req.devicePubkey;
+      if (!pubkey) {
+        throw fastify.httpErrors.unauthorized('signature pubkey missing');
+      }
+      // Reject a flag against a post that doesn't exist.
+      const post = await opts.store.findById(req.params.id);
+      if (!post) throw fastify.httpErrors.notFound('post not found');
+      const row = await opts.store.createFlag({
+        id: randomUUID(),
+        postId: req.params.id,
+        category: req.body.category,
+        flaggedBy: pubkey,
+        createdAt: now(),
+      });
+      return { id: row.id, createdAt: row.createdAt.toISOString() };
     },
   );
 };

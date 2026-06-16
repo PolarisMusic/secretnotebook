@@ -6,6 +6,7 @@ import type {
   EnvelopeListResult,
   NewBlobInput,
   NewEnvelopeInput,
+  NewFlagInput,
   NewPostInput,
   PostListOptions,
   PostListResult,
@@ -13,6 +14,7 @@ import type {
   RelayStore,
   StoredBlob,
   StoredEnvelope,
+  StoredFlag,
   StoredPost,
 } from '../../src/storage/types.js';
 
@@ -32,6 +34,7 @@ function compareDesc(a: StoredPost, b: StoredPost): number {
 
 export class MemoryPostsStore implements PostsStore {
   readonly rows: StoredPost[] = [];
+  readonly flags: StoredFlag[] = [];
 
   async insertOrGetByBodyHash(input: NewPostInput): Promise<StoredPost> {
     const existing = this.rows.find((r) => bytesEqual(r.bodyHash, input.bodyHash));
@@ -80,6 +83,41 @@ export class MemoryPostsStore implements PostsStore {
 
   async findById(id: string): Promise<StoredPost | null> {
     return this.rows.find((r) => r.id === id) ?? null;
+  }
+
+  async createFlag(input: NewFlagInput): Promise<StoredFlag> {
+    const existing = this.flags.find(
+      (f) => f.postId === input.postId && bytesEqual(f.flaggedBy, input.flaggedBy),
+    );
+    if (existing) return existing;
+    const row: StoredFlag = {
+      id: input.id,
+      postId: input.postId,
+      category: input.category,
+      flaggedBy: input.flaggedBy,
+      createdAt: input.createdAt,
+    };
+    this.flags.push(row);
+    return row;
+  }
+
+  async flagsForPost(postId: string): Promise<string[]> {
+    return [...new Set(this.flags.filter((f) => f.postId === postId).map((f) => f.category))];
+  }
+
+  async flagsForPosts(postIds: string[]): Promise<Map<string, string[]>> {
+    const ids = new Set(postIds);
+    const out = new Map<string, string[]>();
+    for (const f of this.flags) {
+      if (!ids.has(f.postId)) continue;
+      const list = out.get(f.postId);
+      if (list) {
+        if (!list.includes(f.category)) list.push(f.category);
+      } else {
+        out.set(f.postId, [f.category]);
+      }
+    }
+    return out;
   }
 }
 

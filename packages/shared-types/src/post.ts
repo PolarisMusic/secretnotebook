@@ -12,6 +12,11 @@ export type PostContentType = z.infer<typeof PostContentType>;
 export const PostAudience = z.enum(['everyone', 'masculine', 'feminine']);
 export type PostAudience = z.infer<typeof PostAudience>;
 
+/** Why a post was flagged. Each flag carries one category; the feed shows
+ *  the distinct categories on a post in place of its (withheld) content. */
+export const PostFlagCategory = z.enum(['sexual', 'violent', 'spam', 'other']);
+export type PostFlagCategory = z.infer<typeof PostFlagCategory>;
+
 export const PostInputSchema = z.object({
   contentType: PostContentType,
   body: z.string().min(1).max(4000),
@@ -22,10 +27,16 @@ export type PostInput = z.infer<typeof PostInputSchema>;
 export const PostSchema = z.object({
   id: z.string().uuid(),
   contentType: PostContentType,
-  body: z.string().min(1).max(4000),
+  // May be '' when the post is obscured by moderation — once a post has any
+  // flags the server withholds the body and the client renders `flags`
+  // instead. Non-obscured posts always carry the real (non-empty) body.
+  body: z.string().max(4000),
   audience: PostAudience,
   anonAuthor: z.string().min(1),
   createdAt: z.string().datetime({ offset: true }),
+  /** Distinct moderation-flag categories on this post. Non-empty ⇒ the post
+   *  is obscured (body withheld) and these reasons are shown in its place. */
+  flags: z.array(PostFlagCategory).default([]),
 });
 export type Post = z.infer<typeof PostSchema>;
 
@@ -43,3 +54,15 @@ export const PostListQuerySchema = z.object({
   audience: z.enum(['masculine', 'feminine']).optional(),
 });
 export type PostListQuery = z.infer<typeof PostListQuerySchema>;
+
+/** Body of POST /v1/posts/:id/flag — the reason for the report. */
+export const PostFlagInputSchema = z.object({
+  category: PostFlagCategory,
+});
+export type PostFlagInput = z.infer<typeof PostFlagInputSchema>;
+
+export const PostFlagResponseSchema = z.object({
+  id: z.string().uuid(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type PostFlagResponse = z.infer<typeof PostFlagResponseSchema>;
