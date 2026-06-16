@@ -50,6 +50,7 @@ describe('runMigrations', () => {
       'post-audience',
       'attachments',
       'secret-unlock',
+      'sever-grace',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -88,6 +89,7 @@ describe('runMigrations', () => {
       'post-audience',
       'attachments',
       'secret-unlock',
+      'sever-grace',
     ]);
   });
 

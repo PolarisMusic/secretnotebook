@@ -133,6 +133,15 @@ export function createExpoAudioRecorder(): AudioRecorder {
   };
 }
 
+/**
+ * Recursively delete both attachment directories (encrypted store + cache).
+ * Used by the R8 connection wipe; idempotent, so a missing dir is fine.
+ */
+export async function wipeAttachmentDirs(): Promise<void> {
+  await FileSystem.deleteAsync(ENC_DIR, { idempotent: true });
+  await FileSystem.deleteAsync(CACHE_DIR, { idempotent: true });
+}
+
 /** Play a decrypted audio cache file through expo-av; resolves when done. */
 export async function playAudioFile(uri: string): Promise<void> {
   const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });

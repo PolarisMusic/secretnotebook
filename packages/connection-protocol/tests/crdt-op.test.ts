@@ -418,6 +418,35 @@ describe('CrdtOpSchema rejects malformed ops', () => {
   });
 });
 
+const sampleSeverSchedule: CrdtOp = {
+  v: 1,
+  kind: 'connection.sever.schedule',
+  byPubkey: '33'.repeat(32),
+  severAt: 1_700_600_000,
+};
+
+const sampleSeverCancel: CrdtOp = {
+  v: 1,
+  kind: 'connection.sever.cancel',
+  byPubkey: '33'.repeat(32),
+  canceledAt: 1_700_600_100,
+};
+
+describe('connection sever ops round-trip', () => {
+  it('round-trips schedule + cancel byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleSeverSchedule))).toEqual(sampleSeverSchedule);
+    expect(deserialiseOp(serialiseOp(sampleSeverCancel))).toEqual(sampleSeverCancel);
+  });
+
+  it('rejects a non-32-byte byPubkey on schedule', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSeverSchedule, byPubkey: 'ab' })).toThrow();
+  });
+
+  it('rejects an unknown field (strict)', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSeverSchedule, extra: 1 })).toThrow();
+  });
+});
+
 describe('secret-unlock ops round-trip', () => {
   it('round-trips start / submit / reject / cancel byte-for-byte', () => {
     expect(deserialiseOp(serialiseOp(sampleUnlockStart))).toEqual(sampleUnlockStart);

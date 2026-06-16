@@ -403,6 +403,46 @@ export async function applyCrdtOp(
       );
       return;
 
+    case 'connection.sever.schedule': {
+      // Either partner may schedule a sever; the actor must be the sender
+      // (same author check as role.set). Last-write-wins: a newer schedule
+      // (e.g. "end now") overwrites an earlier severAt. Targets the row
+      // where the sender is a partner.
+      if (op.byPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.sever.schedule byPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const by = hexToBytes(op.byPubkey);
+      await exec.execute(
+        `UPDATE connection
+            SET sever_initiated_by = ?, sever_at = ?
+          WHERE partner_a_pubkey = ? OR partner_b_pubkey = ?`,
+        [by, op.severAt, by, by],
+      );
+      return;
+    }
+
+    case 'connection.sever.cancel': {
+      // Undo. Only the partner who scheduled it can clear it: the WHERE
+      // pins sever_initiated_by to the sender, so a cancel from the other
+      // side (or a replay after a re-schedule) no-ops.
+      if (op.byPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.sever.cancel byPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const by = hexToBytes(op.byPubkey);
+      await exec.execute(
+        `UPDATE connection
+            SET sever_initiated_by = NULL, sever_at = NULL
+          WHERE (partner_a_pubkey = ? OR partner_b_pubkey = ?)
+            AND sever_initiated_by = ?`,
+        [by, by, by],
+      );
+      return;
+    }
+
     default: {
       // Exhaustiveness guard: if a new op kind is added to the
       // CrdtOp discriminated union without a branch here, this
