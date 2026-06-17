@@ -44,6 +44,7 @@ module.exports = {
     'src/features/iap/dev-grant.ts',
     'src/features/iap/config.ts',
     'src/features/ledger/store.ts',
+    'src/features/settings/points-visibility.ts',
     'src/features/secret-unlock/store.ts',
     'src/features/secret-unlock/prompts.ts',
     'src/features/notes/store.ts',

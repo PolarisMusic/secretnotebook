@@ -7,6 +7,7 @@ import { bytesToHex } from '@secretnotebook/crypto';
 
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
+import { getMyRole } from '../../features/connection/role-store';
 import { sumConnectionPoints } from '../../features/ledger/store';
 import {
   countUnrevealedSecretsBy,
@@ -18,6 +19,7 @@ import {
   type UnlockState,
 } from '../../features/secret-unlock/store';
 import { resolvePromptText } from '../../features/secret-unlock/prompts';
+import { getPointsVisible } from '../../features/settings/points-visibility';
 import { useConnectionStore } from '../../state/connection';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { SecretUnlockList, type UnlockListItem } from './SecretUnlockList';
@@ -28,6 +30,7 @@ const ACTIVE: readonly UnlockState[] = ['assigned', 'submitted', 'returned'];
 
 interface ViewModel {
   couplePoints: number;
+  showPoints: boolean;
   items: UnlockListItem[];
   canStart: boolean;
   startDisabledReason: string | null;
@@ -74,6 +77,7 @@ export function SecretUnlockListRoute(): JSX.Element {
     if (!exec || !engine) {
       setVm({
         couplePoints: 0,
+        showPoints: false,
         items: [],
         canStart: false,
         startDisabledReason: 'Pair with your partner first.',
@@ -122,7 +126,15 @@ export function SecretUnlockListRoute(): JSX.Element {
       if (!paired) reason = 'Pair with your partner first.';
       else if (pool < 1) reason = 'Your partner has no secret notes yet.';
       else if (hasActiveAsUnlocker) reason = 'Finish your current unlock first.';
-      setVm({ couplePoints: points, items, canStart: reason == null, startDisabledReason: reason });
+      const myRole = await getMyRole(exec, engine.selfPub);
+      const showPoints = await getPointsVisible(exec, myRole);
+      setVm({
+        couplePoints: points,
+        showPoints,
+        items,
+        canStart: reason == null,
+        startDisabledReason: reason,
+      });
     } finally {
       setIsRefreshing(false);
     }
@@ -152,6 +164,7 @@ export function SecretUnlockListRoute(): JSX.Element {
   return (
     <SecretUnlockList
       couplePoints={vm?.couplePoints ?? 0}
+      showPoints={vm?.showPoints ?? false}
       items={vm?.items ?? []}
       isLoading={vm == null}
       isRefreshing={isRefreshing}

@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { bytesToHex } from '@secretnotebook/crypto';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '../../components/ScreenHeader';
@@ -12,6 +12,7 @@ import { getMyRole, setMyRole, type ConnectionRole } from '../../features/connec
 import { scheduleSever } from '../../features/connection/sever';
 import { sumConnectionPoints } from '../../features/ledger/store';
 import { getTermState, type SafeWordTermState } from '../../features/safeword/term-store';
+import { getPointsVisible, setPointsVisible } from '../../features/settings/points-visibility';
 import { useConnectionStore } from '../../state/connection';
 import type { MainStackParamList } from '../../navigation/MainStack';
 
@@ -50,11 +51,14 @@ export function SettingsRoute(): JSX.Element {
   const [termState, setTermState] = useState<SafeWordTermState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pointsVisible, setPointsVisibleState] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!exec || !engine) return;
     setTermState(await getTermState(exec, engine.selfPub));
-    setMyRoleState(await getMyRole(exec, engine.selfPub));
+    const role = await getMyRole(exec, engine.selfPub);
+    setMyRoleState(role);
+    setPointsVisibleState(await getPointsVisible(exec, role));
   }, [exec, engine]);
 
   useEffect(() => {
@@ -111,6 +115,15 @@ export function SettingsRoute(): JSX.Element {
     [exec, engine, refresh],
   );
 
+  const onTogglePoints = useCallback(
+    async (value: boolean) => {
+      if (!exec) return;
+      setPointsVisibleState(value); // optimistic; persisted below
+      await setPointsVisible(exec, value);
+    },
+    [exec],
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="screen.settings">
       <ScreenHeader title="Settings" />
@@ -154,7 +167,21 @@ export function SettingsRoute(): JSX.Element {
             </View>
             {error !== null && <Text style={styles.error}>{error}</Text>}
             <Text style={styles.hint}>
-              Your role affects what you see on the global feed (and points display, coming soon).
+              Your role affects what you see on the global feed and the Couple-Points default below.
+            </Text>
+
+            <Text style={styles.sectionLabel}>COUPLE POINTS</Text>
+            <View style={styles.toggleRow}>
+              <Text style={styles.tileText}>Show Couple Points</Text>
+              <Switch
+                value={pointsVisible}
+                onValueChange={(v) => void onTogglePoints(v)}
+                testID="settings.points_toggle"
+              />
+            </View>
+            <Text style={styles.hint}>
+              Whether the Couple-Points total shows on the Unlock screen. Defaults to your role —
+              hidden for the feminine role — and your choice here overrides it on this device.
             </Text>
 
             <Text style={styles.sectionLabel}>ROLEPLAY TERM</Text>
@@ -212,6 +239,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   tile: { backgroundColor: '#141414', borderRadius: 10, padding: 16 },
+  toggleRow: {
+    backgroundColor: '#141414',
+    borderRadius: 10,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   tileText: { color: '#f5f5f5', fontSize: 16 },
   cta: { backgroundColor: '#3a3a3a', borderRadius: 10, paddingVertical: 16, alignItems: 'center' },
   ctaText: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },

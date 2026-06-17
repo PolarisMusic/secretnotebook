@@ -23,6 +23,8 @@ export interface UnlockListItem {
 
 export interface SecretUnlockListProps {
   readonly couplePoints: number;
+  /** Whether to show the Couple-Points total (role-gated; see settings). */
+  readonly showPoints: boolean;
   readonly items: ReadonlyArray<UnlockListItem>;
   readonly isLoading: boolean;
   readonly isRefreshing: boolean;
@@ -51,10 +53,12 @@ export function SecretUnlockList(props: SecretUnlockListProps): JSX.Element {
     <SafeAreaView style={styles.container} edges={['top']} testID="screen.unlock">
       <ScreenHeader title="Unlock" />
 
-      <View style={styles.pointsCard} testID="unlock.points">
-        <Text style={styles.pointsValue}>{props.couplePoints.toLocaleString()}</Text>
-        <Text style={styles.pointsLabel}>Couple Points</Text>
-      </View>
+      {props.showPoints && (
+        <View style={styles.pointsCard} testID="unlock.points">
+          <Text style={styles.pointsValue}>{props.couplePoints.toLocaleString()}</Text>
+          <Text style={styles.pointsLabel}>Couple Points</Text>
+        </View>
+      )}
 
       {!props.paired && (
         <View style={styles.banner}>
