@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Us Notes",
+    "name": "UsNotes",
     "slug": "secretnotebook",
     "version": "0.0.1",
     "orientation": "portrait",
@@ -19,6 +19,10 @@
         "NSCameraUsageDescription": "The camera is used to scan your partner's pairing QR code and to take photos for your notes.",
         "NSPhotoLibraryUsageDescription": "Choose photos from your library to attach to a note. Attachments are encrypted on your device before they ever leave it.",
         "NSMicrophoneUsageDescription": "Record a voice note. Recordings are encrypted on your device before they ever leave it.",
+        "NSLocalNetworkUsageDescription": "The local network is used only to reach a sync server running on your Wi-Fi while testing the app.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
         "ITSAppUsesNonExemptEncryption": false
       }
     },

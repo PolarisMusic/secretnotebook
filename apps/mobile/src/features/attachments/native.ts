@@ -71,6 +71,7 @@ export function createExpoMediaSource(): MediaSource {
       if (!perm.granted) return null;
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        selectionLimit: 1,
         quality: 0.9,
       });
       const asset = res.canceled ? undefined : res.assets[0];
