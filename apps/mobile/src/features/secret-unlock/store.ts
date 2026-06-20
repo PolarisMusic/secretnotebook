@@ -166,6 +166,15 @@ function nowSec(deps: { now?: () => Date }): number {
   return Math.floor((deps.now ?? (() => new Date()))().getTime() / 1000);
 }
 
+/** Epoch-seconds start of the calendar day (device-local) containing the
+ *  injected clock's "now" — the boundary for the one-unlock-per-day cap.
+ *  Reads the same `deps.now` seam as nowSec so it stays testable. */
+function startOfDaySec(deps: { now?: () => Date }): number {
+  const midnight = new Date((deps.now ?? (() => new Date()))().getTime());
+  midnight.setHours(0, 0, 0, 0);
+  return Math.floor(midnight.getTime() / 1000);
+}
+
 async function getUnlockInternal(exec: SqlExecutor, id: string): Promise<SecretUnlockRow | null> {
   const rows = await exec.query<RawUnlockRow>(
     `SELECT ${UNLOCK_SELECT} FROM secret_unlock WHERE id = ?`,
@@ -193,6 +202,23 @@ async function countActiveAsUnlocker(exec: SqlExecutor, unlocker: Uint8Array): P
   return rows[0]?.n ?? 0;
 }
 
+/** How many unlock attempts this device has started (as Unlocker) since
+ *  `startOfDay` (epoch seconds) — powers the one-per-calendar-day cap.
+ *  Counts every attempt regardless of state, so a started-then-canceled
+ *  attempt still spends the day's allowance. */
+async function countUnlocksStartedTodayBy(
+  exec: SqlExecutor,
+  unlocker: Uint8Array,
+  startOfDay: number,
+): Promise<number> {
+  const rows = await exec.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM secret_unlock
+      WHERE unlocker_pubkey = ? AND created_at >= ?`,
+    [unlocker, startOfDay],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 /** How many unrevealed secret notes a given author still holds — the
  *  draw pool. Powers the start gate (≥ MIN_SECRET_POOL). */
 export async function countUnrevealedSecretsBy(
@@ -211,7 +237,8 @@ export async function countUnrevealedSecretsBy(
  * Start an unlock attempt against the partner's secret pool. Draws a
  * random prompt now (recorded in the op so both devices converge without
  * re-drawing). Guards: the partner must hold ≥ MIN_SECRET_POOL unrevealed
- * secrets, and this device may have only one active attempt as Unlocker.
+ * secrets, this device may have only one active attempt as Unlocker, and
+ * it may start at most one unlock per calendar day (device-local).
  */
 export async function startUnlock(
   deps: SecretUnlockStoreDeps,
@@ -224,14 +251,19 @@ export async function startUnlock(
   if ((await countActiveAsUnlocker(deps.exec, deps.selfPubkey)) > 0) {
     throw new Error('startUnlock: you already have an active unlock in progress');
   }
+  const startOfDay = startOfDaySec(deps);
+  if ((await countUnlocksStartedTodayBy(deps.exec, deps.selfPubkey, startOfDay)) > 0) {
+    throw new Error('startUnlock: you can only unlock one secret a day — try again tomorrow');
+  }
   const id = await randomUuidV4();
   const promptKey = drawPromptKey(opts.rng);
   const createdAt = nowSec(deps);
   await deps.exec.transaction(async () => {
     // Re-read inside the txn: two concurrent starts would both pass the
-    // outer guard; the write lock makes this check consistent with the
-    // INSERT so only one active attempt can exist.
+    // outer guards; the write lock makes these checks consistent with the
+    // INSERT so only one active attempt — and one start per day — can exist.
     if ((await countActiveAsUnlocker(deps.exec, deps.selfPubkey)) > 0) return;
+    if ((await countUnlocksStartedTodayBy(deps.exec, deps.selfPubkey, startOfDay)) > 0) return;
     await deps.exec.execute(
       `INSERT INTO secret_unlock (
          id, author_pubkey, unlocker_pubkey, prompt_key, state, created_at
