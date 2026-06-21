@@ -12,6 +12,9 @@ export interface PostDetailProps {
   readonly onHide: (id: string) => void;
   /** Report this post for moderation (the Route prompts for a category). */
   readonly onFlag: (id: string) => void;
+  /** Copy this post's text into the couple's notes. The Route prompts for
+   *  shared vs secret; absent when there's no connection to save into. */
+  readonly onSaveToNotes?: (id: string) => void;
 }
 
 function isLinkLike(body: string): boolean {
@@ -84,6 +87,16 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
                 testID="post-detail.flag"
               >
                 <Text style={styles.actionText}>Flag</Text>
+              </Pressable>
+            )}
+            {props.onSaveToNotes && props.post.flags.length === 0 && (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => props.onSaveToNotes!(props.post!.id)}
+                testID="post-detail.save-to-notes"
+              >
+                <Text style={styles.actionText}>Save to notes</Text>
               </Pressable>
             )}
           </View>

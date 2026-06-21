@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { createBiometricPrompt } from '../../features/pairing/biometric';
 import { useAppLockSession } from '../../features/app-lock/session';
@@ -53,6 +53,21 @@ export function AppLockGateRoute(): JSX.Element {
       setBusy(false);
     }
   }
+
+  // Auto-prompt exactly once per lock-session. The guard is the session
+  // store's `autoPrompted` flag (not component state), so a remount of this
+  // gate — e.g. when RootStack re-renders as an upstream store hydrates —
+  // doesn't fire a second Face ID prompt. lock() and the cold-start default
+  // reset the flag, so the next locked session prompts again. The manual
+  // Unlock button stays available for retries.
+  useEffect(() => {
+    const session = useAppLockSession.getState();
+    if (session.autoPrompted) return;
+    session.markAutoPrompted();
+    void attempt();
+    // Mount-only on purpose: the one-shot guard lives in the session store,
+    // not in this dependency array.
+  }, []);
 
   return <AppLockGate onUnlock={() => void attempt()} busy={busy} error={error} />;
 }

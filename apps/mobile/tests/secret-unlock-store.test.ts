@@ -138,6 +138,31 @@ describe('secret-unlock store', () => {
       await startUnlock(deps, { rng: RNG_FIRST });
       await expect(startUnlock(deps, { rng: RNG_FIRST })).rejects.toThrow(/already have an active/);
     });
+
+    it('caps starts at one per calendar day — even after the first is canceled', async () => {
+      const { exec, deps } = await freshHarness();
+      await seedSecret(exec, A1, PEER, 's');
+      // Start then cancel: the active-attempt guard is now satisfied...
+      const first = await startUnlock(deps, { rng: RNG_FIRST });
+      await cancelUnlock(deps, first.id);
+      // ...but the start still counts against today's one-per-day allowance.
+      await expect(startUnlock(deps, { rng: RNG_FIRST })).rejects.toThrow(/one secret a day/);
+    });
+
+    it('resets the daily cap once the clock crosses local midnight', async () => {
+      const { exec, deps } = await freshHarness();
+      await seedSecret(exec, A1, PEER, 's');
+      // Day 1: spend the allowance (start + cancel), second start blocked.
+      const first = await startUnlock(deps, { rng: RNG_FIRST });
+      await cancelUnlock(deps, first.id);
+      await expect(startUnlock(deps, { rng: RNG_FIRST })).rejects.toThrow(/one secret a day/);
+
+      // Day 2: advance >24h so we're past local midnight in any timezone.
+      const nextDay = new Date(FIXED_NOW.getTime() + 25 * 60 * 60 * 1000);
+      const depsNextDay: SecretUnlockStoreDeps = { ...deps, now: () => nextDay };
+      const second = await startUnlock(depsNextDay, { rng: RNG_FIRST });
+      expect(second.state).toBe('assigned');
+    });
   });
 
   describe('submit / reject', () => {

@@ -27,11 +27,18 @@ import {
   type PairingHooks,
   type PairingRun,
 } from '../../features/pairing/orchestrator';
-import { QrTransport } from '../../features/pairing/qr-transport';
+import { encodePairingQr, parsePairingQr } from '../../features/pairing/qr-code';
 import { RelayTransport } from '../../features/pairing/relay-transport';
 import type { PairingState, SelfKeys } from '../../features/pairing/state-machine';
 
 type Mode = 'choose' | 'qr' | 'relay';
+
+/**
+ * QR sub-flow role. The QR carries a relay rendezvous code, so pairing is
+ * symmetric: one device shows its QR, the other scans it, and both join the
+ * same code over RelayTransport (the broken hello-over-QR dance is retired).
+ */
+type QrRole = 'pick' | 'show' | 'scan';
 
 /**
  * Relay sub-flow role. To stop unrelated couples colliding on a guessable
@@ -62,9 +69,12 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   const [mode, setMode] = useState<Mode>('choose');
   const [state, setState] = useState<PairingState>({ name: 'idle' });
 
-  // QR-mode state.
-  const [selfQr, setSelfQr] = useState<string | null>(null);
-  const qrTransportRef = useRef<QrTransport | null>(null);
+  // QR-mode state. The QR encodes a relay rendezvous code; pairing then runs
+  // over the symmetric RelayTransport (startRelay), same as the typed-code
+  // path — one device shows, the other scans, and both converge.
+  const [qrRole, setQrRole] = useState<QrRole>('pick');
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrScanError, setQrScanError] = useState<string | null>(null);
   const scanLockRef = useRef(false);
 
   // Relay-mode state.
@@ -94,35 +104,50 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
     [props.biometric],
   );
 
-  async function startQrPairing(): Promise<void> {
+  function pickQrMode(): void {
     setMode('qr');
-    setState({ name: 'idle' });
-    setSelfQr(null);
+    setQrRole('pick');
+    setQrCode(null);
+    setQrScanError(null);
     scanLockRef.current = false;
+    setState({ name: 'idle' });
+  }
 
-    // Everything here can reject (keygen reads the native CSPRNG, the
-    // transport boots). An unguarded reject becomes an unhandled promise
-    // rejection that never surfaces in a release build — the screen just
-    // hangs on "Preparing your pairing QR…". Catch and show the error.
+  /** "Show" side: mint a rendezvous code, render it as a QR, and start
+   *  listening on the relay so we pair the moment the partner scans + joins. */
+  async function startQrShow(): Promise<void> {
+    setQrRole('show');
+    setQrCode(null);
+    setState({ name: 'idle' });
     try {
-      const transport = new QrTransport();
-      qrTransportRef.current = transport;
-      transport.onSelfHelloChange((serialized) => setSelfQr(serialized));
-
-      const selfKeys = await generateSelfKeys();
-      const run = runPairing({
-        transport,
-        hooks,
-        selfKeys,
-        onTransition: (next) => setState(next),
-      });
-      runRef.current = run;
-
-      const final = await run.result;
-      await maybeFinishPairing(final, selfKeys);
+      const code = await generateRendezvousCode();
+      setQrCode(code);
+      await startRelay(code);
     } catch (err) {
       setState({ name: 'error', reason: errorMessage(err) });
     }
+  }
+
+  /** "Scan" side: open the camera. */
+  function startQrScan(): void {
+    setQrRole('scan');
+    setQrScanError(null);
+    scanLockRef.current = false;
+    setState({ name: 'idle' });
+  }
+
+  /** Camera read: pull the relay code out of the QR and join that rendezvous.
+   *  Non-pairing QRs parse to null, so we surface a hint and keep scanning. */
+  function onQrScanned(text: string): void {
+    if (scanLockRef.current) return;
+    const code = parsePairingQr(text);
+    if (code === null) {
+      setQrScanError("That doesn't look like a UsNotes pairing QR.");
+      return;
+    }
+    scanLockRef.current = true;
+    setQrScanError(null);
+    void startRelay(code);
   }
 
   function pickRelayMode(): void {
@@ -215,8 +240,10 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   function cancelAndReset(): void {
     runRef.current?.cancel();
     runRef.current = null;
-    qrTransportRef.current = null;
-    setSelfQr(null);
+    scanLockRef.current = false;
+    setQrRole('pick');
+    setQrCode(null);
+    setQrScanError(null);
     setRelayRole('pick');
     setRelayInput('');
     setCreatedCode(null);
@@ -232,24 +259,35 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
         <Text style={styles.title}>Pair with your partner</Text>
 
         {mode === 'choose' && state.name === 'idle' && (
-          <ChooseMode onPickQr={startQrPairing} onPickRelay={pickRelayMode} />
+          <ChooseMode onPickQr={pickQrMode} onPickRelay={pickRelayMode} />
+        )}
+
+        {mode === 'qr' && qrRole === 'pick' && state.name === 'idle' && (
+          <QrRolePicker onShow={startQrShow} onScan={startQrScan} onCancel={cancelAndReset} />
         )}
 
         {mode === 'qr' &&
+          qrRole === 'show' &&
           (state.name === 'idle' || state.name === 'scanning') &&
-          (selfQr === null ? (
-            <Text style={styles.body}>Preparing your pairing QR…</Text>
+          (qrCode === null ? (
+            <>
+              <ActivityIndicator />
+              <Text style={styles.body}>Preparing your QR…</Text>
+            </>
           ) : (
-            <QrPhase
-              selfQr={selfQr}
-              onScanned={(text) => {
-                if (scanLockRef.current) return;
-                scanLockRef.current = true;
-                qrTransportRef.current?.injectScannedHello(text);
-              }}
+            <QrShowPhase code={qrCode} onCancel={cancelAndReset} />
+          ))}
+
+        {mode === 'qr' &&
+          qrRole === 'scan' &&
+          (state.name === 'idle' || state.name === 'scanning') && (
+            <QrScanPhase
+              onScanned={onQrScanned}
+              error={qrScanError}
+              connecting={relayConnecting}
               onCancel={cancelAndReset}
             />
-          ))}
+          )}
 
         {mode === 'relay' && relayRole === 'pick' && state.name === 'idle' && (
           <RelayRolePicker
@@ -367,31 +405,82 @@ function ChooseMode(props: { onPickQr: () => void; onPickRelay: () => void }): J
   );
 }
 
-function QrPhase(props: {
-  selfQr: string;
+function QrRolePicker(props: {
+  onShow: () => void;
+  onScan: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  return (
+    <>
+      <Text style={styles.body}>
+        One of you shows a QR code; the other scans it. Decide who does which — you only need to
+        scan on one phone.
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        style={styles.cta}
+        onPress={props.onShow}
+        testID="pair.qr.show"
+      >
+        <Text style={styles.ctaText}>Show my QR code</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={styles.ctaAlt}
+        onPress={props.onScan}
+        testID="pair.qr.scan"
+      >
+        <Text style={styles.ctaText}>Scan partner's QR</Text>
+      </Pressable>
+      <Pressable onPress={props.onCancel} style={styles.secondaryCta}>
+        <Text style={styles.secondaryCtaText}>Back</Text>
+      </Pressable>
+    </>
+  );
+}
+
+function QrShowPhase(props: { code: string; onCancel: () => void }): JSX.Element {
+  return (
+    <>
+      <Text style={styles.body}>
+        Have your partner scan this with their UsNotes app. Keep this screen open — it pairs
+        automatically once they scan.
+      </Text>
+      <View style={styles.qrBox}>
+        <QRCode
+          value={encodePairingQr(props.code)}
+          size={220}
+          backgroundColor="#0a0a0a"
+          color="#f5f5f5"
+        />
+      </View>
+      <Text style={styles.body}>
+        Can't scan? Read them this code: {formatRendezvousCode(props.code)}
+      </Text>
+      <View style={styles.waitingRow}>
+        <ActivityIndicator />
+        <Text style={styles.body}>Waiting for your partner…</Text>
+      </View>
+      <Pressable onPress={props.onCancel} style={styles.secondaryCta}>
+        <Text style={styles.secondaryCtaText}>Cancel</Text>
+      </Pressable>
+    </>
+  );
+}
+
+function QrScanPhase(props: {
   onScanned: (text: string) => void;
+  error: string | null;
+  connecting: boolean;
   onCancel: () => void;
 }): JSX.Element {
   const [permission, requestPermission] = useCameraPermissions();
-  const [showScanner, setShowScanner] = useState(false);
 
-  if (!showScanner) {
+  if (props.connecting) {
     return (
       <>
-        <Text style={styles.body}>
-          Show this QR code to your partner. They'll scan it, then you'll scan theirs.
-        </Text>
-        <View style={styles.qrBox}>
-          <QRCode value={props.selfQr} size={220} backgroundColor="#0a0a0a" color="#f5f5f5" />
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.cta}
-          onPress={() => setShowScanner(true)}
-          testID="pair.qr.scan"
-        >
-          <Text style={styles.ctaText}>Scan your partner's QR</Text>
-        </Pressable>
+        <ActivityIndicator />
+        <Text style={styles.body}>Code scanned — connecting to your partner…</Text>
         <Pressable onPress={props.onCancel} style={styles.secondaryCta}>
           <Text style={styles.secondaryCtaText}>Cancel</Text>
         </Pressable>
@@ -418,7 +507,7 @@ function QrPhase(props: {
 
   return (
     <>
-      <Text style={styles.body}>Point your camera at your partner's QR code.</Text>
+      <Text style={styles.body}>Point your camera at your partner's pairing QR.</Text>
       <View style={styles.cameraBox}>
         <CameraView
           style={StyleSheet.absoluteFill}
@@ -427,8 +516,9 @@ function QrPhase(props: {
           onBarcodeScanned={({ data }) => props.onScanned(data)}
         />
       </View>
-      <Pressable onPress={() => setShowScanner(false)} style={styles.secondaryCta}>
-        <Text style={styles.secondaryCtaText}>Show my QR instead</Text>
+      {props.error !== null && <Text style={styles.error}>{props.error}</Text>}
+      <Pressable onPress={props.onCancel} style={styles.secondaryCta}>
+        <Text style={styles.secondaryCtaText}>Cancel</Text>
       </Pressable>
     </>
   );

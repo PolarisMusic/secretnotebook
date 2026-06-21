@@ -15,17 +15,27 @@ export const DEFAULT_APP_LOCK_TTL_MS = 30 * 60 * 1000;
 interface AppLockSessionState {
   unlockedAt: number | null;
   ttlMs: number;
+  /** Guard for the gate's one-shot auto-prompt, held here (not in the gate
+   *  component) so it survives a remount of the gate — otherwise an upstream
+   *  store hydrating and re-rendering RootStack would fire Face ID twice in a
+   *  row. Reset whenever a new locked session begins (lock(), plus the
+   *  cold-start default) so each lock auto-prompts exactly once. */
+  autoPrompted: boolean;
   setTtl: (ttlMs: number) => void;
   unlock: (now?: () => number) => void;
   lock: () => void;
+  /** Record that this lock-session's auto-prompt has fired. */
+  markAutoPrompted: () => void;
 }
 
 export const useAppLockSession = create<AppLockSessionState>((set) => ({
   unlockedAt: null,
   ttlMs: DEFAULT_APP_LOCK_TTL_MS,
+  autoPrompted: false,
   setTtl: (ttlMs) => set({ ttlMs }),
   unlock: (now = () => Date.now()) => set({ unlockedAt: now() }),
-  lock: () => set({ unlockedAt: null }),
+  lock: () => set({ unlockedAt: null, autoPrompted: false }),
+  markAutoPrompted: () => set({ autoPrompted: true }),
 }));
 
 /**

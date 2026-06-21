@@ -33,10 +33,10 @@ function termSummary(state: SafeWordTermState | null): string {
 }
 
 /**
- * Settings home. Houses pairing status (entry into the Pairing modal) and,
- * once paired, the connection role picker — moved here from the retired
- * ConnectionHome. Designed to grow: later phases add media + points-display
- * toggles.
+ * Settings home. The pairing entry point and the device-local Couple-Points
+ * display toggle are always available, so an unpaired user still has settings
+ * to adjust. The couple-scoped sections (role, roleplay term, danger zone)
+ * need the SyncEngine identity and render only once paired.
  */
 export function SettingsRoute(): JSX.Element {
   const navigation = useNavigation<Nav>();
@@ -54,10 +54,17 @@ export function SettingsRoute(): JSX.Element {
   const [pointsVisible, setPointsVisibleState] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!exec || !engine) return;
-    setTermState(await getTermState(exec, engine.selfPub));
-    const role = await getMyRole(exec, engine.selfPub);
-    setMyRoleState(role);
+    if (!exec) return;
+    // Role + roleplay term are couple-scoped (need the engine identity), so
+    // only read them once paired. Couple-Points visibility is device-local
+    // KV and works unpaired — the role is simply null then (→ shown by
+    // default), so its read lives outside the engine guard.
+    let role: ConnectionRole | null = null;
+    if (engine) {
+      setTermState(await getTermState(exec, engine.selfPub));
+      role = await getMyRole(exec, engine.selfPub);
+      setMyRoleState(role);
+    }
     setPointsVisibleState(await getPointsVisible(exec, role));
   }, [exec, engine]);
 
@@ -169,21 +176,26 @@ export function SettingsRoute(): JSX.Element {
             <Text style={styles.hint}>
               Your role affects what you see on the global feed and the Couple-Points default below.
             </Text>
+          </>
+        )}
 
-            <Text style={styles.sectionLabel}>COUPLE POINTS</Text>
-            <View style={styles.toggleRow}>
-              <Text style={styles.tileText}>Show Couple Points</Text>
-              <Switch
-                value={pointsVisible}
-                onValueChange={(v) => void onTogglePoints(v)}
-                testID="settings.points_toggle"
-              />
-            </View>
-            <Text style={styles.hint}>
-              Whether the Couple-Points total shows on the Unlock screen. Defaults to your role —
-              hidden for the feminine role — and your choice here overrides it on this device.
-            </Text>
+        {/* Always available — device-local KV, no engine required. */}
+        <Text style={styles.sectionLabel}>COUPLE POINTS</Text>
+        <View style={styles.toggleRow}>
+          <Text style={styles.tileText}>Show Couple Points</Text>
+          <Switch
+            value={pointsVisible}
+            onValueChange={(v) => void onTogglePoints(v)}
+            testID="settings.points_toggle"
+          />
+        </View>
+        <Text style={styles.hint}>
+          Whether the Couple-Points total shows on the Unlock screen. Defaults to your role — hidden
+          for the feminine role — and your choice here overrides it on this device.
+        </Text>
 
+        {paired && (
+          <>
             <Text style={styles.sectionLabel}>ROLEPLAY TERM</Text>
             <Pressable
               accessibilityRole="button"

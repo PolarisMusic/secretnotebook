@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,21 +9,13 @@ export interface AppLockGateProps {
 }
 
 /**
- * Biometric app-open lock. Auto-prompts once on mount; if the user cancels
- * or it fails, they get a tap-to-retry button. This is a privacy gate, not
- * the Safe Word.
+ * Biometric app-open lock (presentational). The one-shot auto-prompt is
+ * driven by AppLockGateRoute and guarded by the app-lock session store, so a
+ * remount of this gate doesn't fire Face ID twice; here we just render the
+ * locked screen plus a manual Unlock retry button. Privacy gate, not the
+ * Safe Word.
  */
 export function AppLockGate(props: AppLockGateProps): JSX.Element {
-  // Prompt exactly once on mount (onUnlock is a fresh closure each render,
-  // so guard with a ref); retries after that are manual via the button.
-  const { onUnlock } = props;
-  const prompted = useRef(false);
-  useEffect(() => {
-    if (prompted.current) return;
-    prompted.current = true;
-    onUnlock();
-  }, [onUnlock]);
-
   return (
     <SafeAreaView style={styles.container} testID="screen.app_lock">
       <View style={styles.content}>

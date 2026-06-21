@@ -30,4 +30,26 @@ describe('app-lock session', () => {
     expect(useAppLockSession.getState().unlockedAt).toBeNull();
     expect(isAppUnlocked()).toBe(false);
   });
+
+  it('starts with autoPrompted false (a cold start auto-prompts once)', () => {
+    useAppLockSession.setState({
+      unlockedAt: null,
+      ttlMs: DEFAULT_APP_LOCK_TTL_MS,
+      autoPrompted: false,
+    });
+    expect(useAppLockSession.getState().autoPrompted).toBe(false);
+  });
+
+  it('markAutoPrompted() records the one-shot prompt so a remount stays quiet', () => {
+    useAppLockSession.setState({ autoPrompted: false });
+    useAppLockSession.getState().markAutoPrompted();
+    expect(useAppLockSession.getState().autoPrompted).toBe(true);
+  });
+
+  it('lock() resets autoPrompted so the next lock-session prompts again', () => {
+    useAppLockSession.getState().markAutoPrompted();
+    expect(useAppLockSession.getState().autoPrompted).toBe(true);
+    useAppLockSession.getState().lock();
+    expect(useAppLockSession.getState().autoPrompted).toBe(false);
+  });
 });

@@ -8,6 +8,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
 import { useFlagPost, useHidePost, usePostDetail } from '../../features/api/queries';
+import { useSyncEngineStore } from '../../features/connection-channel/store';
+import { writeSecretNote, writeSharedNote, type NoteStoreDeps } from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { PostDetail } from './PostDetail';
 
@@ -21,6 +23,7 @@ export function PostDetailRoute(): JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const client = useApiStore((s) => s.client);
   const exec = useDatabaseStore((s) => s.exec);
+  const engine = useSyncEngineStore((s) => s.engine);
 
   const query = usePostDetail({
     client: client!,
@@ -61,6 +64,46 @@ export function PostDetailRoute(): JSX.Element {
     [flagMut],
   );
 
+  const saveToNotes = useCallback(
+    async (kind: 'shared' | 'secret', body: string): Promise<void> => {
+      if (!exec || !engine) return;
+      const deps: NoteStoreDeps = {
+        exec,
+        selfPubkey: engine.selfPub,
+        enqueue: (op) => engine.enqueue(op),
+      };
+      try {
+        if (kind === 'secret') await writeSecretNote(deps, body);
+        else await writeSharedNote(deps, body);
+        Alert.alert(
+          'Saved',
+          kind === 'secret' ? 'Added to your secret notes.' : 'Added to your shared notes.',
+        );
+      } catch (e) {
+        Alert.alert('Could not save', (e as Error).message);
+      }
+    },
+    [exec, engine],
+  );
+
+  const onSaveToNotes = useCallback(
+    (id: string) => {
+      const post = query.data;
+      if (!post || post.id !== id) return;
+      const body = post.body.trim();
+      if (body.length === 0) {
+        Alert.alert('Nothing to save', 'This post has no text to add to your notes.');
+        return;
+      }
+      Alert.alert('Save to notes', "Add this post's text to your couple's notes.", [
+        { text: 'Shared note', onPress: () => void saveToNotes('shared', body) },
+        { text: 'Secret note', onPress: () => void saveToNotes('secret', body) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [query.data, saveToNotes],
+  );
+
   if (!client) {
     return (
       <SafeAreaView style={styles.gate} testID="screen.post-detail.waiting">
@@ -78,6 +121,7 @@ export function PostDetailRoute(): JSX.Element {
       onBack={() => navigation.goBack()}
       onHide={onHide}
       onFlag={onFlag}
+      onSaveToNotes={engine ? onSaveToNotes : undefined}
     />
   );
 }
