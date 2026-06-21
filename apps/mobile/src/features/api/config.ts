@@ -1,21 +1,20 @@
 /**
- * Base URL for the moderation API. The default points at the local
- * docker-compose stack — fine for the simulator on the dev host, useless
- * for a physical phone on TestFlight / Internal Track.
+ * Base URL for the moderation / relay API (apps/api).
  *
- * Runtime override resolution, highest priority first:
+ * Resolution, highest priority first:
  *
  *   1. `process.env.EXPO_PUBLIC_API_BASE_URL` — Metro inlines anything
- *      prefixed `EXPO_PUBLIC_` at bundle time, so this is the seam
- *      that EAS / Expo CLI substitutes per-environment. Set this to
- *      the deployed API host (e.g. https://api.fly.dev) before
- *      `expo prebuild` or before kicking the EAS build.
- *   2. `expo.extra.apiBaseUrl` in `app.json` — read indirectly because
- *      `expo-constants` isn't a direct dependency here; Expo already
- *      mirrors any `expo.extra.*` value into `EXPO_PUBLIC_*` env at
- *      build time when the matching env var is set, so the env-var
- *      path above is the single source of truth.
- *   3. The hardcoded localhost fallback.
+ *      prefixed `EXPO_PUBLIC_` at bundle time, so this is the seam EAS /
+ *      Expo CLI substitutes per-environment. Set it to
+ *      `http://localhost:3000` when running the local docker-compose stack
+ *      against the simulator.
+ *   2. The deployed Fly.io host below — the default, so a build that ships
+ *      without the env var still reaches a real server instead of localhost
+ *      (a real phone can't reach localhost, which was the original
+ *      "notes don't transfer" bug).
+ *
+ * `app.json` `expo.extra.apiBaseUrl` mirrors the default for documentation /
+ * parity only; it is not read here (expo-constants isn't a dependency).
  */
 export interface ApiConfig {
   readonly baseUrl: string;
@@ -29,6 +28,9 @@ declare const process: { readonly env: Readonly<Record<string, string | undefine
 const ENV_BASE_URL =
   typeof process !== 'undefined' && process?.env ? process.env.EXPO_PUBLIC_API_BASE_URL : undefined;
 
+/** Deployed API host — used unless EXPO_PUBLIC_API_BASE_URL overrides it. */
+const DEFAULT_BASE_URL = 'https://polaris-secretnotebook-api.fly.dev';
+
 export const DEFAULT_API_CONFIG: ApiConfig = {
-  baseUrl: ENV_BASE_URL && ENV_BASE_URL.length > 0 ? ENV_BASE_URL : 'http://localhost:3000',
+  baseUrl: ENV_BASE_URL && ENV_BASE_URL.length > 0 ? ENV_BASE_URL : DEFAULT_BASE_URL,
 };

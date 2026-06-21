@@ -77,7 +77,7 @@
       "./plugins/with-android-release-signing.js"
     ],
     "extra": {
-      "apiBaseUrl": "http://localhost:3000",
+      "apiBaseUrl": "https://polaris-secretnotebook-api.fly.dev",
       "devGrantEntitlement": "0"
     }
   }
