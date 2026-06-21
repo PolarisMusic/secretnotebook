@@ -29,6 +29,12 @@ async function seedAll(exec: SqlExecutor): Promise<void> {
      VALUES ('n1', 'secret', ?, 'secret body', ?)`,
     [SELF, NOW],
   );
+  // A note that was published to the global feed — kept across a sever.
+  await exec.execute(
+    `INSERT INTO note (id, kind, author_pubkey, body, created_at, published_at, published_global_post_id)
+     VALUES ('n2', 'shared', ?, 'published body', ?, ?, 'g-pub-1')`,
+    [SELF, NOW, NOW],
+  );
   await exec.execute(
     `INSERT INTO saved_post (id, global_post_id, saved_by_pubkey, saved_for_pubkey, created_at)
      VALUES ('s1', 'g1', ?, ?, ?)`,
@@ -71,7 +77,7 @@ async function seedAll(exec: SqlExecutor): Promise<void> {
 }
 
 describe('wipeConnectionData', () => {
-  it('clears every connection-scoped table and calls the file wipe', async () => {
+  it('wipes connection-scoped tables, keeps the public footprint, and calls the file wipe', async () => {
     const db = new Database(':memory:');
     const exec = nodeExecutor(db);
     await runMigrations(exec, MIGRATIONS);
@@ -82,8 +88,6 @@ describe('wipeConnectionData', () => {
 
     for (const table of [
       'connection',
-      'note',
-      'saved_post',
       'secret_unlock',
       'secret_unlock_reflection',
       'ledger_entry',
@@ -95,6 +99,13 @@ describe('wipeConnectionData', () => {
     ]) {
       expect(await count(exec, table)).toBe(0);
     }
+    // Public footprint preserved: the published note stays, the private one goes.
+    const noteIds = (await exec.query<{ id: string }>(`SELECT id FROM note ORDER BY id`)).map(
+      (r) => r.id,
+    );
+    expect(noteIds).toEqual(['n2']);
+    // Saved posts (saves of others' public posts) are kept in full.
+    expect(await count(exec, 'saved_post')).toBe(1);
     expect(deleteAttachmentFiles).toHaveBeenCalledTimes(1);
   });
 
@@ -109,5 +120,20 @@ describe('wipeConnectionData', () => {
     expect(await count(exec, 'profiles')).toBe(1);
     expect(await count(exec, 'post_cache')).toBe(1);
     expect(await count(exec, 'app_setting')).toBe(1);
+  });
+
+  it('preserves saved posts and published notes but wipes private notes', async () => {
+    const db = new Database(':memory:');
+    const exec = nodeExecutor(db);
+    await runMigrations(exec, MIGRATIONS);
+    await seedAll(exec);
+
+    await wipeConnectionData(exec);
+
+    expect(await count(exec, 'saved_post')).toBe(1);
+    const rows = await exec.query<{ id: string; published_global_post_id: string | null }>(
+      `SELECT id, published_global_post_id FROM note ORDER BY id`,
+    );
+    expect(rows).toEqual([{ id: 'n2', published_global_post_id: 'g-pub-1' }]);
   });
 });
