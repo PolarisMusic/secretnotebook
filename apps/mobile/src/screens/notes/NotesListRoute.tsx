@@ -1,9 +1,16 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
+import {
+  discardPendingNote,
+  listPendingNotes,
+  sharePendingNote,
+  type PendingNoteRow,
+} from '../../features/notes/pending-store';
 import { listNotes, type NoteRow } from '../../features/notes/store';
 import { getAppSetting, INTRO_SEEN_KEY, setAppSetting } from '../../features/settings/store';
 import { useConnectionStore } from '../../state/connection';
@@ -23,6 +30,7 @@ export function NotesListRoute(): JSX.Element {
   const engine = useSyncEngineStore((s) => s.engine);
   const status = useConnectionStore((s) => s.status);
   const [items, setItems] = useState<NoteRow[] | null>(null);
+  const [drafts, setDrafts] = useState<PendingNoteRow[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
 
@@ -46,6 +54,7 @@ export function NotesListRoute(): JSX.Element {
   const refresh = useCallback(async () => {
     if (!exec) {
       setItems([]);
+      setDrafts([]);
       return;
     }
     setIsRefreshing(true);
@@ -57,12 +66,89 @@ export function NotesListRoute(): JSX.Element {
           // best-effort
         }
       }
-      const rows = await listNotes(exec);
+      // Drafts (pending_note) surface above the notes list so a pre-pairing
+      // note doesn't appear to vanish; the tap-action sheet promotes or
+      // discards them per pending-store.
+      const [rows, draftRows] = await Promise.all([listNotes(exec), listPendingNotes(exec)]);
       setItems(rows);
+      setDrafts(draftRows);
     } finally {
       setIsRefreshing(false);
     }
   }, [exec, engine]);
+
+  const onSelectDraft = useCallback(
+    (id: string) => {
+      const draft = drafts.find((d) => d.id === id);
+      if (!exec || !draft) return;
+      // The action sheet differs by pairing state: without a SyncEngine we
+      // can't share, so only Discard / Cancel are offered.
+      const shareShared = engine
+        ? [
+            {
+              text: 'Share as shared note',
+              onPress: () => {
+                void (async () => {
+                  try {
+                    await sharePendingNote(
+                      { exec, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
+                      id,
+                    );
+                    await refresh();
+                  } catch (e) {
+                    Alert.alert('Could not share', (e as Error).message);
+                  }
+                })();
+              },
+            },
+            {
+              text: 'Save as secret note',
+              onPress: () => {
+                void (async () => {
+                  try {
+                    // sharePendingNote uses the draft's own kind; for the
+                    // "save as secret" affordance we update the draft first.
+                    // The pending-store doesn't expose an update, so do it
+                    // inline (the table is device-local, no sync impact).
+                    if (draft.kind !== 'secret') {
+                      await exec.execute(`UPDATE pending_note SET kind = 'secret' WHERE id = ?`, [
+                        id,
+                      ]);
+                    }
+                    await sharePendingNote(
+                      { exec, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
+                      id,
+                    );
+                    await refresh();
+                  } catch (e) {
+                    Alert.alert('Could not save', (e as Error).message);
+                  }
+                })();
+              },
+            },
+          ]
+        : [];
+      Alert.alert('Draft', draft.body.slice(0, 200), [
+        ...shareShared,
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await discardPendingNote(exec, id);
+                await refresh();
+              } catch (e) {
+                Alert.alert('Could not discard', (e as Error).message);
+              }
+            })();
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [drafts, exec, engine, refresh],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -74,11 +160,13 @@ export function NotesListRoute(): JSX.Element {
     <>
       <NotesList
         items={items ?? []}
+        drafts={drafts}
         isLoading={items == null}
         isRefreshing={isRefreshing}
         paired={status === 'paired'}
         onRefresh={() => void refresh()}
         onSelectNote={(id) => navigation.navigate('NotesDetail', { id })}
+        onSelectDraft={onSelectDraft}
         onCompose={() => navigation.navigate('NotesCompose')}
         onPair={() => navigation.navigate('Pairing')}
       />
