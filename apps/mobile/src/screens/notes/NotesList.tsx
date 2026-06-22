@@ -10,16 +10,23 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '../../components/ScreenHeader';
+import type { PendingNoteRow } from '../../features/notes/pending-store';
 import type { NoteRow } from '../../features/notes/store';
 
 export interface NotesListProps {
   readonly items: ReadonlyArray<NoteRow>;
+  /** Pre-pairing / pre-engine drafts (the `pending_note` table). Shown above
+   *  the notes list with a DRAFT badge so they don't appear to vanish; tapping
+   *  one opens a sheet to share or discard it. */
+  readonly drafts: ReadonlyArray<PendingNoteRow>;
   readonly isLoading: boolean;
   readonly isRefreshing: boolean;
   /** Whether this device is paired with a partner. */
   readonly paired: boolean;
   readonly onRefresh: () => void;
   readonly onSelectNote: (id: string) => void;
+  /** Open the actions sheet (share / discard) for a draft. */
+  readonly onSelectDraft: (id: string) => void;
   readonly onCompose: () => void;
   /** Open the pairing modal (from the unpaired banner). */
   readonly onPair: () => void;
@@ -79,6 +86,36 @@ export function NotesList(props: NotesListProps): JSX.Element {
           />
         }
         contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          props.drafts.length > 0 ? (
+            <View testID="notes.drafts">
+              <Text style={styles.draftsHeader}>DRAFTS</Text>
+              {props.drafts.map((d) => (
+                <Pressable
+                  key={d.id}
+                  accessibilityRole="button"
+                  testID={`notes.draft.${d.id}`}
+                  onPress={() => props.onSelectDraft(d.id)}
+                  style={styles.row}
+                >
+                  <View style={styles.rowTopRow}>
+                    <Text style={[styles.kindBadge, d.kind === 'secret' && styles.kindBadgeSecret]}>
+                      {d.kind.toUpperCase()}
+                    </Text>
+                    <Text style={styles.draftBadge}>DRAFT</Text>
+                  </View>
+                  <Text style={styles.rowBody} numberOfLines={3}>
+                    {d.body.slice(0, 140)}
+                  </Text>
+                  <Text style={styles.rowMeta}>
+                    {isoDate(d.createdAt)} ·{' '}
+                    {props.paired ? 'tap to share or discard' : 'tap to discard, or pair to share'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
@@ -110,7 +147,7 @@ export function NotesList(props: NotesListProps): JSX.Element {
             <View style={styles.center} testID="notes.loading">
               <ActivityIndicator color="#f5f5f5" />
             </View>
-          ) : (
+          ) : props.drafts.length > 0 ? null : (
             <View style={styles.empty} testID="notes.empty">
               <Text style={styles.emptyTitle}>No notes yet</Text>
               <Text style={styles.emptyBody}>Tap “Write a note…” to start.</Text>
@@ -153,6 +190,15 @@ const styles = StyleSheet.create({
   kindBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   kindBadgeSecret: { color: '#ffb4b4' },
   publishedBadge: { color: '#9eff9e', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  draftBadge: { color: '#e0c080', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  draftsHeader: {
+    color: '#7a7a7a',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginTop: 4,
+  },
   rowBody: { color: '#f5f5f5', fontSize: 15, lineHeight: 20 },
   rowMeta: { color: '#808080', fontSize: 12 },
   empty: { paddingTop: 80, alignItems: 'center', gap: 8, paddingHorizontal: 32 },

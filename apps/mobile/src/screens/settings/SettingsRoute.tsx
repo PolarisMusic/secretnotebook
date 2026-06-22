@@ -11,6 +11,9 @@ import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getMyRole, setMyRole, type ConnectionRole } from '../../features/connection/role-store';
 import { scheduleSever } from '../../features/connection/sever';
 import { sumConnectionPoints } from '../../features/ledger/store';
+import { notesToJson } from '../../features/notes/export';
+import { shareTextFile } from '../../features/notes/share-native';
+import { listNotes } from '../../features/notes/store';
 import { getTermState, type SafeWordTermState } from '../../features/safeword/term-store';
 import { getPointsVisible, setPointsVisible } from '../../features/settings/points-visibility';
 import { useConnectionStore } from '../../state/connection';
@@ -77,7 +80,7 @@ export function SettingsRoute(): JSX.Element {
     const points = await sumConnectionPoints(exec);
     Alert.alert(
       'Terminate connection?',
-      `You've earned ${points.toLocaleString()} Couple Points together.\n\nThis wipes all shared notes, secrets, and points on both devices after a 7-day grace period — you can undo any time before then.`,
+      `You've earned ${points.toLocaleString()} Couple Points together.\n\nThis wipes your shared notes, secrets, and points on both devices after a 7-day grace period — you can undo any time before then. First save an archive of your notes; your saved posts and anything you published stay.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -85,6 +88,21 @@ export function SettingsRoute(): JSX.Element {
           style: 'destructive',
           onPress: () => {
             void (async () => {
+              // Best-effort archive before scheduling the wipe — a failed or
+              // unavailable share must not block the sever (the 7-day grace
+              // still applies, and saved/published content survives anyway).
+              try {
+                const notes = await listNotes(exec);
+                if (notes.length > 0) {
+                  await shareTextFile(
+                    'usnotes-archive.json',
+                    notesToJson(notes),
+                    'application/json',
+                  );
+                }
+              } catch {
+                // ignore — export is a courtesy
+              }
               try {
                 const at = await scheduleSever({
                   exec,

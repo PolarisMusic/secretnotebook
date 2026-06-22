@@ -29,6 +29,12 @@ async function seedAll(exec: SqlExecutor): Promise<void> {
      VALUES ('n1', 'secret', ?, 'secret body', ?)`,
     [SELF, NOW],
   );
+  // A note that was published to the global feed — kept across a sever.
+  await exec.execute(
+    `INSERT INTO note (id, kind, author_pubkey, body, created_at, published_at, published_global_post_id)
+     VALUES ('n2', 'shared', ?, 'published body', ?, ?, 'g-pub-1')`,
+    [SELF, NOW, NOW],
+  );
   await exec.execute(
     `INSERT INTO saved_post (id, global_post_id, saved_by_pubkey, saved_for_pubkey, created_at)
      VALUES ('s1', 'g1', ?, ?, ?)`,
@@ -71,7 +77,7 @@ async function seedAll(exec: SqlExecutor): Promise<void> {
 }
 
 describe('wipeConnectionData', () => {
-  it('clears every connection-scoped table and calls the file wipe', async () => {
+  it('wipes connection-scoped tables, keeps the public footprint, and calls the file wipe', async () => {
     const db = new Database(':memory:');
     const exec = nodeExecutor(db);
     await runMigrations(exec, MIGRATIONS);
@@ -82,10 +88,9 @@ describe('wipeConnectionData', () => {
 
     for (const table of [
       'connection',
-      'note',
-      'saved_post',
       'secret_unlock',
       'secret_unlock_reflection',
+      'note',
       'ledger_entry',
       'safeword_trigger',
       'sync_outbox',
@@ -95,6 +100,11 @@ describe('wipeConnectionData', () => {
     ]) {
       expect(await count(exec, table)).toBe(0);
     }
+    // Public footprint preserved: saved posts (saves of others' public posts)
+    // are kept in full; a published note's content survives in post_cache + on
+    // the server feed, not as a local note row.
+    expect(await count(exec, 'saved_post')).toBe(1);
+    expect(await count(exec, 'post_cache')).toBe(1);
     expect(deleteAttachmentFiles).toHaveBeenCalledTimes(1);
   });
 
@@ -109,5 +119,20 @@ describe('wipeConnectionData', () => {
     expect(await count(exec, 'profiles')).toBe(1);
     expect(await count(exec, 'post_cache')).toBe(1);
     expect(await count(exec, 'app_setting')).toBe(1);
+  });
+
+  it('keeps saved posts but wipes all notes (published survive via post_cache)', async () => {
+    const db = new Database(':memory:');
+    const exec = nodeExecutor(db);
+    await runMigrations(exec, MIGRATIONS);
+    await seedAll(exec);
+
+    await wipeConnectionData(exec);
+
+    // Saved posts kept; both the private (n1) and published (n2) notes are gone.
+    expect(await count(exec, 'saved_post')).toBe(1);
+    expect(await count(exec, 'note')).toBe(0);
+    // The published post's content still lives in the surviving post_cache.
+    expect(await count(exec, 'post_cache')).toBe(1);
   });
 });

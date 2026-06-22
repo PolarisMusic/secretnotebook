@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,8 +9,10 @@ import { DEFAULT_API_CONFIG } from '../../features/api/config';
 import { useApiStore } from '../../features/api/store';
 import { tryBuildSyncEngine } from '../../features/connection-channel/build-engine';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
+import { countPendingNotes } from '../../features/notes/pending-store';
 import { createBiometricPrompt } from '../../features/pairing/biometric';
 import { persistConnection } from '../../features/pairing/persistence';
+import type { MainStackParamList } from '../../navigation/MainStack';
 import { useConnectionStore } from '../../state/connection';
 import { PairWithPartner } from './PairWithPartner';
 
@@ -21,7 +24,7 @@ import { PairWithPartner } from './PairWithPartner';
  * other place the engine got created), then closes the modal.
  */
 export function PairWithPartnerRoute(): JSX.Element {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const biometric = useMemo(() => createBiometricPrompt(), []);
   const exec = useDatabaseStore((s) => s.exec);
   const apiClient = useApiStore((s) => s.client);
@@ -56,7 +59,13 @@ export function PairWithPartnerRoute(): JSX.Element {
               const engine = await tryBuildSyncEngine({ exec, api: apiClient, connectionId });
               if (engine) setEngine(engine);
             }
-            navigation.goBack();
+            // Drafts authored before pairing → first-connection triage
+            // (Share/Archive each); otherwise just dismiss the pairing modal.
+            if ((await countPendingNotes(exec)) > 0) {
+              navigation.navigate('NotesTriage');
+            } else {
+              navigation.goBack();
+            }
           }}
         />
       </View>
