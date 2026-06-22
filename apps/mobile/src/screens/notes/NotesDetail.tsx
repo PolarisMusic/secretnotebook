@@ -67,15 +67,15 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
             {note.kind.toUpperCase()} · {isoDate(note.createdAt)}
           </Text>
 
-          {note.body == null ? (
-            <Text style={styles.locked} testID="notes-detail.locked">
-              Locked — waiting for the author to reveal this secret.
-            </Text>
-          ) : (
+          {note.body != null ? (
             <Text style={styles.body} testID="notes-detail.body">
               {note.body}
             </Text>
-          )}
+          ) : note.kind === 'secret' ? (
+            <Text style={styles.locked} testID="notes-detail.locked">
+              Locked — waiting for the author to reveal this secret.
+            </Text>
+          ) : null}
 
           {props.attachments && props.attachments.length > 0 ? (
             <View style={styles.media} testID="notes-detail.media">

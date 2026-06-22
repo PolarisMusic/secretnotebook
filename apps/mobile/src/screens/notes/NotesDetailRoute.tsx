@@ -65,8 +65,9 @@ export function NotesDetailRoute(): JSX.Element {
         );
         const opened = await openAttachment({ exec, fileStore }, id);
         setPreviews((p) => ({ ...p, [id]: opened.uri }));
-      } catch {
-        setError('Could not load media.');
+      } catch (e) {
+        console.warn('[attachment] open failed:', e);
+        setError(`Could not load media: ${(e as Error)?.message ?? String(e)}`);
       } finally {
         setRows(await listNoteAttachments(exec, route.params.id));
       }
