@@ -20,6 +20,9 @@ export interface StagedMedia {
   readonly id: string;
   readonly mediaType: 'image' | 'audio';
   readonly status: 'preparing' | 'ready' | 'error';
+  /** Surfaced when status is 'error', so a failed attachment shows *why*
+   *  (e.g. "uploadBlob: Network request failed") instead of a bare "failed". */
+  readonly error?: string;
 }
 
 export interface NotesComposeProps {
@@ -166,7 +169,11 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
                     {m.status === 'preparing' ? (
                       <ActivityIndicator color="#9ec5ff" size="small" />
                     ) : null}
-                    {m.status === 'error' ? <Text style={styles.chipError}>failed</Text> : null}
+                    {m.status === 'error' ? (
+                      <Text style={styles.chipError} numberOfLines={1}>
+                        {m.error ? `failed: ${m.error}` : 'failed'}
+                      </Text>
+                    ) : null}
                     <Pressable
                       accessibilityRole="button"
                       hitSlop={8}
