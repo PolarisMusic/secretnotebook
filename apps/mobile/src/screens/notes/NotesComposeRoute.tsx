@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
@@ -58,17 +58,46 @@ export function NotesComposeRoute(): JSX.Element {
 
   const stageAndPrepare = useCallback(
     async (picked: PickedMedia | null) => {
-      if (!picked || !apiClient) return;
+      if (!picked) return;
+      if (!apiClient) {
+        Alert.alert('Attachment unavailable', 'No signed API session yet — try again in a moment.');
+        return;
+      }
       const id = await randomUuidV4();
       setStaged((s) => [...s, { id, mediaType: picked.mediaType, status: 'preparing' }]);
       try {
+        // Tag the two external steps (file read + blob upload) so a failure
+        // says which one threw; encrypt/local-write failures surface raw.
         const prepared = await prepareAttachment(
-          { fileStore, uploadBlob: (ct) => apiClient.uploadBlob(ct) },
+          {
+            fileStore: {
+              ...fileStore,
+              readFile: async (uri) => {
+                try {
+                  return await fileStore.readFile(uri);
+                } catch (e) {
+                  throw new Error(`readFile: ${(e as Error)?.message ?? String(e)}`);
+                }
+              },
+            },
+            uploadBlob: async (ct) => {
+              try {
+                return await apiClient.uploadBlob(ct);
+              } catch (e) {
+                throw new Error(`uploadBlob(${ct.length}B): ${(e as Error)?.message ?? String(e)}`);
+              }
+            },
+          },
           picked,
         );
         setStaged((s) => s.map((m) => (m.id === id ? { ...m, status: 'ready', prepared } : m)));
-      } catch {
-        setStaged((s) => s.map((m) => (m.id === id ? { ...m, status: 'error' } : m)));
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        // Reaches Metro if connected; the Alert + chip make it visible on a
+        // device with no debugger attached.
+        console.warn('[attachment] prepare failed:', e);
+        Alert.alert('Attachment failed', msg);
+        setStaged((s) => s.map((m) => (m.id === id ? { ...m, status: 'error', error: msg } : m)));
       }
     },
     [apiClient, fileStore],
