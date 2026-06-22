@@ -90,6 +90,7 @@ describe('wipeConnectionData', () => {
       'connection',
       'secret_unlock',
       'secret_unlock_reflection',
+      'note',
       'ledger_entry',
       'safeword_trigger',
       'sync_outbox',
@@ -99,13 +100,11 @@ describe('wipeConnectionData', () => {
     ]) {
       expect(await count(exec, table)).toBe(0);
     }
-    // Public footprint preserved: the published note stays, the private one goes.
-    const noteIds = (await exec.query<{ id: string }>(`SELECT id FROM note ORDER BY id`)).map(
-      (r) => r.id,
-    );
-    expect(noteIds).toEqual(['n2']);
-    // Saved posts (saves of others' public posts) are kept in full.
+    // Public footprint preserved: saved posts (saves of others' public posts)
+    // are kept in full; a published note's content survives in post_cache + on
+    // the server feed, not as a local note row.
     expect(await count(exec, 'saved_post')).toBe(1);
+    expect(await count(exec, 'post_cache')).toBe(1);
     expect(deleteAttachmentFiles).toHaveBeenCalledTimes(1);
   });
 
@@ -122,7 +121,7 @@ describe('wipeConnectionData', () => {
     expect(await count(exec, 'app_setting')).toBe(1);
   });
 
-  it('preserves saved posts and published notes but wipes private notes', async () => {
+  it('keeps saved posts but wipes all notes (published survive via post_cache)', async () => {
     const db = new Database(':memory:');
     const exec = nodeExecutor(db);
     await runMigrations(exec, MIGRATIONS);
@@ -130,10 +129,10 @@ describe('wipeConnectionData', () => {
 
     await wipeConnectionData(exec);
 
+    // Saved posts kept; both the private (n1) and published (n2) notes are gone.
     expect(await count(exec, 'saved_post')).toBe(1);
-    const rows = await exec.query<{ id: string; published_global_post_id: string | null }>(
-      `SELECT id, published_global_post_id FROM note ORDER BY id`,
-    );
-    expect(rows).toEqual([{ id: 'n2', published_global_post_id: 'g-pub-1' }]);
+    expect(await count(exec, 'note')).toBe(0);
+    // The published post's content still lives in the surviving post_cache.
+    expect(await count(exec, 'post_cache')).toBe(1);
   });
 });

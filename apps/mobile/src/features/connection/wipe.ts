@@ -6,18 +6,21 @@ import type { SqlExecutor } from '../../db/executor';
  * cascades to `connection_ratchet`, but we clear that explicitly too for
  * clarity + order-independence).
  *
- * `note` and `saved_post` are deliberately NOT in this list — a sever keeps
- * the device's public footprint, so they get filtered/kept in
- * wipeConnectionData below rather than blunt-deleted here.
+ * `note` is wiped in full — the couple's notes start fresh after a sever.
+ * Notes that were published to the global feed are NOT special-cased: the
+ * public copy survives in `post_cache` (kept below) and on the server feed,
+ * so the post itself remains even though the local couple note row is gone.
  *
- * Also EXCLUDED (survive a sever so the device can re-pair): `profiles`,
- * `post_cache`, `app_setting`, `entitlement`, `session`, and the keychain
- * `device_master` (+ its derived identity / SQLCipher keys).
+ * Deliberately EXCLUDED (survive a sever so the device keeps its public
+ * footprint and can re-pair): `saved_post` (your saves of others' public
+ * posts), `profiles`, `post_cache`, `app_setting`, `entitlement`, `session`,
+ * and the keychain `device_master` (+ its derived identity / SQLCipher keys).
  */
 const CONNECTION_SCOPED_TABLES = [
   'secret_unlock_reflection',
   'secret_unlock',
   'attachment',
+  'note',
   'ledger_entry',
   'safeword_trigger',
   'sync_outbox',
@@ -35,17 +38,16 @@ export interface WipeOpts {
 
 /**
  * Erase the current connection from this device so it can re-pair fresh —
- * secrets, unlock attempts, Couple Points, the ratchet, the connection row,
- * and all queued/seen sync state — plus attachment files on disk. Points are
- * E2E, so deleting `ledger_entry` is the whole story; there is no server to
- * notify.
+ * notes, secrets, unlock attempts, Couple Points, the ratchet, the connection
+ * row, and all queued/seen sync state — plus attachment files on disk. Points
+ * are E2E, so deleting `ledger_entry` is the whole story; there is no server
+ * to notify.
  *
  * The device's PUBLIC footprint is deliberately preserved (item J):
  *   - `saved_post` rows (your saves of others' public posts) are kept in full;
- *   - `note` rows that were published to the global feed
- *     (`published_global_post_id IS NOT NULL`) are kept as the local trace of
- *     a post that still lives on the server feed — only the couple-private
- *     (unpublished) notes are wiped.
+ *   - posts you published survive in `post_cache` + on the server feed — the
+ *     local couple `note` row is wiped with the rest (published content is not
+ *     retained locally, by product decision).
  * The couple's notes should be exported/archived before this runs; that's
  * offered from the sever-schedule UI, not here. This function only deletes.
  *
@@ -58,9 +60,6 @@ export async function wipeConnectionData(exec: SqlExecutor, opts: WipeOpts = {})
     for (const table of CONNECTION_SCOPED_TABLES) {
       await exec.execute(`DELETE FROM ${table}`);
     }
-    // Public footprint stays: keep published notes (wipe only the
-    // couple-private, unpublished ones); saved_post is kept entirely.
-    await exec.execute(`DELETE FROM note WHERE published_global_post_id IS NULL`);
   });
   if (opts.deleteAttachmentFiles) {
     try {
