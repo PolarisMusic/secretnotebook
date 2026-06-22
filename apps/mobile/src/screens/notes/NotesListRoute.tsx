@@ -77,6 +77,16 @@ export function NotesListRoute(): JSX.Element {
     }
   }, [exec, engine]);
 
+  // List-only re-read (no engine.pull, so it can't race the App-level sync
+  // ticker's pull). Powers the focus interval below so notes the background
+  // ticker applies show up without a manual pull-to-refresh.
+  const relist = useCallback(async () => {
+    if (!exec) return;
+    const [rows, draftRows] = await Promise.all([listNotes(exec), listPendingNotes(exec)]);
+    setItems(rows);
+    setDrafts(draftRows);
+  }, [exec]);
+
   const onSelectDraft = useCallback(
     (id: string) => {
       const draft = drafts.find((d) => d.id === id);
@@ -152,8 +162,13 @@ export function NotesListRoute(): JSX.Element {
 
   useFocusEffect(
     useCallback(() => {
+      // On focus: pull + list once. Then re-read the DB every few seconds so
+      // notes applied by the background sync ticker (App-level, every 15s)
+      // appear live instead of only on the next focus / pull-to-refresh.
       void refresh();
-    }, [refresh]),
+      const handle = setInterval(() => void relist(), 4000);
+      return () => clearInterval(handle);
+    }, [refresh, relist]),
   );
 
   return (
