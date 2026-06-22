@@ -9,6 +9,7 @@ import { SubmitPostRoute } from '../screens/feed/SubmitPostRoute';
 import { NotesComposeRoute } from '../screens/notes/NotesComposeRoute';
 import { NotesDetailRoute } from '../screens/notes/NotesDetailRoute';
 import { NotesListRoute } from '../screens/notes/NotesListRoute';
+import { NotesTriageRoute } from '../screens/notes/NotesTriageRoute';
 import { PairWithPartnerRoute } from '../screens/onboarding/PairWithPartnerRoute';
 import { SafeWordRoute } from '../screens/safeword/SafeWordRoute';
 import { SecretUnlockDetailRoute } from '../screens/secret-unlock/SecretUnlockDetailRoute';
@@ -19,6 +20,7 @@ export type MainStackParamList = {
   NotesList: undefined;
   NotesCompose: undefined;
   NotesDetail: { id: string };
+  NotesTriage: undefined;
   GlobalFeed: undefined;
   SubmitPost: undefined;
   PostDetail: { id: string };
@@ -52,6 +54,7 @@ export function MainStack(): JSX.Element {
           options={{ presentation: 'modal' }}
         />
         <Stack.Screen name="NotesDetail" component={NotesDetailRoute} />
+        <Stack.Screen name="NotesTriage" component={NotesTriageRoute} />
         <Stack.Screen name="GlobalFeed" component={GlobalFeedRoute} />
         <Stack.Screen
           name="SubmitPost"

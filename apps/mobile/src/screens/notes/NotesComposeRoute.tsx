@@ -16,6 +16,7 @@ import type { PickedMedia, PreparedAttachment } from '../../features/attachments
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { randomUuidV4 } from '../../features/connection-channel/uuid';
 import { submitNoteCompose } from '../../features/notes/compose-wiring';
+import { writePendingNote } from '../../features/notes/pending-store';
 import { getTermState } from '../../features/safeword/term-store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { NotesCompose, type StagedMedia } from './NotesCompose';
@@ -88,16 +89,18 @@ export function NotesComposeRoute(): JSX.Element {
     await stageAndPrepare(picked);
   }, [isRecording, recorder, stageAndPrepare]);
 
-  if (!exec || !engine) {
+  if (!exec) {
     return (
       <SafeAreaView style={styles.gate} testID="screen.notes-compose.waiting">
         <ActivityIndicator color="#f5f5f5" />
-        <Text style={styles.gateText}>Waiting on connection…</Text>
+        <Text style={styles.gateText}>Waiting on the database…</Text>
       </SafeAreaView>
     );
   }
 
-  const mediaReady = apiClient != null;
+  // Media (encrypt + upload) needs both the connection identity and the API;
+  // an unpaired draft is text-only.
+  const mediaReady = engine != null && apiClient != null;
 
   return (
     <NotesCompose
@@ -113,16 +116,21 @@ export function NotesComposeRoute(): JSX.Element {
       onToggleRecord={mediaReady ? () => void onToggleRecord() : undefined}
       onRemoveMedia={(id) => setStaged((s) => s.filter((m) => m.id !== id))}
       onSubmit={async ({ kind, body }) => {
-        const attachments = staged
-          .filter((m) => m.status === 'ready' && m.prepared)
-          .map((m) => m.prepared as PreparedAttachment);
         try {
-          await submitNoteCompose(
-            { exec, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
-            kind,
-            body,
-            attachments,
-          );
+          if (engine) {
+            const attachments = staged
+              .filter((m) => m.status === 'ready' && m.prepared)
+              .map((m) => m.prepared as PreparedAttachment);
+            await submitNoteCompose(
+              { exec, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
+              kind,
+              body,
+              attachments,
+            );
+          } else {
+            // No partner yet — save a draft for first-connection triage.
+            await writePendingNote(exec, { kind, body });
+          }
           navigation.goBack();
           return null;
         } catch (e) {
