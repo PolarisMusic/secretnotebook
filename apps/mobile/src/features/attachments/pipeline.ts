@@ -117,6 +117,30 @@ export interface OpenedAttachment {
   mediaType: AttachmentRow['mediaType'];
 }
 
+const MIME_EXT: Readonly<Record<string, string>> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/heic': 'heic',
+  'image/heif': 'heic',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'audio/m4a': 'm4a',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/aac': 'aac',
+  'audio/wav': 'wav',
+};
+
+/** `<id>.<ext>` for the decrypted cache file, extension derived from the
+ *  mime type (falls back to the mime subtype, then `bin`). */
+function cacheFileName(id: string, mimeType: string): string {
+  const mt = mimeType.toLowerCase();
+  const ext = MIME_EXT[mt] ?? mt.split('/')[1] ?? 'bin';
+  return `${id}.${ext}`;
+}
+
 /**
  * Decrypt a locally-cached attachment to a plaintext cache file for the
  * renderer. The chunked-AEAD decrypt verifies every chunk + the whole-file
@@ -139,6 +163,9 @@ export async function openAttachment(
     contentHash: row.contentHash,
     byteSize: row.byteSize,
   });
-  const uri = await deps.fileStore.writeCacheFile(row.id, plaintext);
+  // Give the decrypted preview file a real extension. iOS' image/audio
+  // loaders pick a decoder from the URL, and a bare file:// path with no
+  // extension renders blank (the "gray box" symptom) / won't play.
+  const uri = await deps.fileStore.writeCacheFile(cacheFileName(row.id, row.mimeType), plaintext);
   return { uri, mimeType: row.mimeType, mediaType: row.mediaType };
 }
