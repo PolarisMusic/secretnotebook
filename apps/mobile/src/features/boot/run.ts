@@ -44,6 +44,14 @@ export async function runBoot(): Promise<void> {
       baseUrl: DEFAULT_API_CONFIG.baseUrl,
       keyPair: result.deviceSigningKey,
     });
+    // Surface the resolved API host once per boot. The relay (partner-note
+    // transport) lives behind this URL, so two paired phones that resolve
+    // DIFFERENT base URLs — e.g. one TestFlight build on the Fly default and
+    // one Metro build with EXPO_PUBLIC_API_BASE_URL pointed at a LAN/localhost
+    // dev server — will post and poll on separate servers and never exchange
+    // notes, even though each phone looks healthy on its own. Comparing this
+    // line across both devices rules that split in or out at a glance.
+    console.log(`[api] base=${DEFAULT_API_CONFIG.baseUrl}`);
     useApiStore.getState().setClient(apiClient);
 
     if (result.connection) {
