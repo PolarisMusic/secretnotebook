@@ -1,3 +1,5 @@
+import { bytesToHex } from '@secretnotebook/crypto';
+
 import type { SqlExecutor } from '../../db/executor';
 import type { ApiClient } from '../api/client';
 import { loadRatchet } from './ratchet-store';
@@ -64,12 +66,27 @@ export interface BuildEngineDeps {
  * decides what to do with null (typically: ignore, retry later).
  */
 export async function tryBuildSyncEngine(deps: BuildEngineDeps): Promise<SyncEngine | null> {
+  const connShort = deps.connectionId.slice(0, 8);
   const material = await loadConnectionSyncMaterial(deps.exec, deps.connectionId);
-  if (!material) return null;
+  if (!material) {
+    // No row, or status !== 'paired'. Either way the partner channel can't
+    // run yet — log it so a silently-missing engine ("notes never sync") is
+    // distinguishable from one that's running but not delivering.
+    console.log(`[sync] engine NOT built: no paired connection material for ${connShort}`);
+    return null;
+  }
   const ratchet = await loadRatchet(deps.exec, deps.connectionId);
-  if (!ratchet) return null;
+  if (!ratchet) {
+    console.log(`[sync] engine NOT built: no ratchet row for ${connShort}`);
+    return null;
+  }
   const selfPub = ratchet.side === 'a' ? material.partnerA : material.partnerB;
   const peerPub = ratchet.side === 'a' ? material.partnerB : material.partnerA;
+  console.log(
+    `[sync] engine built conn=${connShort} side=${ratchet.side} ` +
+      `self=${bytesToHex(selfPub).slice(0, 8)} peer=${bytesToHex(peerPub).slice(0, 8)} ` +
+      `root=${bytesToHex(material.connectionRoot).slice(0, 8)}`,
+  );
   return new SyncEngine({
     exec: deps.exec,
     api: deps.api,
