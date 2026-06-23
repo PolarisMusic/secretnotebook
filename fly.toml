@@ -1,0 +1,30 @@
+# fly.toml — Fly.io app config for polaris-secretnotebook-api.
+# Committed to the repo so `flyctl deploy` (local or CI) needs no flags.
+# Secrets (DATABASE_URL, etc.) are set via `fly secrets set` and never
+# stored here.
+
+app = "polaris-secretnotebook-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "infra/docker/api.Dockerfile"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    path = "/v1/health"
+    timeout = "5s"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
