@@ -102,7 +102,11 @@ export async function recordSyncCycle(
       outboxDepth,
       lastFlush: flushed,
       lastPull: pulled,
-      ...(flushed.failed === 0 ? { lastError: null } : {}),
+      // Clear a stale send error only when a flush actually drained rows
+      // cleanly. A flush that THREW entirely reports attempted=0/failed=0
+      // (runSyncCycle caught it) — that must not wipe the error onError just
+      // recorded, or the panel flickers the real failure away.
+      ...(flushed.attempted > 0 && flushed.failed === 0 ? { lastError: null } : {}),
     });
   } catch {
     // diagnostics are best-effort
