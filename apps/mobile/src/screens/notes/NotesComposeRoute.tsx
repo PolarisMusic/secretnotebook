@@ -156,6 +156,11 @@ export function NotesComposeRoute(): JSX.Element {
               body,
               attachments,
             );
+            // Flush the just-enqueued op now instead of waiting up to 15s
+            // for the next ticker cycle, so the note reaches the partner
+            // immediately. Fire-and-forget: the modal closes right away and
+            // the engine logs its own result; the ticker retries on failure.
+            void engine.flush();
           } else {
             // No partner yet — save a draft for first-connection triage.
             await writePendingNote(exec, { kind, body });
