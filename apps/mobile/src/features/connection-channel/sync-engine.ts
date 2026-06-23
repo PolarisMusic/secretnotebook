@@ -153,11 +153,20 @@ export class SyncEngine {
         await this.encryptAndSend(op);
         await deleteOutbox(this.deps.exec, row.id);
         delivered += 1;
-      } catch {
+      } catch (e) {
+        // Surface WHY a send failed (was previously swallowed). A relay
+        // POST that 500s — e.g. the prod DB is missing the relay_inbox
+        // table — looks identical to "notes never transfer" without this.
+        console.warn(`[sync] send failed (will retry): ${(e as Error).message}`);
         const nextAttempt = nowSec + Math.floor((this.retryBackoffMs * (row.attempts + 1)) / 1000);
         await bumpOutboxAttempt(this.deps.exec, { id: row.id, nextAttemptAt: nextAttempt });
         failed += 1;
       }
+    }
+    if (pending.length > 0) {
+      console.log(
+        `[sync] flush attempted=${pending.length} delivered=${delivered} failed=${failed}`,
+      );
     }
     return { attempted: pending.length, delivered, failed };
   }
@@ -234,12 +243,13 @@ export class SyncEngine {
         cursor = page.nextCursor;
       }
     }
-    if (fetched > 0 || applied > 0) {
-      console.log(
-        `[sync] pull self=${inboxes[0]} buckets=[${inboxes.join(',')}] ` +
-          `fetched=${fetched} applied=${applied} dup=${duplicates}`,
-      );
-    }
+    // Always log (not just when something arrived) so a pull that returns
+    // empty is still visible — it confirms the ticker is alive and shows
+    // exactly which inbox we polled, to compare against the sender's target.
+    console.log(
+      `[sync] pull self=${inboxes[0]} buckets=[${inboxes.join(',')}] ` +
+        `fetched=${fetched} applied=${applied} dup=${duplicates}`,
+    );
     return { fetched, applied, duplicates };
   }
 
