@@ -54,6 +54,14 @@ export interface SyncEngineDeps {
   readonly retryBackoffMs?: number;
   /** Page size for the relay GET. Default 100 (the server cap). */
   readonly pollLimit?: number;
+  /**
+   * How many *previous* UTC days to also poll on each pull, on top of
+   * today. The blinded inbox id rotates per UTC day, so a note addressed
+   * just before a UTC-midnight rollover (or while this device was offline
+   * across one) lands in a day bucket the receiver would otherwise never
+   * look at. Default 2 (today + 2 prior days).
+   */
+  readonly pullLookbackDays?: number;
 }
 
 export interface FlushResult {
@@ -88,11 +96,13 @@ export class SyncEngine {
   private readonly now: () => Date;
   private readonly retryBackoffMs: number;
   private readonly pollLimit: number;
+  private readonly pullLookbackDays: number;
 
   constructor(private readonly deps: SyncEngineDeps) {
     this.now = deps.now ?? ((): Date => new Date());
     this.retryBackoffMs = deps.retryBackoffMs ?? 30_000;
     this.pollLimit = deps.pollLimit ?? 100;
+    this.pullLookbackDays = deps.pullLookbackDays ?? 2;
   }
 
   /** Read-only views on the deps the screens need. */
@@ -160,54 +170,75 @@ export class SyncEngine {
    * 30-day TTL sweep has less to do.
    */
   async pull(): Promise<PullResult> {
-    const blindedId = await computeBlindedRecipientIdHex({
-      connectionRoot: this.deps.connectionRoot,
-      recipientPubkey: this.deps.selfPub,
-      date: this.now(),
-    });
+    // Poll today's blinded inbox plus the last `pullLookbackDays` UTC days.
+    // The inbox id is bucketed per UTC day, so an envelope addressed just
+    // before a UTC-midnight rollover — or while we were offline across one —
+    // sits in a day bucket today's id would never match. Without the
+    // look-back it stays stranded (no error, just never delivered) until its
+    // 30-day relay TTL evicts it.
+    const baseMs = this.now().getTime();
     let applied = 0;
     let duplicates = 0;
     let fetched = 0;
-    let cursor: string | undefined;
-    for (;;) {
-      const page = await this.deps.api.listEnvelopes(blindedId, {
-        since: cursor,
-        limit: this.pollLimit,
+    const inboxes: string[] = [];
+    for (let dayOffset = 0; dayOffset <= this.pullLookbackDays; dayOffset++) {
+      const blindedId = await computeBlindedRecipientIdHex({
+        connectionRoot: this.deps.connectionRoot,
+        recipientPubkey: this.deps.selfPub,
+        date: new Date(baseMs - dayOffset * 86_400_000),
       });
-      fetched += page.items.length;
-      for (const env of page.items) {
-        const headerBytes = await base64ToBytes(env.header);
-        const ciphertextBytes = await base64ToBytes(env.ciphertext);
-        const hash = await envelopeHash(headerBytes, ciphertextBytes);
-        if (await isEnvelopeSeen(this.deps.exec, hash)) {
-          duplicates += 1;
-          // The relay row is now redundant — drop it server-side to
-          // keep the inbox tidy. Failures are swallowed: if the DELETE
-          // doesn't go through, the TTL sweep cleans up anyway.
-          try {
-            await this.deps.api.deleteEnvelope(blindedId, env.id);
-          } catch {
-            // best effort
+      inboxes.push(blindedId.slice(0, 8));
+      let cursor: string | undefined;
+      for (;;) {
+        const page = await this.deps.api.listEnvelopes(blindedId, {
+          since: cursor,
+          limit: this.pollLimit,
+        });
+        fetched += page.items.length;
+        for (const env of page.items) {
+          const headerBytes = await base64ToBytes(env.header);
+          const ciphertextBytes = await base64ToBytes(env.ciphertext);
+          const hash = await envelopeHash(headerBytes, ciphertextBytes);
+          if (await isEnvelopeSeen(this.deps.exec, hash)) {
+            duplicates += 1;
+            // The relay row is now redundant — drop it server-side to
+            // keep the inbox tidy. Failures are swallowed: if the DELETE
+            // doesn't go through, the TTL sweep cleans up anyway.
+            try {
+              await this.deps.api.deleteEnvelope(blindedId, env.id);
+            } catch {
+              // best effort
+            }
+            continue;
           }
-          continue;
-        }
-        try {
-          await this.decryptAndApply(headerBytes, ciphertextBytes, hash);
-          applied += 1;
           try {
-            await this.deps.api.deleteEnvelope(blindedId, env.id);
-          } catch {
-            // best effort — same logic as above.
+            await this.decryptAndApply(headerBytes, ciphertextBytes, hash);
+            applied += 1;
+            try {
+              await this.deps.api.deleteEnvelope(blindedId, env.id);
+            } catch {
+              // best effort — same logic as above.
+            }
+          } catch (e) {
+            // A ratchet failure (gap-too-big, AEAD mismatch) or a projector
+            // rejection (author-identity mismatch, etc.) leaves the envelope
+            // on the relay for now. The next pull will see it again; the TTL
+            // eventually evicts it. We do NOT markSeen — that would silently
+            // lose data. Logged (was previously swallowed) because a
+            // persistent failure here is invisible otherwise: the note is
+            // fetched and decrypted but never lands on the receiver.
+            console.warn('[sync] envelope apply failed (left on relay):', (e as Error).message);
           }
-        } catch {
-          // A ratchet failure (gap-too-big, AEAD mismatch, etc.) leaves
-          // the envelope on the relay for now. The next pull cycle
-          // will see it again; the TTL eventually evicts it.
-          // We do NOT markSeen — that would silently lose data.
         }
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
       }
-      if (!page.nextCursor) break;
-      cursor = page.nextCursor;
+    }
+    if (fetched > 0 || applied > 0) {
+      console.log(
+        `[sync] pull self=${inboxes[0]} buckets=[${inboxes.join(',')}] ` +
+          `fetched=${fetched} applied=${applied} dup=${duplicates}`,
+      );
     }
     return { fetched, applied, duplicates };
   }
@@ -234,6 +265,7 @@ export class SyncEngine {
       ciphertext: await bytesToBase64(env.ciphertext),
       sentAt: this.now().toISOString(),
     });
+    console.log(`[sync] sent op=${op.kind} → inbox=${blindedId.slice(0, 8)}`);
   }
 
   private async decryptAndApply(
