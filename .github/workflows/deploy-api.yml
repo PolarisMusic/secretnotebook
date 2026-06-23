@@ -1,0 +1,72 @@
+name: Deploy API
+
+# Auto-deploy the Fastify API to Fly.io when API-relevant code lands on main.
+#
+# The Docker image's entrypoint is `migrate && start` (infra/docker/api.Dockerfile),
+# so any pending DB migrations (infra/db/migrations/*.sql) are applied
+# idempotently before the new revision serves traffic — there is no separate
+# "remember to migrate prod" step.
+#
+# Prerequisites (one-time):
+#   1. `fly.toml` committed at the repo root (it carries no secrets).
+#   2. A repo secret `FLY_API_TOKEN` — create with:
+#        fly tokens create deploy -a polaris-secretnotebook-api
+#      then add under Settings → Secrets and variables → Actions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'infra/db/migrations/**'
+      - 'infra/docker/api.Dockerfile'
+      - 'fly.toml'
+      - '.github/workflows/deploy-api.yml'
+  # Manual trigger from the Actions tab (e.g. to redeploy without a code change).
+  workflow_dispatch: {}
+
+# Serialise deploys and never cancel one mid-flight — a half-applied rolling
+# deploy is the one thing we don't want from a cancellation.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test + deploy API to Fly.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Gate the deploy on a green API build + test suite. The Docker build
+      # compiles the API too, but it never runs the tests — this stops a
+      # broken API from shipping to prod even though the image would build.
+      - name: Build + test API
+        run: |
+          pnpm --filter @secretnotebook/api... build
+          pnpm --filter @secretnotebook/api test
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Uses fly.toml at the repo root (app + build.dockerfile live there),
+      # matching a local `fly deploy`. --remote-only builds on Fly's builder
+      # so the runner needs no Docker.
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
