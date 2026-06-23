@@ -74,6 +74,16 @@ export async function deleteOutbox(exec: SqlExecutor, id: string): Promise<void>
   await exec.execute('DELETE FROM sync_outbox WHERE id = ?', [id]);
 }
 
+/**
+ * Total rows currently queued in `sync_outbox` (sent-but-unacked ops).
+ * Diagnostics only — a depth that never returns to 0 means flush() can't
+ * deliver (the relay POST is failing); see the in-app Sync diagnostics.
+ */
+export async function countOutbox(exec: SqlExecutor): Promise<number> {
+  const rows = await exec.query<{ n: number }>(`SELECT COUNT(*) AS n FROM sync_outbox`, []);
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function bumpOutboxAttempt(
   exec: SqlExecutor,
   args: { id: string; nextAttemptAt: number },

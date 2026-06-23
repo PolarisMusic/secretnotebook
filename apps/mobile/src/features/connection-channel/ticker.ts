@@ -18,6 +18,12 @@ export interface RunSyncCycleOpts {
    * under the 'reconcile' step and never abort the cycle.
    */
   afterPull?: () => Promise<void>;
+  /**
+   * Optional hook run at the end of every cycle with that cycle's flush +
+   * pull results. Used by the in-app Sync diagnostics to mirror live state;
+   * runs after afterPull so a sever that nulls the engine is reflected.
+   */
+  onCycle?: (result: SyncCycleResult) => void;
 }
 
 /**
@@ -49,7 +55,9 @@ export async function runSyncCycle(
       opts.onError?.(e as Error, 'reconcile');
     }
   }
-  return { flushed, pulled };
+  const result = { flushed, pulled };
+  opts.onCycle?.(result);
+  return result;
 }
 
 export const DEFAULT_SYNC_INTERVAL_MS = 15_000;
@@ -64,6 +72,8 @@ export interface UseSyncTickerOpts {
   readonly onError?: (err: Error, step: SyncStep) => void;
   /** Optional post-pull hook (see RunSyncCycleOpts.afterPull). */
   readonly afterPull?: () => Promise<void>;
+  /** Optional per-cycle result hook (see RunSyncCycleOpts.onCycle). */
+  readonly onCycle?: (result: SyncCycleResult) => void;
 }
 
 /**
@@ -83,6 +93,7 @@ export function useSyncTicker(engine: SyncEngine | null, opts: UseSyncTickerOpts
   const runOnMount = opts.runOnMount ?? true;
   const onError = opts.onError;
   const afterPull = opts.afterPull;
+  const onCycle = opts.onCycle;
   const inflight = useRef(false);
 
   useEffect(() => {
@@ -93,7 +104,7 @@ export function useSyncTicker(engine: SyncEngine | null, opts: UseSyncTickerOpts
       if (cancelled || inflight.current) return;
       inflight.current = true;
       try {
-        await runSyncCycle(engine, { onError, afterPull });
+        await runSyncCycle(engine, { onError, afterPull, onCycle });
       } finally {
         inflight.current = false;
       }
@@ -105,5 +116,5 @@ export function useSyncTicker(engine: SyncEngine | null, opts: UseSyncTickerOpts
       cancelled = true;
       clearInterval(handle);
     };
-  }, [engine, intervalMs, runOnMount, onError, afterPull]);
+  }, [engine, intervalMs, runOnMount, onError, afterPull, onCycle]);
 }
