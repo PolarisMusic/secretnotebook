@@ -5,9 +5,14 @@ on:
   push:
     branches: [main]
 
+# Cancel superseded runs on a PR branch (a new push obsoletes the old one),
+# but never cancel a push-to-main run: those are the record that the merged
+# commit passed, and a cancellation reads as a red/skipped check even though
+# every step would have passed. Gating on the event keeps PR feedback fast
+# while letting main runs always finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
