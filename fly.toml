@@ -4,7 +4,7 @@
 # stored here.
 
 app = "polaris-secretnotebook-api"
-primary_region = "iad"
+primary_region = "lax"
 
 [build]
   dockerfile = "infra/docker/api.Dockerfile"
