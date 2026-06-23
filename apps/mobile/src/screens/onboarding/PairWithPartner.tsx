@@ -2,6 +2,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   Share,
   StyleSheet,
@@ -95,6 +96,28 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   const hooks = useMemo<PairingHooks>(
     () => ({
       async confirmCode(code) {
+        // Prefer a biometric confirm (Face/Touch ID, or device passcode via
+        // the authenticate() fallback) as a presence + intent check on the
+        // code match. On a device with no enrolled biometric — where
+        // authenticate() can't succeed and would silently cancel pairing —
+        // fall back to an explicit on-screen confirmation so the anti-MITM
+        // code check still happens. Mirrors the AppLockGate's "never strand
+        // the user" degradation; the orchestrator's contract explicitly
+        // allows a manual confirmation here.
+        const available = await props.biometric.isAvailable();
+        if (!available) {
+          return await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Confirm pairing',
+              `Check that this code matches your partner's screen:\n\n${code}`,
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Codes match', onPress: () => resolve(true) },
+              ],
+              { cancelable: false },
+            );
+          });
+        }
         const ok = await props.biometric.authenticate(
           `Confirm the code shown on both devices: ${code}`,
         );
