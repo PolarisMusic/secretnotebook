@@ -10,4 +10,5 @@ export * from './safeword.js';
 export * from './sha256.js';
 export { bytesToHex, concatBytes, getSodium, hexToBytes } from './sodium.js';
 export type { Sodium } from './sodium.js';
+export * from './utf8.js';
 export * from './x25519.js';

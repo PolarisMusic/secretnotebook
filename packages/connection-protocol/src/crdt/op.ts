@@ -1,3 +1,4 @@
+import { utf8Decode, utf8Encode } from '@secretnotebook/crypto';
 import { z } from 'zod';
 
 const HexString = (bytes: number): z.ZodString =>
@@ -466,11 +467,16 @@ export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 export function serialiseOp(op: CrdtOp): Uint8Array {
   // Validate at the boundary so a malformed op can't poison the wire.
   const parsed = CrdtOpSchema.parse(op);
-  return new TextEncoder().encode(JSON.stringify(parsed));
+  // utf8Encode rather than TextEncoder: Hermes ships TextEncoder but not
+  // TextDecoder, so the symmetric pair below kept the whole op path off the
+  // runtime globals. Output is byte-identical to TextEncoder (standard UTF-8).
+  return utf8Encode(JSON.stringify(parsed));
 }
 
 export function deserialiseOp(bytes: Uint8Array): CrdtOp {
-  const text = new TextDecoder().decode(bytes);
+  // utf8Decode rather than TextDecoder — the global is absent on Hermes and
+  // this threw on every flush()/pull(), so no op ever transferred on device.
+  const text = utf8Decode(bytes);
   const parsed = JSON.parse(text) as unknown;
   return CrdtOpSchema.parse(parsed);
 }
