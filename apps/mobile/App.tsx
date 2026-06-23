@@ -8,8 +8,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { runBoot } from './src/features/boot/run';
 import { useBootStore } from './src/features/boot/store';
 import { wipeAttachmentDirs } from './src/features/attachments/native';
+import { recordSyncCycle, recordSyncError } from './src/features/connection-channel/debug-store';
 import { useSyncEngineStore } from './src/features/connection-channel/store';
-import { useSyncTicker, type SyncStep } from './src/features/connection-channel/ticker';
+import {
+  useSyncTicker,
+  type SyncCycleResult,
+  type SyncStep,
+} from './src/features/connection-channel/ticker';
 import { getSeverState, maybeFinalizeSever } from './src/features/connection/sever';
 import { reconcileUnlockRewards } from './src/features/secret-unlock/store';
 import { useConnectionStore } from './src/state/connection';
@@ -59,7 +64,20 @@ function SyncTicker(): null {
         : undefined,
     [engine, setEngine],
   );
-  useSyncTicker(engine, { afterPull, onError: logSyncError });
+  // Mirror each cycle's flush/pull result + blinded inbox ids into the
+  // diagnostics store so the in-app Sync screen can show live transfer state
+  // on a TestFlight build with no debugger attached. Memoised on the engine
+  // so it doesn't retrigger the ticker effect every render.
+  const onCycle = useMemo(
+    () =>
+      engine
+        ? (result: SyncCycleResult): void => {
+            void recordSyncCycle(engine, result.flushed, result.pulled);
+          }
+        : undefined,
+    [engine],
+  );
+  useSyncTicker(engine, { afterPull, onError: logSyncError, onCycle });
   return null;
 }
 
@@ -71,6 +89,7 @@ function SyncTicker(): null {
  */
 function logSyncError(err: Error, step: SyncStep): void {
   console.warn(`[sync] cycle error in ${step}: ${err.message}`);
+  recordSyncError(step, err.message);
 }
 
 export function App(): JSX.Element {

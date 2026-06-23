@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeWordAlert } from '../components/SafeWordAlert';
 import { SeverBanner } from '../components/SeverBanner';
 import { SavedByYouRoute } from '../screens/connection/SavedByYouRoute';
+import { SyncDebugRoute } from '../screens/diagnostics/SyncDebugRoute';
 import { GlobalFeedRoute } from '../screens/feed/GlobalFeedRoute';
 import { PostDetailRoute } from '../screens/feed/PostDetailRoute';
 import { SubmitPostRoute } from '../screens/feed/SubmitPostRoute';
@@ -30,6 +31,7 @@ export type MainStackParamList = {
   Settings: undefined;
   SafeWord: undefined;
   Pairing: undefined;
+  SyncDebug: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -66,6 +68,7 @@ export function MainStack(): JSX.Element {
         <Stack.Screen name="SecretUnlockList" component={SecretUnlockListRoute} />
         <Stack.Screen name="SecretUnlockDetail" component={SecretUnlockDetailRoute} />
         <Stack.Screen name="Settings" component={SettingsRoute} />
+        <Stack.Screen name="SyncDebug" component={SyncDebugRoute} />
         <Stack.Screen name="SafeWord" component={SafeWordRoute} />
         <Stack.Screen
           name="Pairing"

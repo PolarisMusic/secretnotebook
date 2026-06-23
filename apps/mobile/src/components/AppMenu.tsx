@@ -20,6 +20,7 @@ const ITEMS: readonly MenuItem[] = [
   { key: 'saved', label: 'Saved', target: 'SavedByYou' },
   { key: 'feed', label: 'Feed', target: 'GlobalFeed' },
   { key: 'settings', label: 'Settings', target: 'Settings' },
+  { key: 'diagnostics', label: 'Sync diagnostics', target: 'SyncDebug' },
 ];
 
 /**
