@@ -46,8 +46,8 @@ async function seedAll(exec: SqlExecutor): Promise<void> {
     [SELF, PEER, NOW],
   );
   await exec.execute(
-    `INSERT INTO secret_unlock_reflection (attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at)
-     VALUES ('u1', ?, 'a', 'b', NULL, ?)`,
+    `INSERT INTO secret_unlock_reflection (attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at)
+     VALUES ('u1', ?, 'a', 'b', ?)`,
     [SELF, NOW],
   );
   await exec.execute(

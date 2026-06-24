@@ -388,18 +388,14 @@ export async function applyCrdtOp(
           `applyCrdtOp: secret_unlock.reflect byPubkey does not match sender — refusing to apply`,
         );
       }
+      // The `stars` column from migration 015 is preserved (always NULL now)
+      // rather than dropped — destructive SQL migrations would break any
+      // existing reflection row whose write happened before this change.
       await exec.execute(
         `INSERT OR IGNORE INTO secret_unlock_reflection (
-           attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          op.attemptId,
-          hexToBytes(op.byPubkey),
-          op.appreciate,
-          op.uncomfortable,
-          op.stars ?? null,
-          op.reflectedAt,
-        ],
+           attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at
+         ) VALUES (?, ?, ?, ?, ?)`,
+        [op.attemptId, hexToBytes(op.byPubkey), op.appreciate, op.uncomfortable, op.reflectedAt],
       );
       return;
 

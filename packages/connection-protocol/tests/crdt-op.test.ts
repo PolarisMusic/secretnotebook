@@ -215,18 +215,7 @@ const sampleUnlockReflect: CrdtOp = {
   byPubkey: '22'.repeat(32),
   appreciate: 'I loved that you trusted me with this.',
   uncomfortable: 'Nothing — it felt safe.',
-  stars: 5,
   reflectedAt: 1_700_002_400,
-};
-
-const sampleUnlockReflectNoStars: CrdtOp = {
-  v: 1,
-  kind: 'secret_unlock.reflect',
-  attemptId: ATTEMPT_ID,
-  byPubkey: '11'.repeat(32),
-  appreciate: 'Thank you for doing the prompt.',
-  uncomfortable: 'A little vulnerable, but good.',
-  reflectedAt: 1_700_002_401,
 };
 
 describe('serialiseOp / deserialiseOp round-trip', () => {
@@ -462,16 +451,17 @@ describe('secret-unlock ops round-trip', () => {
     );
   });
 
-  it('round-trips reflect; omits the optional stars key when absent', () => {
+  it('round-trips reflect', () => {
     expect(deserialiseOp(serialiseOp(sampleUnlockReflect))).toEqual(sampleUnlockReflect);
-    const noStars = serialiseOp(sampleUnlockReflectNoStars);
-    expect(new TextDecoder().decode(noStars)).not.toContain('stars');
-    expect(deserialiseOp(noStars)).toEqual(sampleUnlockReflectNoStars);
   });
 
-  it('rejects stars outside 1–5', () => {
-    expect(() => CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 6 })).toThrow();
-    expect(() => CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 0 })).toThrow();
+  it('rejects an extra `stars` field — the rating feature was removed', () => {
+    // .strict() guards against a stale op from an older build smuggling stars
+    // through. An old-build partner running before this lands will have their
+    // reflect op stranded until they rebuild; that's the intended trade.
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 5 } as unknown as CrdtOp),
+    ).toThrow();
   });
 
   it('rejects an empty reflection answer', () => {
