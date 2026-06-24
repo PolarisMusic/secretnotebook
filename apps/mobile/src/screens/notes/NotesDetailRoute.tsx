@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -74,6 +74,27 @@ export function NotesDetailRoute(): JSX.Element {
     },
     [exec, apiClient, fileStore, route.params.id],
   );
+
+  // Auto-load photos so they render on open without a manual "Load photo"
+  // tap. This is NOT a re-fetch: downloadAttachment caches the encrypted blob
+  // locally on first fetch and short-circuits when it's already 'ready'
+  // (pipeline.ts), so revisits only re-decrypt the cached file. Each image is
+  // attempted once per mount; a failure leaves the manual "Retry" button.
+  // Audio stays lazy — it gets a dedicated player rather than auto-decoding.
+  const autoTried = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const r of rows) {
+      if (
+        r.mediaType === 'image' &&
+        !previews[r.id] &&
+        !autoTried.current.has(r.id) &&
+        (r.state === 'ready' || r.state === 'remote')
+      ) {
+        autoTried.current.add(r.id);
+        void handleOpenAttachment(r.id);
+      }
+    }
+  }, [rows, previews, handleOpenAttachment]);
 
   if (!exec) {
     return (
