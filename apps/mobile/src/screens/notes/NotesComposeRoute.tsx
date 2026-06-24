@@ -13,6 +13,7 @@ import {
 } from '../../features/attachments/native';
 import { prepareAttachment } from '../../features/attachments/pipeline';
 import type { PickedMedia, PreparedAttachment } from '../../features/attachments/types';
+import { recordFlush, recordSyncError } from '../../features/connection-channel/debug-store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { randomUuidV4 } from '../../features/connection-channel/uuid';
 import { submitNoteCompose } from '../../features/notes/compose-wiring';
@@ -160,7 +161,14 @@ export function NotesComposeRoute(): JSX.Element {
             // for the next ticker cycle, so the note reaches the partner
             // immediately. Fire-and-forget: the modal closes right away and
             // the engine logs its own result; the ticker retries on failure.
-            void engine.flush();
+            // The result is also recorded into the diagnostics store —
+            // without this, a compose-triggered flush bypasses the ticker's
+            // onCycle hook and the Sync diagnostics panel would still report
+            // attempted=0 even when sends are succeeding.
+            void engine
+              .flush()
+              .then((flushed) => recordFlush(engine, flushed))
+              .catch((e) => recordSyncError('flush', (e as Error).message));
           } else {
             // No partner yet — save a draft for first-connection triage.
             await writePendingNote(exec, { kind, body });
