@@ -15,7 +15,6 @@ import type { UnlockState } from '../../features/secret-unlock/store';
 export interface ReflectionView {
   readonly appreciate: string;
   readonly uncomfortable: string;
-  readonly stars: number | null;
 }
 
 export interface SecretUnlockDetailProps {
@@ -39,41 +38,16 @@ export interface SecretUnlockDetailProps {
   readonly onVerify: () => void;
   readonly onReject: () => void;
   readonly onDisclose: () => void;
-  readonly onReflect: (appreciate: string, uncomfortable: string, stars: number | null) => void;
+  readonly onReflect: (appreciate: string, uncomfortable: string) => void;
   readonly onBack: () => void;
-}
-
-function Stars({
-  value,
-  onChange,
-}: {
-  value: number | null;
-  onChange?: (n: number) => void;
-}): JSX.Element {
-  return (
-    <View style={styles.starsRow}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <Pressable
-          key={n}
-          disabled={onChange == null}
-          hitSlop={6}
-          onPress={() => onChange?.(n)}
-          testID={`unlock.star.${n}`}
-        >
-          <Text style={[styles.star, value != null && n <= value && styles.starOn]}>★</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
 }
 
 function ReflectionForm(props: {
   busy: boolean;
-  onSubmit: (a: string, u: string, s: number | null) => void;
+  onSubmit: (a: string, u: string) => void;
 }): JSX.Element {
   const [appreciate, setAppreciate] = useState('');
   const [uncomfortable, setUncomfortable] = useState('');
-  const [stars, setStars] = useState<number | null>(null);
   const canSubmit = appreciate.trim().length > 0 && uncomfortable.trim().length > 0 && !props.busy;
   return (
     <View style={styles.card}>
@@ -98,13 +72,11 @@ function ReflectionForm(props: {
         onChangeText={setUncomfortable}
         testID="unlock.reflect.uncomfortable"
       />
-      <Text style={styles.question}>Rate this note (optional — doesn't change points)</Text>
-      <Stars value={stars} onChange={setStars} />
       <Pressable
         accessibilityRole="button"
         disabled={!canSubmit}
         style={[styles.primaryBtn, !canSubmit && styles.btnDisabled]}
-        onPress={() => props.onSubmit(appreciate, uncomfortable, stars)}
+        onPress={() => props.onSubmit(appreciate, uncomfortable)}
         testID="unlock.reflect.submit"
       >
         <Text style={[styles.primaryBtnText, !canSubmit && styles.btnTextDisabled]}>
@@ -129,7 +101,6 @@ function ReflectionReadout({
       <Text style={styles.readText}>{reflection.appreciate}</Text>
       <Text style={styles.readLabel}>Uncomfortable</Text>
       <Text style={styles.readText}>{reflection.uncomfortable}</Text>
-      {reflection.stars != null && <Stars value={reflection.stars} />}
     </View>
   );
 }
@@ -343,9 +314,6 @@ const styles = StyleSheet.create({
     minHeight: 64,
     textAlignVertical: 'top',
   },
-  starsRow: { flexDirection: 'row', gap: 6, marginTop: 2 },
-  star: { color: '#3a3a3a', fontSize: 28 },
-  starOn: { color: '#ffd35a' },
   primaryBtn: {
     backgroundColor: '#2a2a3a',
     paddingVertical: 14,

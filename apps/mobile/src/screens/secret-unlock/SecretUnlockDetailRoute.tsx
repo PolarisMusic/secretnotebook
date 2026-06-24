@@ -44,7 +44,7 @@ interface ViewModel {
 }
 
 function reflectionView(r: UnlockReflectionRow | null): ReflectionView | null {
-  return r ? { appreciate: r.appreciate, uncomfortable: r.uncomfortable, stars: r.stars } : null;
+  return r ? { appreciate: r.appreciate, uncomfortable: r.uncomfortable } : null;
 }
 
 /**
@@ -172,14 +172,9 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       onDisclose={() =>
         void run((d) => discloseRevealedNoteToAuthor(d, attemptId), 'Could not reveal')
       }
-      onReflect={(appreciate, uncomfortable, stars) =>
+      onReflect={(appreciate, uncomfortable) =>
         void run(
-          (d) =>
-            reflectOnUnlock(d, attemptId, {
-              appreciate,
-              uncomfortable,
-              ...(stars != null ? { stars } : {}),
-            }),
+          (d) => reflectOnUnlock(d, attemptId, { appreciate, uncomfortable }),
           'Could not save reflection',
         )
       }

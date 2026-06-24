@@ -386,7 +386,12 @@ export type SecretUnlockCancelOp = z.infer<typeof SecretUnlockCancelOpSchema>;
  * One partner's reflection on the revealed note. Add-only, keyed on
  * (attemptId, byPubkey) by the projector. The mutual-reflection award
  * fires once both partners' reflections exist (see ledger_entry.add).
- * `stars` is an optional 1–5 rating — cosmetic, never affects points.
+ *
+ * No star rating: rating your partner 1–5 is the wrong dynamic for a
+ * couples app. A `stars` field shipped briefly and is gone; any in-flight
+ * op from an old build that still carries it will fail strict validation
+ * here, but a quick partner rebuild recovers and the rejection is the
+ * point of `.strict()`.
  */
 export const SecretUnlockReflectOpSchema = z
   .object({
@@ -396,7 +401,6 @@ export const SecretUnlockReflectOpSchema = z
     byPubkey: HexString(32),
     appreciate: z.string().min(1).max(REFLECTION_TEXT_MAX),
     uncomfortable: z.string().min(1).max(REFLECTION_TEXT_MAX),
-    stars: z.number().int().min(1).max(5).optional(),
     reflectedAt: z.number().int().nonnegative(),
   })
   .strict();
