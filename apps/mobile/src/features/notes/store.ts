@@ -1,4 +1,6 @@
 import type {
+  NoteDeleteOp,
+  NoteEditOp,
   NotePublishOp,
   NoteSecretAnnounceOp,
   NoteSecretRevealOp,
@@ -35,6 +37,17 @@ export interface NoteRow {
   /** UUID of the resulting public post on the global feed.
    *  Co-NULL with publishedAt. */
   publishedGlobalPostId: string | null;
+  /** Wall-clock seconds of the most recent applied edit, or NULL if the
+   *  body hasn't been edited since creation. Drives LWW on the projector. */
+  lastEditedAt: number | null;
+  /** Pubkey of whoever made the most recent applied edit. Co-NULL with
+   *  lastEditedAt. Shared notes can be edited by either partner, so this
+   *  is what the UI reads to show "edited by …". */
+  lastEditedBy: Uint8Array | null;
+  /** Wall-clock seconds when the row was tombstoned, or NULL if live.
+   *  listNotes / the unlock pool filter on this; the row itself survives
+   *  with body NULL so a future "show deleted" affordance has the data. */
+  deletedAt: number | null;
 }
 
 interface RawNoteRow {
@@ -46,6 +59,9 @@ interface RawNoteRow {
   revealed_at: number | null;
   published_at: number | null;
   published_global_post_id: string | null;
+  last_edited_at: number | null;
+  last_edited_by: Uint8Array | ArrayBufferLike | null;
+  deleted_at: number | null;
 }
 
 function bytesFromRow(value: Uint8Array | ArrayBufferLike): Uint8Array {
@@ -63,11 +79,15 @@ function rowOf(r: RawNoteRow): NoteRow {
     revealedAt: r.revealed_at,
     publishedAt: r.published_at,
     publishedGlobalPostId: r.published_global_post_id,
+    lastEditedAt: r.last_edited_at,
+    lastEditedBy: r.last_edited_by == null ? null : bytesFromRow(r.last_edited_by),
+    deletedAt: r.deleted_at,
   };
 }
 
 const NOTE_SELECT = `id, kind, author_pubkey, body, created_at, revealed_at,
-                     published_at, published_global_post_id`;
+                     published_at, published_global_post_id,
+                     last_edited_at, last_edited_by, deleted_at`;
 
 /**
  * Anything the note store needs from the host: SQL access for the
@@ -83,7 +103,13 @@ export interface NoteStoreDeps {
   readonly exec: SqlExecutor;
   readonly selfPubkey: Uint8Array;
   readonly enqueue: (
-    op: NoteShareAddOp | NoteSecretAnnounceOp | NoteSecretRevealOp | NotePublishOp,
+    op:
+      | NoteShareAddOp
+      | NoteSecretAnnounceOp
+      | NoteSecretRevealOp
+      | NotePublishOp
+      | NoteEditOp
+      | NoteDeleteOp,
   ) => Promise<void>;
   readonly now?: () => Date;
 }
@@ -271,14 +297,117 @@ export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise
   });
 }
 
-/** Newest first, both kinds. Powers the (forthcoming) Notes screen. */
+/** Newest first, both kinds. Tombstoned (deleted) rows are filtered out
+ *  here so the Notes home doesn't surface them; `deleted_at` is preserved
+ *  on the row for a future "show deleted" affordance. */
 export async function listNotes(exec: SqlExecutor): Promise<NoteRow[]> {
   const rows = await exec.query<RawNoteRow>(
     `SELECT ${NOTE_SELECT}
        FROM note
+      WHERE deleted_at IS NULL
       ORDER BY created_at DESC, id DESC`,
   );
   return rows.map(rowOf);
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Edit a note's body. Permissions:
+ *   - shared: either partner may edit
+ *   - secret: original author only
+ * `selfPubkey` is the editor; the projector's secret-author-only check
+ * mirrors this, so a hostile build can't get past the local guard either.
+ *
+ * Wire behaviour:
+ *   - shared: always enqueue a `note.edit` op (partner has the body)
+ *   - secret pre-reveal: local-only — the partner's body is still NULL
+ *     and the eventual `note.secret.reveal` will carry the current body
+ *   - secret post-reveal: enqueue a `note.edit` op (partner has the body)
+ *
+ * No-op for an empty body or an unchanged body; throws on a missing /
+ * deleted row, a kind mismatch, or a permission failure.
+ */
+export async function editNote(deps: NoteStoreDeps, id: string, newBody: string): Promise<void> {
+  const trimmed = newBody.trim();
+  if (trimmed.length === 0) throw new Error('editNote: body cannot be empty');
+  const row = await getNoteInternal(deps.exec, id);
+  if (!row) throw new Error(`editNote: no note with id ${id}`);
+  if (row.deletedAt != null) throw new Error(`editNote: note ${id} is deleted`);
+  if (row.kind === 'secret' && !sameBytes(row.authorPubkey, deps.selfPubkey)) {
+    throw new Error(`editNote: only the author may edit a secret note`);
+  }
+  if (row.body === trimmed) return; // unchanged → no-op
+
+  const editedAt = nowSec(deps);
+  const partnerNeedsTheOp = row.kind === 'shared' || row.revealedAt != null;
+
+  await deps.exec.transaction(async () => {
+    // Re-read inside the txn: a concurrent edit that landed via the
+    // projector between the outer fetch and this UPDATE can have
+    // last_edited_at > editedAt, in which case we want the LWW guard to
+    // protect us from clobbering the newer body.
+    const fresh = await getNoteInternal(deps.exec, id);
+    if (fresh == null || fresh.deletedAt != null) return;
+    if (fresh.lastEditedAt != null && fresh.lastEditedAt >= editedAt) return;
+    await deps.exec.execute(
+      `UPDATE note
+          SET body = ?, last_edited_at = ?, last_edited_by = ?
+        WHERE id = ?
+          AND deleted_at IS NULL
+          AND (last_edited_at IS NULL OR last_edited_at < ?)`,
+      [trimmed, editedAt, deps.selfPubkey, id, editedAt],
+    );
+    if (partnerNeedsTheOp) {
+      await deps.enqueue({
+        v: 1,
+        kind: 'note.edit',
+        id,
+        editorPubkey: bytesToHex(deps.selfPubkey),
+        body: trimmed,
+        editedAt,
+      });
+    }
+  });
+}
+
+/**
+ * Tombstone a note. Author-only for both kinds (mirroring the projector).
+ * Local row is soft-deleted (body cleared, deleted_at set) and a
+ * `note.delete` op is enqueued for the partner — even for a secret note
+ * that's still pre-reveal, since the partner has a stub row from the
+ * announce that needs to be tombstoned too.
+ *
+ * Idempotent: a second call on an already-deleted row no-ops without
+ * re-enqueueing.
+ */
+export async function deleteNote(deps: NoteStoreDeps, id: string): Promise<void> {
+  const row = await getNoteInternal(deps.exec, id);
+  if (!row) throw new Error(`deleteNote: no note with id ${id}`);
+  if (row.deletedAt != null) return; // already deleted → idempotent no-op
+  if (!sameBytes(row.authorPubkey, deps.selfPubkey)) {
+    throw new Error(`deleteNote: only the author may delete a note`);
+  }
+  const deletedAt = nowSec(deps);
+  await deps.exec.transaction(async () => {
+    const fresh = await getNoteInternal(deps.exec, id);
+    if (fresh?.deletedAt != null) return;
+    await deps.exec.execute(
+      `UPDATE note SET deleted_at = ?, body = NULL WHERE id = ? AND deleted_at IS NULL`,
+      [deletedAt, id],
+    );
+    await deps.enqueue({
+      v: 1,
+      kind: 'note.delete',
+      id,
+      deleterPubkey: bytesToHex(deps.selfPubkey),
+      deletedAt,
+    });
+  });
 }
 
 /**
@@ -410,12 +539,6 @@ export async function publishNote(
   });
 
   return { globalPostId, publishedAt };
-}
-
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
 }
 
 export async function getNote(exec: SqlExecutor, id: string): Promise<NoteRow | null> {

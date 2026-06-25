@@ -67,6 +67,23 @@ const sampleNotePublish: CrdtOp = {
   publishedAt: 1_700_000_500,
 };
 
+const sampleNoteEdit: CrdtOp = {
+  v: 1,
+  kind: 'note.edit',
+  id: '77777777-7777-7777-7777-777777777777',
+  editorPubkey: '11'.repeat(32),
+  body: 'fixed the typo',
+  editedAt: 1_700_000_600,
+};
+
+const sampleNoteDelete: CrdtOp = {
+  v: 1,
+  kind: 'note.delete',
+  id: '77777777-7777-7777-7777-777777777777',
+  deleterPubkey: '11'.repeat(32),
+  deletedAt: 1_700_000_700,
+};
+
 const sampleAttachment: AttachmentDescriptor = {
   id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   blobId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
@@ -260,6 +277,28 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
     expect(() =>
       CrdtOpSchema.parse({ ...sampleNotePublish, publishedGlobalPostId: 'not-a-uuid' }),
     ).toThrow();
+  });
+
+  it('round-trips a note.edit op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteEdit))).toEqual(sampleNoteEdit);
+  });
+
+  it('rejects an empty edit body — body is required and non-empty', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleNoteEdit, body: '' })).toThrow();
+  });
+
+  it('rejects a non-hex editorPubkey', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleNoteEdit, editorPubkey: 'zz'.repeat(32) }),
+    ).toThrow();
+  });
+
+  it('round-trips a note.delete op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteDelete))).toEqual(sampleNoteDelete);
+  });
+
+  it('rejects a non-hex deleterPubkey', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleNoteDelete, deleterPubkey: 'not-hex' })).toThrow();
   });
 
   it('round-trips a connection.role.set op byte-for-byte', () => {
