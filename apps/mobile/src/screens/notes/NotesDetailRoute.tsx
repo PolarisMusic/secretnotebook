@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
-import { createExpoFileStore, playAudioFile } from '../../features/attachments/native';
+import { createExpoFileStore } from '../../features/attachments/native';
 import { downloadAttachment, openAttachment } from '../../features/attachments/pipeline';
 import { listNoteAttachments } from '../../features/attachments/store';
 import type { AttachmentRow } from '../../features/attachments/types';
@@ -112,6 +112,9 @@ export function NotesDetailRoute(): JSX.Element {
     mediaType: r.mediaType,
     state: r.state,
     previewUri: previews[r.id] ?? null,
+    width: r.width,
+    height: r.height,
+    durationMs: r.durationMs,
   }));
 
   async function handleReveal(): Promise<void> {
@@ -140,10 +143,6 @@ export function NotesDetailRoute(): JSX.Element {
       error={error}
       attachments={attachments}
       onOpenAttachment={(id) => void handleOpenAttachment(id)}
-      onPlayAudio={(id) => {
-        const uri = previews[id];
-        if (uri) void playAudioFile(uri);
-      }}
       onBack={() => navigation.goBack()}
       onReveal={() => void handleReveal()}
       onOpenPublishedPost={(id) => navigation.navigate('PostDetail', { id })}
