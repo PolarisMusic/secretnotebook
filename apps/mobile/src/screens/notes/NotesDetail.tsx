@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { NoteRow } from '../../features/notes/store';
+import { AudioPlayer } from './AudioPlayer';
+import { ImageViewerModal } from './ImageViewerModal';
 
 /** One attachment as the detail screen needs to render it. `previewUri` is the
  *  DECRYPTED cache file (set after the user loads it); until then we show a
@@ -11,6 +14,12 @@ export interface DetailAttachment {
   readonly mediaType: 'image' | 'audio';
   readonly state: 'pending' | 'ready' | 'remote' | 'downloading' | 'failed';
   readonly previewUri: string | null;
+  /** Natural pixel dimensions (image) for aspect-ratio rendering; may be null
+   *  on older rows. */
+  readonly width?: number | null;
+  readonly height?: number | null;
+  /** Clip length (audio) in ms, for the player's total-time before load. */
+  readonly durationMs?: number | null;
 }
 
 export interface NotesDetailProps {
@@ -25,8 +34,6 @@ export interface NotesDetailProps {
   readonly attachments?: readonly DetailAttachment[];
   /** Download (if needed) + decrypt the attachment to a preview file. */
   readonly onOpenAttachment?: (id: string) => void;
-  /** Play a decrypted voice note. */
-  readonly onPlayAudio?: (id: string) => void;
 }
 
 function isoDate(secs: number): string {
@@ -40,6 +47,8 @@ function isoDate(secs: number): string {
  */
 export function NotesDetail(props: NotesDetailProps): JSX.Element {
   const { note } = props;
+  // URI of the photo currently open full-screen, or null.
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
 
   return (
     <SafeAreaView style={styles.container} testID="screen.notes-detail">
@@ -81,28 +90,27 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
             <View style={styles.media} testID="notes-detail.media">
               {props.attachments.map((a) => {
                 if (a.previewUri && a.mediaType === 'image') {
-                  return (
-                    <Image
-                      key={a.id}
-                      source={{ uri: a.previewUri }}
-                      style={styles.image}
-                      resizeMode="cover"
-                      testID={`notes-detail.image.${a.id}`}
-                    />
-                  );
-                }
-                if (a.previewUri && a.mediaType === 'audio') {
+                  // Render at the photo's real aspect ratio (flexible box, not
+                  // a fixed landscape crop); tap to open the full-screen viewer.
+                  const ratio = a.width && a.height ? a.width / a.height : 4 / 3;
                   return (
                     <Pressable
                       key={a.id}
-                      accessibilityRole="button"
-                      onPress={() => props.onPlayAudio?.(a.id)}
-                      style={styles.mediaButton}
-                      testID={`notes-detail.play.${a.id}`}
+                      accessibilityRole="imagebutton"
+                      accessibilityLabel="Open photo full screen"
+                      onPress={() => setViewerUri(a.previewUri)}
+                      testID={`notes-detail.image.${a.id}`}
                     >
-                      <Text style={styles.mediaButtonText}>Play voice note</Text>
+                      <Image
+                        source={{ uri: a.previewUri }}
+                        style={[styles.image, { aspectRatio: ratio }]}
+                        resizeMode="cover"
+                      />
                     </Pressable>
                   );
+                }
+                if (a.previewUri && a.mediaType === 'audio') {
+                  return <AudioPlayer key={a.id} uri={a.previewUri} durationMs={a.durationMs} />;
                 }
                 if (a.state === 'downloading') {
                   return (
@@ -167,6 +175,8 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
           ) : null}
         </View>
       ) : null}
+
+      <ImageViewerModal uri={viewerUri} onClose={() => setViewerUri(null)} />
     </SafeAreaView>
   );
 }
@@ -188,8 +198,9 @@ const styles = StyleSheet.create({
   publishedBadgeText: { color: '#9eff9e', fontSize: 13, fontWeight: '600' },
   publishedBadgeMeta: { color: '#5e8e5e', fontSize: 11 },
   media: { gap: 12 },
-  mediaItem: { gap: 8 },
-  image: { width: '100%', height: 220, borderRadius: 10, backgroundColor: '#161616' },
+  // aspectRatio is supplied inline from the photo's real dimensions; maxHeight
+  // keeps a tall portrait from dominating the scroll (the viewer shows it whole).
+  image: { width: '100%', maxHeight: 420, borderRadius: 10, backgroundColor: '#161616' },
   mediaButton: {
     backgroundColor: '#161616',
     paddingVertical: 14,
