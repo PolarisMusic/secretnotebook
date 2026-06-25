@@ -15,6 +15,7 @@ import { sql as secretUnlockSql } from './015-secret-unlock';
 import { sql as severGraceSql } from './016-sever-grace';
 import { sql as hiddenPostsSql } from './017-hidden-posts';
 import { sql as pendingNotesSql } from './018-pending-notes';
+import { sql as noteEditDeleteSql } from './019-note-edit-delete';
 
 export interface Migration {
   readonly id: number;
@@ -42,4 +43,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 16, name: 'sever-grace', sql: severGraceSql },
   { id: 17, name: 'hidden-posts', sql: hiddenPostsSql },
   { id: 18, name: 'pending-notes', sql: pendingNotesSql },
+  { id: 19, name: 'note-edit-delete', sql: noteEditDeleteSql },
 ];

@@ -142,13 +142,3 @@ export async function wipeAttachmentDirs(): Promise<void> {
   await FileSystem.deleteAsync(ENC_DIR, { idempotent: true });
   await FileSystem.deleteAsync(CACHE_DIR, { idempotent: true });
 }
-
-/** Play a decrypted audio cache file through expo-av; resolves when done. */
-export async function playAudioFile(uri: string): Promise<void> {
-  const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
-  sound.setOnPlaybackStatusUpdate((status) => {
-    if (status.isLoaded && status.didJustFinish) {
-      void sound.unloadAsync();
-    }
-  });
-}

@@ -216,14 +216,19 @@ async function countUnlocksStartedTodayBy(
 }
 
 /** How many unrevealed secret notes a given author still holds — the
- *  draw pool. Powers the start gate (≥ MIN_SECRET_POOL). */
+ *  draw pool. Powers the start gate (≥ MIN_SECRET_POOL).
+ *  Tombstoned (deleted_at IS NOT NULL) notes are excluded so a deleted
+ *  secret can't be drawn for an unlock. */
 export async function countUnrevealedSecretsBy(
   exec: SqlExecutor,
   authorPubkey: Uint8Array,
 ): Promise<number> {
   const rows = await exec.query<{ n: number }>(
     `SELECT COUNT(*) AS n FROM note
-      WHERE kind = 'secret' AND author_pubkey = ? AND revealed_at IS NULL`,
+      WHERE kind = 'secret'
+        AND author_pubkey = ?
+        AND revealed_at IS NULL
+        AND deleted_at IS NULL`,
     [authorPubkey],
   );
   return rows[0]?.n ?? 0;
@@ -367,6 +372,7 @@ export async function verifyUnlock(
   const candidates = await deps.exec.query<{ id: string; body: string | null }>(
     `SELECT id, body FROM note
       WHERE kind = 'secret' AND author_pubkey = ? AND revealed_at IS NULL
+        AND deleted_at IS NULL
         AND id NOT IN (
           SELECT revealed_note_id FROM secret_unlock
            WHERE revealed_note_id IS NOT NULL

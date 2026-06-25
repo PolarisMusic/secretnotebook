@@ -201,6 +201,46 @@ export const NotePublishOpSchema = z.object({
 });
 export type NotePublishOp = z.infer<typeof NotePublishOpSchema>;
 
+/**
+ * Edit a note's body. Last-write-wins by `editedAt` — the projector applies
+ * the op only if the local row's `last_edited_at` is strictly older (NULL
+ * counts as oldest). Permissions are enforced at the projector boundary:
+ *
+ *   - shared note: either partner may edit (editorPubkey must match sender)
+ *   - secret note: editor MUST equal the note's original author
+ *
+ * Edits to a tombstoned (deleted) row are dropped — `WHERE deleted_at IS
+ * NULL` guards the projector UPDATE, so a late edit can't resurrect a
+ * deleted note. Attachments cannot be edited via this op; only the body.
+ */
+export const NoteEditOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('note.edit'),
+  id: z.string().uuid(),
+  editorPubkey: HexString(32),
+  body: z.string().min(1).max(NOTE_BODY_MAX),
+  editedAt: z.number().int().nonnegative(),
+});
+export type NoteEditOp = z.infer<typeof NoteEditOpSchema>;
+
+/**
+ * Tombstone a note. Author-only (both kinds): the projector enforces
+ * `deleterPubkey === senderHex === note.author_pubkey`. First delete wins
+ * (`WHERE deleted_at IS NULL`); the projector clears `body` at the same
+ * time so a deleted row's contents leave local storage. The row itself
+ * survives as a tombstone — listNotes / the unlock pool filter on
+ * `deleted_at` so callers see them as gone, but a future "show deleted"
+ * affordance has the data.
+ */
+export const NoteDeleteOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('note.delete'),
+  id: z.string().uuid(),
+  deleterPubkey: HexString(32),
+  deletedAt: z.number().int().nonnegative(),
+});
+export type NoteDeleteOp = z.infer<typeof NoteDeleteOpSchema>;
+
 /** Three-value role taxonomy for now. Widening to additional values
  *  requires a coordinated migration + protocol version bump. */
 export const ConnectionRoleSchema = z.enum(['masculine', 'feminine', 'neutral']);
@@ -447,6 +487,8 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   NoteSecretAnnounceOpSchema,
   NoteSecretRevealOpSchema,
   NotePublishOpSchema,
+  NoteEditOpSchema,
+  NoteDeleteOpSchema,
   ConnectionRoleSetOpSchema,
   ConnectionSafeWordProposeOpSchema,
   ConnectionSafeWordConfirmOpSchema,
