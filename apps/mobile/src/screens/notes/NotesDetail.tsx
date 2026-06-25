@@ -34,6 +34,15 @@ export interface NotesDetailProps {
   readonly attachments?: readonly DetailAttachment[];
   /** Download (if needed) + decrypt the attachment to a preview file. */
   readonly onOpenAttachment?: (id: string) => void;
+  /** True when the viewer is allowed to edit. Shared notes: either partner;
+   *  secret notes: original author only. The route computes this. */
+  readonly canEdit?: boolean;
+  /** True when the viewer is allowed to delete (author only, both kinds). */
+  readonly canDelete?: boolean;
+  /** Navigate to the edit screen for this note. */
+  readonly onEdit?: () => void;
+  /** Confirm + perform the delete. */
+  readonly onDelete?: () => void;
 }
 
 function isoDate(secs: number): string {
@@ -168,6 +177,33 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
             </View>
           ) : null}
 
+          {(props.canEdit || props.canDelete) && note.deletedAt == null ? (
+            <View style={styles.actionRow}>
+              {props.canEdit && props.onEdit ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={props.busy}
+                  onPress={props.onEdit}
+                  testID="notes-detail.edit"
+                  style={[styles.secondaryButton, props.busy && styles.actionDisabled]}
+                >
+                  <Text style={styles.secondaryText}>Edit</Text>
+                </Pressable>
+              ) : null}
+              {props.canDelete && props.onDelete ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={props.busy}
+                  onPress={props.onDelete}
+                  testID="notes-detail.delete"
+                  style={[styles.destructiveButton, props.busy && styles.actionDisabled]}
+                >
+                  <Text style={styles.destructiveText}>Delete</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
           {props.error ? (
             <Text style={styles.errorText} testID="notes-detail.error">
               {props.error}
@@ -219,6 +255,26 @@ const styles = StyleSheet.create({
   },
   actionDisabled: { backgroundColor: '#2a2a2a' },
   actionText: { color: '#0a0a0a', fontWeight: '600' },
+  secondaryButton: {
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  secondaryText: { color: '#cfcfcf', fontWeight: '600', fontSize: 15 },
+  destructiveButton: {
+    backgroundColor: '#2a1414',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#5a2a2a',
+  },
+  destructiveText: { color: '#ffb4b4', fontWeight: '600', fontSize: 15 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   errorText: { color: '#ffb4b4', fontSize: 14 },
 });

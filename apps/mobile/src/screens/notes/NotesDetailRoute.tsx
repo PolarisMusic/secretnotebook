@@ -1,7 +1,7 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
@@ -11,7 +11,7 @@ import { downloadAttachment, openAttachment } from '../../features/attachments/p
 import { listNoteAttachments } from '../../features/attachments/store';
 import type { AttachmentRow } from '../../features/attachments/types';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
-import { getNote, revealSecretNote, type NoteRow } from '../../features/notes/store';
+import { deleteNote, getNote, revealSecretNote, type NoteRow } from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { NotesDetail, type DetailAttachment } from './NotesDetail';
 
@@ -134,6 +134,48 @@ export function NotesDetailRoute(): JSX.Element {
     }
   }
 
+  function handleDelete(): void {
+    if (!engine || !note) return;
+    Alert.alert(
+      'Delete this note?',
+      note.kind === 'shared'
+        ? 'It will be removed for both of you.'
+        : 'Your secret note will be deleted on both devices. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await deleteNote(
+                  { exec: exec!, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
+                  note.id,
+                );
+                navigation.goBack();
+              } catch (e) {
+                setError((e as Error).message ?? 'Could not delete');
+                setBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }
+
+  // Permission gates (mirrored on the store/projector for defence in depth):
+  //   - shared: either partner can edit; only the original author can delete
+  //   - secret: original author only for both
+  // A note that's already been tombstoned exposes neither — the screen
+  // typically hits the missing-note branch anyway because listNotes filters
+  // out deleted rows.
+  const canEdit = note != null && note.deletedAt == null && (note.kind === 'shared' || isAuthor);
+  const canDelete = note != null && note.deletedAt == null && isAuthor;
+
   return (
     <NotesDetail
       note={note}
@@ -146,6 +188,10 @@ export function NotesDetailRoute(): JSX.Element {
       onBack={() => navigation.goBack()}
       onReveal={() => void handleReveal()}
       onOpenPublishedPost={(id) => navigation.navigate('PostDetail', { id })}
+      canEdit={canEdit}
+      canDelete={canDelete}
+      onEdit={note ? () => navigation.navigate('NotesEdit', { id: note.id }) : undefined}
+      onDelete={canDelete ? () => handleDelete() : undefined}
     />
   );
 }

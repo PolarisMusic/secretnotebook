@@ -55,6 +55,7 @@ describe('runMigrations', () => {
       'sever-grace',
       'hidden-posts',
       'pending-notes',
+      'note-edit-delete',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -96,6 +97,7 @@ describe('runMigrations', () => {
       'sever-grace',
       'hidden-posts',
       'pending-notes',
+      'note-edit-delete',
     ]);
   });
 

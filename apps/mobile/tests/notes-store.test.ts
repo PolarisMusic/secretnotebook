@@ -1,5 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import type {
+  NoteDeleteOp,
+  NoteEditOp,
   NotePublishOp,
   NoteSecretAnnounceOp,
   NoteSecretRevealOp,
@@ -11,6 +13,8 @@ import Database from 'better-sqlite3';
 import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import {
+  deleteNote,
+  editNote,
   getNote,
   listNotes,
   publishNote,
@@ -26,7 +30,13 @@ const SELF_PUBKEY = new Uint8Array(32).fill(0x33);
 const FIXED_NOW = new Date('2026-05-21T08:00:00.000Z');
 const FIXED_NOW_SEC = Math.floor(FIXED_NOW.getTime() / 1000);
 
-type EnqueuedOp = NoteShareAddOp | NoteSecretAnnounceOp | NoteSecretRevealOp | NotePublishOp;
+type EnqueuedOp =
+  | NoteShareAddOp
+  | NoteSecretAnnounceOp
+  | NoteSecretRevealOp
+  | NotePublishOp
+  | NoteEditOp
+  | NoteDeleteOp;
 
 interface Harness {
   deps: NoteStoreDeps;
@@ -392,6 +402,133 @@ describe('notes store', () => {
 
       await publishNote(racingDeps, note.id, publish);
       expect(enqueued).toHaveLength(0);
+    });
+  });
+
+  describe('editNote', () => {
+    it('updates the body and enqueues a note.edit op for a shared note', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSharedNote(deps, 'first draft');
+      enqueued.length = 0;
+      await editNote(
+        { ...deps, now: () => new Date(FIXED_NOW.getTime() + 1000) },
+        note.id,
+        'second draft',
+      );
+      const fresh = (await getNote(deps.exec, note.id)) as NonNullable<
+        Awaited<ReturnType<typeof getNote>>
+      >;
+      expect(fresh.body).toBe('second draft');
+      expect(fresh.lastEditedAt).toBe(FIXED_NOW_SEC + 1);
+      expect(enqueued).toHaveLength(1);
+      const op = enqueued[0] as NoteEditOp;
+      expect(op.kind).toBe('note.edit');
+      expect(op.id).toBe(note.id);
+      expect(op.body).toBe('second draft');
+      expect(op.editorPubkey).toBe(bytesToHex(SELF_PUBKEY));
+    });
+
+    it('updates a secret note locally WITHOUT emitting an op (pre-reveal)', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSecretNote(deps, 'sketch');
+      enqueued.length = 0;
+      await editNote(
+        { ...deps, now: () => new Date(FIXED_NOW.getTime() + 1000) },
+        note.id,
+        'polished',
+      );
+      const fresh = (await getNote(deps.exec, note.id)) as NonNullable<
+        Awaited<ReturnType<typeof getNote>>
+      >;
+      expect(fresh.body).toBe('polished');
+      expect(enqueued).toHaveLength(0); // local-only: the reveal will carry the current body
+    });
+
+    it('emits an edit op for a secret note that has already been revealed', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSecretNote(deps, 'shared moment');
+      await revealSecretNote(deps, note.id);
+      enqueued.length = 0;
+      await editNote(
+        { ...deps, now: () => new Date(FIXED_NOW.getTime() + 1000) },
+        note.id,
+        'shared moment, refined',
+      );
+      expect(enqueued).toHaveLength(1);
+      const op = enqueued[0] as NoteEditOp;
+      expect(op.kind).toBe('note.edit');
+      expect(op.body).toBe('shared moment, refined');
+    });
+
+    it('refuses to edit a secret note authored by the partner', async () => {
+      const { deps } = await freshHarness();
+      const PEER = new Uint8Array(32).fill(0x99);
+      // Manually insert a secret row that "belongs" to the peer, mimicking
+      // a partner-announced secret on this device.
+      const id = '11111111-1111-1111-1111-111111111111';
+      await deps.exec.execute(
+        `INSERT INTO note (id, kind, author_pubkey, body, created_at)
+         VALUES (?, 'secret', ?, NULL, ?)`,
+        [id, PEER, FIXED_NOW_SEC],
+      );
+      await expect(editNote(deps, id, 'hijack')).rejects.toThrow(/only the author/);
+    });
+
+    it('rejects an empty body', async () => {
+      const { deps } = await freshHarness();
+      const note = await writeSharedNote(deps, 'a thing');
+      await expect(editNote(deps, note.id, '   ')).rejects.toThrow(/cannot be empty/);
+    });
+  });
+
+  describe('deleteNote', () => {
+    it('tombstones the local row, clears the body, and enqueues a note.delete op', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSharedNote(deps, 'goodbye');
+      enqueued.length = 0;
+      await deleteNote({ ...deps, now: () => new Date(FIXED_NOW.getTime() + 1000) }, note.id);
+      const fresh = (await getNote(deps.exec, note.id)) as NonNullable<
+        Awaited<ReturnType<typeof getNote>>
+      >;
+      expect(fresh.deletedAt).toBe(FIXED_NOW_SEC + 1);
+      expect(fresh.body).toBeNull();
+      expect(enqueued).toHaveLength(1);
+      const op = enqueued[0] as NoteDeleteOp;
+      expect(op.kind).toBe('note.delete');
+      expect(op.id).toBe(note.id);
+      expect(op.deleterPubkey).toBe(bytesToHex(SELF_PUBKEY));
+    });
+
+    it('refuses to delete a note authored by the partner (both kinds)', async () => {
+      const { deps } = await freshHarness();
+      const PEER = new Uint8Array(32).fill(0x99);
+      const id = '22222222-2222-2222-2222-222222222222';
+      await deps.exec.execute(
+        `INSERT INTO note (id, kind, author_pubkey, body, created_at)
+         VALUES (?, 'shared', ?, 'theirs', ?)`,
+        [id, PEER, FIXED_NOW_SEC],
+      );
+      await expect(deleteNote(deps, id)).rejects.toThrow(/only the author/);
+    });
+
+    it('a second delete is a no-op (idempotent)', async () => {
+      const { deps, enqueued } = await freshHarness();
+      const note = await writeSharedNote(deps, 'goodbye');
+      enqueued.length = 0;
+      await deleteNote(deps, note.id);
+      await deleteNote(deps, note.id);
+      expect(enqueued).toHaveLength(1);
+    });
+  });
+
+  describe('listNotes', () => {
+    it('filters out tombstoned rows', async () => {
+      const { deps } = await freshHarness();
+      const keep = await writeSharedNote(deps, 'keep me');
+      const gone = await writeSharedNote(deps, 'goodbye');
+      await deleteNote(deps, gone.id);
+      const rows = await listNotes(deps.exec);
+      expect(rows.map((r) => r.id)).toEqual([keep.id]);
     });
   });
 });
