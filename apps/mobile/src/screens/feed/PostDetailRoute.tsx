@@ -15,7 +15,7 @@ import {
   type SavedPostStoreDeps,
 } from '../../features/connection-channel/saved-post-store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
-import { promptForFlag } from '../../features/feed/flag-prompt';
+import { FlagSheet } from '../../features/feed/FlagSheet';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { PostDetail } from './PostDetail';
 
@@ -73,16 +73,15 @@ export function PostDetailRoute(): JSX.Element {
     },
     [unhideMut],
   );
-  const onFlag = useCallback(
-    (_id: string) => {
-      void promptForFlag((category, detail) =>
-        flagMut.mutateAsync({
-          id: route.params.id,
-          category,
-          ...(detail !== undefined ? { detail } : {}),
-        }),
-      );
-    },
+  const [flagOpen, setFlagOpen] = useState(false);
+  const onFlag = useCallback((_id: string) => setFlagOpen(true), []);
+  const onFlagSubmit = useCallback(
+    (category: Parameters<typeof flagMut.mutateAsync>[0]['category'], detail: string | undefined) =>
+      flagMut.mutateAsync({
+        id: route.params.id,
+        category,
+        ...(detail !== undefined ? { detail } : {}),
+      }),
     [flagMut, route.params.id],
   );
 
@@ -149,19 +148,22 @@ export function PostDetailRoute(): JSX.Element {
   }
 
   return (
-    <PostDetail
-      post={query.data ?? null}
-      isLoading={query.isLoading}
-      error={query.error}
-      onBack={() => navigation.goBack()}
-      onHide={(id) => void onHide(id)}
-      onUnhide={(id) => void onUnhide(id)}
-      onFlag={onFlag}
-      onSave={engine ? onSave : undefined}
-      onUnsave={engine ? onUnsave : undefined}
-      alreadySaved={savedRowId != null}
-      hiddenLocally={hiddenLocally}
-    />
+    <>
+      <PostDetail
+        post={query.data ?? null}
+        isLoading={query.isLoading}
+        error={query.error}
+        onBack={() => navigation.goBack()}
+        onHide={(id) => void onHide(id)}
+        onUnhide={(id) => void onUnhide(id)}
+        onFlag={onFlag}
+        onSave={engine ? onSave : undefined}
+        onUnsave={engine ? onUnsave : undefined}
+        alreadySaved={savedRowId != null}
+        hiddenLocally={hiddenLocally}
+      />
+      <FlagSheet visible={flagOpen} onClose={() => setFlagOpen(false)} onSubmit={onFlagSubmit} />
+    </>
   );
 }
 

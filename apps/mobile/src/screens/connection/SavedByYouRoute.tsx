@@ -1,8 +1,9 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 
+import { ActionSheet, type ActionSheetAction } from '../../components/ActionSheet';
 import { useDatabaseStore } from '../../db/store';
 import { getCachedPost } from '../../features/api/cache';
 import {
@@ -33,6 +34,7 @@ export function SavedByYouRoute(): JSX.Element {
   const engine = useSyncEngineStore((s) => s.engine);
   const [items, setItems] = useState<SavedByYouItem[] | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selected, setSelected] = useState<SavedByYouItem | null>(null);
 
   const refresh = useCallback(async () => {
     if (!exec || !engine) {
@@ -92,59 +94,80 @@ export function SavedByYouRoute(): JSX.Element {
     [exec, engine],
   );
 
-  const onSelect = useCallback(
-    (item: SavedByYouItem) => {
-      const body = item.bodyPreview?.trim() ?? '';
-      const canPromote = body.length > 0;
-      const buttons: Array<{
-        text: string;
-        style?: 'cancel' | 'destructive';
-        onPress?: () => void;
-      }> = [
-        {
-          text: 'Open',
-          onPress: () => navigation.navigate('PostDetail', { id: item.globalPostId }),
-        },
-      ];
-      if (canPromote && engine) {
-        buttons.push({
-          text: 'Add to shared notes',
-          onPress: () => void promoteToNote('shared', body),
-        });
-        buttons.push({
-          text: 'Add to secret notes',
-          onPress: () => void promoteToNote('secret', body),
-        });
-      }
-      buttons.push({
-        text: 'Remove from saved',
-        style: 'destructive',
+  const close = useCallback(() => setSelected(null), []);
+
+  const actions = useMemo<ReadonlyArray<ActionSheetAction>>(() => {
+    if (!selected) return [];
+    const body = selected.bodyPreview?.trim() ?? '';
+    const canPromote = body.length > 0;
+    const acts: ActionSheetAction[] = [
+      {
+        label: 'Open',
+        testID: 'saved-by-you.action.open',
         onPress: () => {
-          if (!exec) return;
-          void (async () => {
-            try {
-              await removeSavedPost(exec, item.savedPostId);
-              await refresh();
-            } catch (e) {
-              Alert.alert('Could not remove', (e as Error).message);
-            }
-          })();
+          close();
+          navigation.navigate('PostDetail', { id: selected.globalPostId });
+        },
+      },
+    ];
+    if (canPromote && engine) {
+      acts.push({
+        label: 'Add to shared notes',
+        testID: 'saved-by-you.action.share',
+        onPress: () => {
+          close();
+          void promoteToNote('shared', body);
         },
       });
-      buttons.push({ text: 'Cancel', style: 'cancel' });
-      Alert.alert('Saved post', canPromote ? body.slice(0, 200) : '', buttons);
-    },
-    [exec, engine, navigation, promoteToNote, refresh],
-  );
+      acts.push({
+        label: 'Add to secret notes',
+        testID: 'saved-by-you.action.secret',
+        onPress: () => {
+          close();
+          void promoteToNote('secret', body);
+        },
+      });
+    }
+    acts.push({
+      label: 'Remove from saved',
+      style: 'destructive',
+      testID: 'saved-by-you.action.remove',
+      onPress: () => {
+        close();
+        if (!exec) return;
+        void (async () => {
+          try {
+            await removeSavedPost(exec, selected.savedPostId);
+            await refresh();
+          } catch (e) {
+            Alert.alert('Could not remove', (e as Error).message);
+          }
+        })();
+      },
+    });
+    return acts;
+  }, [selected, engine, exec, navigation, promoteToNote, refresh, close]);
+
+  const messageBody = selected?.bodyPreview?.trim().slice(0, 200) ?? '';
 
   return (
-    <SavedByYou
-      items={items ?? []}
-      isLoading={items == null}
-      isRefreshing={isRefreshing}
-      onRefresh={() => void refresh()}
-      onBack={() => navigation.goBack()}
-      onSelect={onSelect}
-    />
+    <>
+      <SavedByYou
+        items={items ?? []}
+        isLoading={items == null}
+        isRefreshing={isRefreshing}
+        onRefresh={() => void refresh()}
+        onBack={() => navigation.goBack()}
+        onSelect={setSelected}
+      />
+      <ActionSheet
+        visible={selected != null}
+        title="Saved post"
+        message={messageBody.length > 0 ? messageBody : undefined}
+        actions={actions}
+        onCancel={close}
+        testID="saved-by-you.sheet"
+      />
+    </>
   );
 }

@@ -8,7 +8,7 @@ import { useDatabaseStore } from '../../db/store';
 import { listHiddenPostIds } from '../../features/api/cache';
 import { useApiStore } from '../../features/api/store';
 import { useFlagPost, useHidePost, usePostsFeed, useUnhidePost } from '../../features/api/queries';
-import { promptForFlag } from '../../features/feed/flag-prompt';
+import { FlagSheet } from '../../features/feed/FlagSheet';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getMyRole, type ConnectionRole } from '../../features/connection/role-store';
 import { effectiveAudience } from '../../features/feed/audience';
@@ -98,13 +98,21 @@ export function GlobalFeedRoute(): JSX.Element {
     },
     [unhideMut, refreshHidden],
   );
-  const onFlagPost = useCallback(
-    (id: string) => {
-      void promptForFlag((category, detail) =>
-        flagMut.mutateAsync({ id, category, ...(detail !== undefined ? { detail } : {}) }),
-      );
+  const [flagTargetId, setFlagTargetId] = useState<string | null>(null);
+  const onFlagPost = useCallback((id: string) => setFlagTargetId(id), []);
+  const onFlagSubmit = useCallback(
+    (
+      category: Parameters<typeof flagMut.mutateAsync>[0]['category'],
+      detail: string | undefined,
+    ) => {
+      if (!flagTargetId) return Promise.resolve();
+      return flagMut.mutateAsync({
+        id: flagTargetId,
+        category,
+        ...(detail !== undefined ? { detail } : {}),
+      });
     },
-    [flagMut],
+    [flagMut, flagTargetId],
   );
 
   if (!client) {
@@ -137,6 +145,11 @@ export function GlobalFeedRoute(): JSX.Element {
         hiddenLocallyIds={hiddenIds}
         roleFilter={roleFilter}
         onSetFilter={setFilterOn}
+      />
+      <FlagSheet
+        visible={flagTargetId != null}
+        onClose={() => setFlagTargetId(null)}
+        onSubmit={onFlagSubmit}
       />
     </View>
   );
