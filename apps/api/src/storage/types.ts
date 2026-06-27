@@ -148,3 +148,56 @@ export interface BlobStore {
   /** Sweep TTL-expired rows. Returns the number deleted. */
   purgeExpired(now: Date): Promise<number>;
 }
+
+/**
+ * Relationship-prompt row. `key` is the stable identifier mobile ops
+ * carry; `categories` is whatever JSON array of strings the admin set.
+ * Source attribution + sponsorship are optional metadata for the mobile
+ * renderer. `retiredAt` is the soft-delete marker — a retired row stays
+ * in storage so historical op references still resolve text, but
+ * `listActive` skips it.
+ */
+export interface StoredPrompt {
+  key: string;
+  text: string;
+  categories: string[];
+  sourceName: string | null;
+  sourceUrl: string | null;
+  sponsored: boolean;
+  retiredAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface NewPromptInput {
+  key: string;
+  text: string;
+  categories: string[];
+  sourceName?: string | null;
+  sourceUrl?: string | null;
+  sponsored?: boolean;
+}
+
+export interface PromptPatch {
+  text?: string;
+  categories?: string[];
+  sourceName?: string | null;
+  sourceUrl?: string | null;
+  sponsored?: boolean;
+}
+
+export interface PromptsStore {
+  /** Active (non-retired) prompts, ordered by key. The public mobile
+   *  fetch path uses this. */
+  listActive(): Promise<StoredPrompt[]>;
+  /** Every prompt, retired included; admin list. */
+  listAll(): Promise<StoredPrompt[]>;
+  findByKey(key: string): Promise<StoredPrompt | null>;
+  create(input: NewPromptInput, now: Date): Promise<StoredPrompt>;
+  /** Partial update. Returns the updated row, or null if no row matched. */
+  update(key: string, patch: PromptPatch, now: Date): Promise<StoredPrompt | null>;
+  /** Sets retired_at = now. Returns false if no row matched or already retired. */
+  retire(key: string, now: Date): Promise<boolean>;
+  /** Clears retired_at. Returns false if no row matched or not retired. */
+  unretire(key: string, now: Date): Promise<boolean>;
+}

@@ -9,13 +9,22 @@ import {
 } from 'fastify-type-provider-zod';
 import httpSignaturePlugin, { HEADER_PUBKEY } from './auth/http-signature.js';
 import type { Env } from './config.js';
+import { adminPromptsRoute } from './routes/admin-prompts.js';
+import { adminUiRoute } from './routes/admin-ui.js';
 import { blobsRoute } from './routes/blobs.js';
 import { devicesRoute } from './routes/devices.js';
 import { healthRoute } from './routes/health.js';
 import { pairRendezvousRoute } from './routes/pair-rendezvous.js';
 import { postsRoute } from './routes/posts.js';
+import { promptsRoute } from './routes/prompts.js';
 import { relayRoute } from './routes/relay.js';
-import type { BlobStore, DevicesStore, PostsStore, RelayStore } from './storage/types.js';
+import type {
+  BlobStore,
+  DevicesStore,
+  PostsStore,
+  PromptsStore,
+  RelayStore,
+} from './storage/types.js';
 
 export interface BuildAppOptions {
   env: Env;
@@ -24,6 +33,7 @@ export interface BuildAppOptions {
   devicesStore: DevicesStore;
   relayStore: RelayStore;
   blobsStore: BlobStore;
+  promptsStore: PromptsStore;
 }
 
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
@@ -94,6 +104,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     ttlMs: opts.env.BLOB_TTL_DAYS * 24 * 60 * 60 * 1000,
     maxBytes: opts.env.BLOB_MAX_BYTES,
   });
+  // Public prompt-library fetch — mobile clients cache locally.
+  await app.register(promptsRoute, { store: opts.promptsStore, now: nowDate });
+  // Admin surface only registers when ADMIN_TOKEN is set — a fresh
+  // deploy has no admin endpoints at all.
+  if (opts.env.ADMIN_TOKEN) {
+    const token = opts.env.ADMIN_TOKEN;
+    await app.register(adminPromptsRoute, { store: opts.promptsStore, token, now: nowDate });
+    await app.register(adminUiRoute, { store: opts.promptsStore, token, now: nowDate });
+  }
 
   return app;
 }

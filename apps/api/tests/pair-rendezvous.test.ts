@@ -6,6 +6,8 @@ import {
   MemoryBlobStore,
   MemoryDevicesStore,
   MemoryPostsStore,
+  MemoryPromptsStore,
+  MemoryPromptsStore,
   MemoryRelayStore,
 } from './helpers/memory-stores.js';
 
@@ -23,6 +25,7 @@ async function setupApp(): Promise<FastifyInstance> {
     devicesStore: new MemoryDevicesStore(),
     relayStore: new MemoryRelayStore(),
     blobsStore: new MemoryBlobStore(),
+    promptsStore: new MemoryPromptsStore(),
   });
 }
 

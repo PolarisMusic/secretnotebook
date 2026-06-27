@@ -7,6 +7,7 @@ import {
   MemoryBlobStore,
   MemoryDevicesStore,
   MemoryPostsStore,
+  MemoryPromptsStore,
   MemoryRelayStore,
 } from './helpers/memory-stores.js';
 import { buildSignedRequest } from './helpers/signed-inject.js';
@@ -33,6 +34,7 @@ async function setupApp(): Promise<TestCtx> {
     devicesStore: new MemoryDevicesStore(),
     relayStore: relay,
     blobsStore: new MemoryBlobStore(),
+    promptsStore: new MemoryPromptsStore(),
   });
   return { app, relay, ttlMs: 30 * 24 * 60 * 60 * 1000 };
 }

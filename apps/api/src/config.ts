@@ -17,6 +17,12 @@ const EnvSchema = z.object({
     .int()
     .positive()
     .default(32 * 1024 * 1024),
+  /** Bearer token for the prompt admin surface (/v1/admin/prompts and
+   *  /v1/admin/ui). When unset, the admin surface is NOT registered —
+   *  the operator must set this to opt in, so no admin endpoints exist
+   *  on a fresh deploy by accident. Minimum 16 chars for any chance at
+   *  brute-force resistance. */
+  ADMIN_TOKEN: z.string().min(16).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
