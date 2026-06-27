@@ -26,8 +26,14 @@ export interface GlobalFeedProps {
   readonly onCompose: () => void;
   /** Hide a post for this device only (local). */
   readonly onHidePost: (id: string) => void;
+  /** Reverse a local hide for this device. */
+  readonly onUnhidePost: (id: string) => void;
   /** Report a post for moderation (the Route prompts for a category). */
   readonly onFlagPost: (id: string) => void;
+  /** Posts hidden locally on this device. Rendered collapsed (was: filtered
+   *  out entirely). Tap a collapsed row to navigate to the detail page,
+   *  where the body can be shown anyway. */
+  readonly hiddenLocallyIds: ReadonlySet<string>;
   /** Role filter state, or null when the viewer has no role (neutral /
    *  unpaired) — in which case no toggle is shown and the feed is unfiltered. */
   readonly roleFilter?: { readonly on: boolean } | null;
@@ -43,7 +49,16 @@ export interface GlobalFeedProps {
 export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
   const renderItem = useCallback(
     ({ item }: { item: Post }) => {
-      const obscured = item.flags.length > 0;
+      // Three obscured states, in order of precedence:
+      //   1. revealsPersonal — strictest server flag; no "show anyway" path
+      //   2. flagged          — any other server flag; body withheld upstream
+      //   3. hiddenLocally    — viewer hid this post; body still in payload
+      // Rows in any of these states collapse to a stub; tap routes to the
+      // detail screen where a viewer-controlled reveal lives (for kinds 2/3).
+      const revealsPersonal = item.flags.includes('reveals_personal_details');
+      const flagged = item.flags.length > 0;
+      const hiddenLocally = props.hiddenLocallyIds.has(item.id);
+      const collapsed = flagged || hiddenLocally;
       return (
         <View style={styles.row}>
           <Pressable
@@ -52,9 +67,17 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
             onPress={() => props.onSelectPost(item.id)}
             style={styles.rowMain}
           >
-            {obscured ? (
+            {revealsPersonal ? (
+              <Text style={styles.obscured} testID={`feed.post.${item.id}.reveals_personal`}>
+                ⛔ Hidden permanently — flagged as revealing personal details
+              </Text>
+            ) : flagged ? (
               <Text style={styles.obscured} testID={`feed.post.${item.id}.obscured`}>
-                ⚠️ Content hidden — flagged as {item.flags.join(', ')}
+                ⚠️ Flagged as {item.flags.join(', ')} · tap to view
+              </Text>
+            ) : hiddenLocally ? (
+              <Text style={styles.obscured} testID={`feed.post.${item.id}.hidden_local`}>
+                · Hidden by you · tap to view
               </Text>
             ) : (
               <Text style={styles.rowBody} numberOfLines={3}>
@@ -67,15 +90,26 @@ export function GlobalFeed(props: GlobalFeedProps): JSX.Element {
             </Text>
           </Pressable>
           <View style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => props.onHidePost(item.id)}
-              testID={`feed.post.${item.id}.hide`}
-            >
-              <Text style={styles.actionText}>Hide</Text>
-            </Pressable>
-            {!obscured && (
+            {hiddenLocally ? (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => props.onUnhidePost(item.id)}
+                testID={`feed.post.${item.id}.unhide`}
+              >
+                <Text style={styles.actionText}>Unhide</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => props.onHidePost(item.id)}
+                testID={`feed.post.${item.id}.hide`}
+              >
+                <Text style={styles.actionText}>Hide</Text>
+              </Pressable>
+            )}
+            {!collapsed && (
               <Pressable
                 accessibilityRole="button"
                 hitSlop={8}
