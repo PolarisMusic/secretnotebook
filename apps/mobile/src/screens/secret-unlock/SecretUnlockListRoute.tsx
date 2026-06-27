@@ -155,7 +155,9 @@ export function SecretUnlockListRoute(): JSX.Element {
         peerPubkey: engine.peerPub,
         enqueue: (op) => engine.enqueue(op),
       });
-      navigation.navigate('SecretUnlockDetail', { id: attempt.id });
+      // intro=true tells the detail screen to play the shuffle animation
+      // once before settling on the drawn prompt.
+      navigation.navigate('SecretUnlockDetail', { id: attempt.id, intro: true });
     } catch (e) {
       Alert.alert('Could not start', (e as Error).message);
     }

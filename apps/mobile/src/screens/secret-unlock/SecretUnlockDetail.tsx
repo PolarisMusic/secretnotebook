@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -22,6 +22,12 @@ export interface SecretUnlockDetailProps {
   readonly role: 'author' | 'unlocker';
   readonly state: UnlockState;
   readonly promptText: string;
+  /** Whether to render the prompt text at all. The Author is blind to the
+   *  drawn prompt until the Unlocker submits ("asks for verification"). */
+  readonly showPrompt: boolean;
+  /** When non-null, the prompt card flashes through these random snippets
+   *  before settling on `promptText` — the on-start "shuffle" animation. */
+  readonly shuffleTexts: readonly string[] | null;
   /** The revealed secret's body, or null (media-only / not yet readable here). */
   readonly revealedBody: string | null;
   readonly revealedHasMedia: boolean;
@@ -40,6 +46,54 @@ export interface SecretUnlockDetailProps {
   readonly onDisclose: () => void;
   readonly onReflect: (appreciate: string, uncomfortable: string) => void;
   readonly onBack: () => void;
+}
+
+const SHUFFLE_TICK_MS = 150;
+const SHUFFLE_TICKS = 9;
+
+function PromptCard(props: {
+  role: 'author' | 'unlocker';
+  promptText: string;
+  shuffleTexts: readonly string[] | null;
+}): JSX.Element {
+  // `tick` counts up while the shuffle plays; null means settled on the
+  // real prompt. The shuffle only fires when `shuffleTexts` was non-null at
+  // mount — re-entries with the real text only render statically.
+  const [tick, setTick] = useState<number | null>(
+    props.shuffleTexts && props.shuffleTexts.length > 0 ? 0 : null,
+  );
+  useEffect(() => {
+    if (tick == null) return;
+    if (!props.shuffleTexts || props.shuffleTexts.length === 0) {
+      setTick(null);
+      return;
+    }
+    const handle = setInterval(() => {
+      setTick((prev) => {
+        if (prev == null) return null;
+        if (prev + 1 >= SHUFFLE_TICKS) {
+          clearInterval(handle);
+          return null;
+        }
+        return prev + 1;
+      });
+    }, SHUFFLE_TICK_MS);
+    return () => clearInterval(handle);
+  }, []);
+
+  const display =
+    tick != null && props.shuffleTexts && props.shuffleTexts.length > 0
+      ? (props.shuffleTexts[tick % props.shuffleTexts.length] ?? props.promptText)
+      : props.promptText;
+
+  return (
+    <View style={styles.card} testID="unlock.prompt">
+      <Text style={styles.cardTitle}>
+        {props.role === 'unlocker' ? 'Your prompt' : 'Their prompt'}
+      </Text>
+      <Text style={[styles.prompt, tick != null && styles.promptShuffling]}>{display}</Text>
+    </View>
+  );
 }
 
 function ReflectionForm(props: {
@@ -138,12 +192,17 @@ export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element 
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {role === 'unlocker' ? 'Your prompt' : 'Their prompt'}
-          </Text>
-          <Text style={styles.prompt}>{props.promptText}</Text>
-        </View>
+        {props.showPrompt ? (
+          <PromptCard role={role} promptText={props.promptText} shuffleTexts={props.shuffleTexts} />
+        ) : (
+          <View style={styles.card} testID="unlock.prompt.hidden">
+            <Text style={styles.cardTitle}>Their prompt</Text>
+            <Text style={styles.note}>
+              Your partner is working on a prompt. You'll see what it was when they ask you to
+              verify.
+            </Text>
+          </View>
+        )}
 
         {/* Action block by state. */}
         {(state === 'assigned' || state === 'returned') && role === 'unlocker' && (
@@ -302,6 +361,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#161616', borderRadius: 12, padding: 16, gap: 10 },
   cardTitle: { color: '#9ec5ff', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   prompt: { color: '#f5f5f5', fontSize: 18, lineHeight: 25 },
+  promptShuffling: { opacity: 0.45 },
   note: { color: '#b5b5b5', fontSize: 14, lineHeight: 20 },
   secret: { color: '#f5f5f5', fontSize: 16, lineHeight: 23 },
   question: { color: '#cdcdcd', fontSize: 14, fontWeight: '600', marginTop: 4 },

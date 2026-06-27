@@ -106,3 +106,17 @@ export function drawPromptKey(rng: () => number = Math.random): string {
   const safe = Math.min(Math.max(idx, 0), UNLOCK_PROMPTS.length - 1);
   return (UNLOCK_PROMPTS[safe] ?? UNLOCK_PROMPTS[0]).key;
 }
+
+/**
+ * Pick `n` random prompt texts from the live pool to feed the unlock-start
+ * shuffle animation. Duplicates are allowed (the cycle just flashes by);
+ * `n` is clamped to be at least 1 even if the pool is empty.
+ */
+export function drawRandomPromptTexts(n: number, rng: () => number = Math.random): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < Math.max(1, n); i++) {
+    const idx = Math.min(Math.floor(rng() * UNLOCK_PROMPTS.length), UNLOCK_PROMPTS.length - 1);
+    out.push((UNLOCK_PROMPTS[idx] ?? UNLOCK_PROMPTS[0]).text);
+  }
+  return out;
+}

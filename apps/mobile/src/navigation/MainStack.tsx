@@ -29,7 +29,7 @@ export type MainStackParamList = {
   PostDetail: { id: string };
   SavedByYou: undefined;
   SecretUnlockList: undefined;
-  SecretUnlockDetail: { id: string };
+  SecretUnlockDetail: { id: string; intro?: boolean };
   Settings: undefined;
   SafeWord: undefined;
   Pairing: undefined;
