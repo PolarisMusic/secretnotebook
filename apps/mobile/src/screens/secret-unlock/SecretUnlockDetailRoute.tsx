@@ -9,7 +9,7 @@ import { useDatabaseStore } from '../../db/store';
 import { listNoteAttachments } from '../../features/attachments/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getNote } from '../../features/notes/store';
-import { resolvePromptText } from '../../features/secret-unlock/prompts';
+import { findPrompt, resolvePromptText } from '../../features/secret-unlock/prompts';
 import {
   cancelUnlock,
   discloseRevealedNoteToAuthor,
@@ -25,7 +25,11 @@ import {
   type UnlockState,
 } from '../../features/secret-unlock/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
-import { SecretUnlockDetail, type ReflectionView } from './SecretUnlockDetail';
+import {
+  SecretUnlockDetail,
+  type PromptSourceView,
+  type ReflectionView,
+} from './SecretUnlockDetail';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 type Rt = RouteProp<MainStackParamList, 'SecretUnlockDetail'>;
@@ -34,6 +38,7 @@ interface ViewModel {
   role: 'author' | 'unlocker';
   state: UnlockState;
   promptText: string;
+  promptSource: PromptSourceView | null;
   revealedBody: string | null;
   revealedHasMedia: boolean;
   showSecret: boolean;
@@ -114,10 +119,21 @@ export function SecretUnlockDetailRoute(): JSX.Element {
           ])
         : [null, null, false];
 
+    const prompt = findPrompt(attempt.promptKey);
+    const promptSource: PromptSourceView | null =
+      prompt && (prompt.sourceName || prompt.sponsored)
+        ? {
+            name: prompt.sourceName ?? null,
+            url: prompt.sourceUrl ?? null,
+            sponsored: prompt.sponsored ?? false,
+          }
+        : null;
+
     setVm({
       role,
       state: attempt.state,
       promptText: resolvePromptText(attempt.promptKey),
+      promptSource,
       revealedBody,
       revealedHasMedia,
       showSecret,
@@ -156,6 +172,7 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       role={vm?.role ?? 'unlocker'}
       state={vm?.state ?? 'assigned'}
       promptText={vm?.promptText ?? ''}
+      promptSource={vm?.promptSource ?? null}
       revealedBody={vm?.revealedBody ?? null}
       revealedHasMedia={vm?.revealedHasMedia ?? false}
       showSecret={vm?.showSecret ?? false}

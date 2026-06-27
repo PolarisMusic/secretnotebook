@@ -1,18 +1,25 @@
 import { isPromptCategory, type PromptCategory } from './categories';
+import { getCachedPrompts } from './prompt-cache';
 
 /**
- * R7 relationship-prompt library. Static, on-device content — the unlock
- * loop draws one prompt for the Unlocker to act on. Ops carry only the
- * stable `key`; the text is resolved here at render time, so editing or
- * expanding copy never breaks an in-flight attempt (an unknown key falls
- * back to a neutral line rather than throwing).
+ * R7 relationship-prompt library. Prompts now live on the API server;
+ * the mobile boot path fetches `/v1/prompts` into a local cache and the
+ * resolve / draw paths read from that cache when warm. The constants
+ * below are the bundled fallback shipped with the app — they're what
+ * a cold install draws from before the first successful sync, and what
+ * historical-op key resolution falls back to if a row has since been
+ * dropped from the server set.
+ *
+ * Ops carry only the stable `key`; the text is resolved at render time,
+ * so editing or expanding copy never breaks an in-flight attempt (an
+ * unknown key falls back to a neutral line rather than throwing).
  *
  * Each prompt is tagged with one or more `categories`. The draw pool at
  * `drawPromptKey` time is intersected against each partner's enabled
  * categories (per `prompt_preference`), so a prompt qualifies iff it
  * carries at least one category each partner has on. `general` is the
- * universal safety tag and is on every prompt — a couple with only
- * `general` enabled still has the full pool.
+ * universal safety tag and is on every bundled prompt — a couple with
+ * only `general` enabled still has the full pool.
  *
  * Keep keys append-only and stable: a key that has shipped in an op must
  * keep resolving. Retire a prompt by removing it from the draw pool while
@@ -22,6 +29,13 @@ export interface UnlockPrompt {
   readonly key: string;
   readonly text: string;
   readonly categories: readonly PromptCategory[];
+  /** External library / author attribution, when the prompt came from a
+   *  named source the admin imported via the portal. */
+  readonly sourceName?: string | null;
+  /** Optional link to the source — used to render an attribution chip. */
+  readonly sourceUrl?: string | null;
+  /** Flag for ad-supported / partnered prompts; mobile labels the row. */
+  readonly sponsored?: boolean;
 }
 
 // Typed as a non-empty tuple so index 0 is always defined — the draw can
@@ -276,19 +290,42 @@ export const UNLOCK_PROMPTS: readonly [UnlockPrompt, ...UnlockPrompt[]] = [
   },
 ];
 
-const PROMPTS_BY_KEY: ReadonlyMap<string, UnlockPrompt> = new Map(
+const BUNDLED_PROMPTS_BY_KEY: ReadonlyMap<string, UnlockPrompt> = new Map(
   UNLOCK_PROMPTS.map((p) => [p.key, p]),
 );
+
+/**
+ * Synchronous "live pool" for resolve + draw. Reads the in-memory cache
+ * if it's been populated this session; otherwise falls back to the
+ * bundled tuple. Returning a `readonly UnlockPrompt[]` (non-empty in
+ * both branches) lets the callers stay strict.
+ */
+function getActivePrompts(): readonly UnlockPrompt[] {
+  const cached = getCachedPrompts();
+  return cached && cached.length > 0 ? cached : UNLOCK_PROMPTS;
+}
+
+/** Look up a prompt by key. Server-cached entries win; bundled entries
+ *  serve as the fallback so a key shipped before a server retire still
+ *  resolves something meaningful. Returns null when neither has it. */
+export function findPrompt(key: string): UnlockPrompt | null {
+  const cached = getCachedPrompts();
+  if (cached) {
+    const hit = cached.find((p) => p.key === key);
+    if (hit) return hit;
+  }
+  return BUNDLED_PROMPTS_BY_KEY.get(key) ?? null;
+}
 
 /** Resolve a prompt's text by key. Returns a neutral fallback (never
  *  throws) so an op carrying a since-retired or unknown key still renders. */
 export function resolvePromptText(key: string): string {
-  return PROMPTS_BY_KEY.get(key)?.text ?? 'Do something thoughtful for your partner.';
+  return findPrompt(key)?.text ?? 'Do something thoughtful for your partner.';
 }
 
 /** True when the key maps to a live library entry (vs. a fallback render). */
 export function isKnownPromptKey(key: string): boolean {
-  return PROMPTS_BY_KEY.has(key);
+  return findPrompt(key) != null;
 }
 
 /** Filters for `drawPromptKey`. Each set is "categories this partner has
@@ -318,9 +355,10 @@ function matchesCategoryFilter(prompt: UnlockPrompt, enabled: ReadonlySet<string
  * nothing and gets `Math.random`.
  */
 export function drawPromptKey(rng: () => number = Math.random, filters?: DrawFilters): string {
-  let pool: ReadonlyArray<UnlockPrompt> = UNLOCK_PROMPTS;
+  const active = getActivePrompts();
+  let pool: ReadonlyArray<UnlockPrompt> = active;
   if (filters) {
-    const filtered = UNLOCK_PROMPTS.filter(
+    const filtered = active.filter(
       (p) => matchesCategoryFilter(p, filters.self) && matchesCategoryFilter(p, filters.peer),
     );
     if (filtered.length > 0) {
@@ -328,8 +366,8 @@ export function drawPromptKey(rng: () => number = Math.random, filters?: DrawFil
     } else {
       // Both sides excluded every tagged prompt. Fall back to the
       // 'general' tag so something always draws.
-      const fallback = UNLOCK_PROMPTS.filter((p) => p.categories.includes('general'));
-      pool = fallback.length > 0 ? fallback : UNLOCK_PROMPTS;
+      const fallback = active.filter((p) => p.categories.includes('general'));
+      pool = fallback.length > 0 ? fallback : active;
     }
   }
   const idx = Math.min(Math.floor(rng() * pool.length), pool.length - 1);

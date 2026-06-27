@@ -24,6 +24,7 @@ const EXPECTED_TABLES = [
   'hidden_post',
   'pending_note',
   'prompt_preference',
+  'prompt_cache',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -58,6 +59,7 @@ describe('runMigrations', () => {
       'pending-notes',
       'note-edit-delete',
       'prompt-preferences',
+      'prompt-cache',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -101,6 +103,7 @@ describe('runMigrations', () => {
       'pending-notes',
       'note-edit-delete',
       'prompt-preferences',
+      'prompt-cache',
     ]);
   });
 

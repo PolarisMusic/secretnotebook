@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,11 +18,21 @@ export interface ReflectionView {
   readonly uncomfortable: string;
 }
 
+export interface PromptSourceView {
+  readonly name: string | null;
+  readonly url: string | null;
+  readonly sponsored: boolean;
+}
+
 export interface SecretUnlockDetailProps {
   readonly loading: boolean;
   readonly role: 'author' | 'unlocker';
   readonly state: UnlockState;
   readonly promptText: string;
+  /** Optional source attribution for the prompt — surfaced under the
+   *  card when the prompt came from a named external library. Null for
+   *  bundled prompts. */
+  readonly promptSource: PromptSourceView | null;
   /** The revealed secret's body, or null (media-only / not yet readable here). */
   readonly revealedBody: string | null;
   readonly revealedHasMedia: boolean;
@@ -143,6 +154,26 @@ export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element 
             {role === 'unlocker' ? 'Your prompt' : 'Their prompt'}
           </Text>
           <Text style={styles.prompt}>{props.promptText}</Text>
+          {props.promptSource && (props.promptSource.name || props.promptSource.sponsored) && (
+            <View style={styles.sourceRow} testID="unlock.prompt.source">
+              {props.promptSource.sponsored && <Text style={styles.sponsoredBadge}>SPONSORED</Text>}
+              {props.promptSource.name && (
+                <Text style={styles.sourceText}>
+                  From{' '}
+                  {props.promptSource.url ? (
+                    <Text
+                      style={styles.sourceLink}
+                      onPress={() => void Linking.openURL(props.promptSource!.url!)}
+                    >
+                      {props.promptSource.name}
+                    </Text>
+                  ) : (
+                    props.promptSource.name
+                  )}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Action block by state. */}
@@ -302,6 +333,19 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#161616', borderRadius: 12, padding: 16, gap: 10 },
   cardTitle: { color: '#9ec5ff', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   prompt: { color: '#f5f5f5', fontSize: 18, lineHeight: 25 },
+  sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  sourceText: { color: '#9e9e9e', fontSize: 12 },
+  sourceLink: { color: '#9ec5ff', textDecorationLine: 'underline' },
+  sponsoredBadge: {
+    color: '#0a0a0a',
+    backgroundColor: '#e0b86a',
+    fontSize: 10,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    letterSpacing: 0.5,
+  },
   note: { color: '#b5b5b5', fontSize: 14, lineHeight: 20 },
   secret: { color: '#f5f5f5', fontSize: 16, lineHeight: 23 },
   question: { color: '#cdcdcd', fontSize: 14, fontWeight: '600', marginTop: 4 },

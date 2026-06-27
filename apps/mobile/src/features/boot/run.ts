@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 import { openDatabase } from '../../db/client';
 import { runMigrations } from '../../db/migrate';
+import { hydrateCacheFromDb, replacePromptCache } from '../secret-unlock/prompt-cache';
 import { MIGRATIONS } from '../../db/migrations';
 import { useDatabaseStore } from '../../db/store';
 import { createKeychainAdapter } from '../../security/keychain';
@@ -121,6 +122,27 @@ export async function runBoot(): Promise<void> {
       validator: DEV_GRANT_ENTITLEMENT ? devGrantValidator() : productionValidator(),
       bridge: DEV_GRANT_ENTITLEMENT ? devGrantBridge(platform) : null,
     });
+
+    // Prompt-library cache: hydrate from SQLite synchronously so the unlock
+    // screens have something to draw from before the network round-trip,
+    // then kick off a best-effort refresh in the background. A failure
+    // here (server down, network off) is silent — the bundled list keeps
+    // working.
+    try {
+      await hydrateCacheFromDb(result.executor);
+    } catch (e) {
+      console.warn('[prompts] hydrate failed', (e as Error).message);
+    }
+    void (async () => {
+      try {
+        const fresh = await apiClient.fetchPrompts();
+        const fetchedAtSec =
+          Math.floor(Date.parse(fresh.fetchedAt) / 1000) || Math.floor(Date.now() / 1000);
+        await replacePromptCache(result.executor, fresh.items, fetchedAtSec);
+      } catch (e) {
+        console.warn('[prompts] sync failed', (e as Error).message);
+      }
+    })();
 
     boot.succeed();
   } catch (e) {
