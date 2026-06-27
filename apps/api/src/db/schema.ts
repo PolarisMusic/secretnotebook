@@ -35,6 +35,9 @@ export const postFlags = pgTable(
       .notNull()
       .references(() => posts.id, { onDelete: 'cascade' }),
     category: text('category').notNull(),
+    /** Free-text reason. Required when category='other' (enforced by the
+     *  shared schema, not the table); optional otherwise. */
+    detail: text('detail'),
     flaggedBy: bytea('flagged_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -43,6 +46,30 @@ export const postFlags = pgTable(
     uniqByDevice: unique('post_flag_post_device_uniq').on(t.postId, t.flaggedBy),
   }),
 );
+
+/**
+ * Append-only moderation audit. Each row is one report against the
+ * strictest flag category (`reveals_personal_details`). Distinct from
+ * `post_flag` because:
+ *   - post_flag dedupes (post, device) so re-flagging is idempotent;
+ *     the audit needs every report preserved
+ *   - the audit row carries the ORIGINAL POSTER's anon-pubkey so a
+ *     moderator can review the offending author without joining back
+ *     to posts (which might be deleted by then)
+ * No FK to posts.id — a deleted post must not silently wipe its audit
+ * trail.
+ */
+export const flagLog = pgTable('flag_log', {
+  id: uuid('id').primaryKey(),
+  postId: uuid('post_id').notNull(),
+  /** anon_author of the post that was reported. */
+  postedBy: bytea('posted_by').notNull(),
+  /** pubkey of the device that filed the report. */
+  flagger: bytea('flagger').notNull(),
+  category: text('category').notNull(),
+  detail: text('detail'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const devices = pgTable('devices', {
   pubkey: bytea('pubkey').primaryKey(),
@@ -73,6 +100,8 @@ export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
 export type PostFlag = typeof postFlags.$inferSelect;
 export type NewPostFlag = typeof postFlags.$inferInsert;
+export type FlagLogRow = typeof flagLog.$inferSelect;
+export type NewFlagLogRow = typeof flagLog.$inferInsert;
 export type Device = typeof devices.$inferSelect;
 export type NewDevice = typeof devices.$inferInsert;
 export type RelayInboxRow = typeof relayInbox.$inferSelect;

@@ -1,13 +1,14 @@
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { PostFlagCategory } from '@secretnotebook/shared-types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
+import { listHiddenPostIds } from '../../features/api/cache';
 import { useApiStore } from '../../features/api/store';
-import { useFlagPost, useHidePost, usePostsFeed } from '../../features/api/queries';
+import { useFlagPost, useHidePost, usePostsFeed, useUnhidePost } from '../../features/api/queries';
+import { promptForFlag } from '../../features/feed/flag-prompt';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getMyRole, type ConnectionRole } from '../../features/connection/role-store';
 import { effectiveAudience } from '../../features/feed/audience';
@@ -63,27 +64,44 @@ export function GlobalFeedRoute(): JSX.Element {
     audience,
   });
   const hideMut = useHidePost({ exec });
+  const unhideMut = useUnhidePost({ exec });
   const flagMut = useFlagPost({ client: feedHooks.client! });
 
-  const onHidePost = useCallback((id: string) => hideMut.mutate(id), [hideMut]);
+  // Locally-hidden set. Re-read on focus so a hide/unhide from the detail
+  // screen reflects when the user returns. Routed through state (not the
+  // query layer) so a hide doesn't refetch the feed page.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const refreshHidden = useCallback(async () => {
+    if (!exec) {
+      setHiddenIds(new Set());
+      return;
+    }
+    setHiddenIds(await listHiddenPostIds(exec));
+  }, [exec]);
+  useFocusEffect(
+    useCallback(() => {
+      void refreshHidden();
+    }, [refreshHidden]),
+  );
+
+  const onHidePost = useCallback(
+    async (id: string) => {
+      await hideMut.mutateAsync(id);
+      await refreshHidden();
+    },
+    [hideMut, refreshHidden],
+  );
+  const onUnhidePost = useCallback(
+    async (id: string) => {
+      await unhideMut.mutateAsync(id);
+      await refreshHidden();
+    },
+    [unhideMut, refreshHidden],
+  );
   const onFlagPost = useCallback(
     (id: string) => {
-      const choices: ReadonlyArray<{ label: string; category: PostFlagCategory }> = [
-        { label: 'Sexual content', category: 'sexual' },
-        { label: 'Violence', category: 'violent' },
-        { label: 'Spam', category: 'spam' },
-        { label: 'Other', category: 'other' },
-      ];
-      Alert.alert(
-        'Flag this post',
-        'Why are you reporting it? This hides the content for everyone.',
-        [
-          ...choices.map((c) => ({
-            text: c.label,
-            onPress: () => flagMut.mutate({ id, category: c.category }),
-          })),
-          { text: 'Cancel', style: 'cancel' as const },
-        ],
+      void promptForFlag((category, detail) =>
+        flagMut.mutateAsync({ id, category, ...(detail !== undefined ? { detail } : {}) }),
       );
     },
     [flagMut],
@@ -113,8 +131,10 @@ export function GlobalFeedRoute(): JSX.Element {
         onLoadMore={() => void query.fetchNextPage()}
         onSelectPost={(id) => navigation.navigate('PostDetail', { id })}
         onCompose={() => navigation.navigate('SubmitPost')}
-        onHidePost={onHidePost}
+        onHidePost={(id) => void onHidePost(id)}
+        onUnhidePost={(id) => void onUnhidePost(id)}
         onFlagPost={onFlagPost}
+        hiddenLocallyIds={hiddenIds}
         roleFilter={roleFilter}
         onSetFilter={setFilterOn}
       />

@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import type { Database } from '../db/client.js';
-import { postFlags, posts } from '../db/schema.js';
+import { flagLog, postFlags, posts } from '../db/schema.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import type {
   NewFlagInput,
@@ -91,14 +92,17 @@ export class DrizzlePostsStore implements PostsStore {
   }
 
   async createFlag(input: NewFlagInput): Promise<StoredFlag> {
-    // Idempotent per (post_id, flagged_by): the no-op DO UPDATE lets us
-    // RETURNING the existing row on a repeat report, like insertOrGet.
+    // Idempotent per (post_id, flagged_by): the DO UPDATE lets us RETURNING
+    // the existing row on a repeat report (re-flagging doesn't change the
+    // first report's category/detail). The audit log below is the OTHER
+    // path that grows on every report — see comment there.
     const [row] = await this.db
       .insert(postFlags)
       .values({
         id: input.id,
         postId: input.postId,
         category: input.category,
+        detail: input.detail ?? null,
         flaggedBy: input.flaggedBy,
         createdAt: input.createdAt,
       })
@@ -108,10 +112,36 @@ export class DrizzlePostsStore implements PostsStore {
       })
       .returning();
     if (!row) throw new Error('createFlag returned no row');
+
+    // `reveals_personal_details` is the only category that writes an audit
+    // row. The log is append-only — every report counts (unlike post_flag,
+    // which dedupes per device). The post's anon_author is captured here so
+    // a moderator can review the offending author even after a hypothetical
+    // delete (no FK from flag_log back to posts).
+    if (input.category === 'reveals_personal_details') {
+      const [post] = await this.db
+        .select({ anonAuthor: posts.anonAuthor })
+        .from(posts)
+        .where(eq(posts.id, input.postId))
+        .limit(1);
+      if (post) {
+        await this.db.insert(flagLog).values({
+          id: randomUUID(),
+          postId: input.postId,
+          postedBy: post.anonAuthor,
+          flagger: input.flaggedBy,
+          category: input.category,
+          detail: input.detail ?? null,
+          createdAt: input.createdAt,
+        });
+      }
+    }
+
     return {
       id: row.id,
       postId: row.postId,
       category: row.category,
+      detail: row.detail,
       flaggedBy: row.flaggedBy,
       createdAt: row.createdAt,
     };

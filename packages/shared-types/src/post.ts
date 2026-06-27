@@ -13,9 +13,25 @@ export const PostAudience = z.enum(['everyone', 'masculine', 'feminine']);
 export type PostAudience = z.infer<typeof PostAudience>;
 
 /** Why a post was flagged. Each flag carries one category; the feed shows
- *  the distinct categories on a post in place of its (withheld) content. */
-export const PostFlagCategory = z.enum(['sexual', 'violent', 'spam', 'other']);
+ *  the distinct categories on a post in place of its (withheld) content.
+ *
+ *  `reveals_personal_details` is the strictest tier: the client renders
+ *  the post as hard-hidden (no "show anyway" affordance) AND the server
+ *  audits the original poster's anon-pubkey into a moderation log. The
+ *  other categories all let the viewer expand the body locally. */
+export const PostFlagCategory = z.enum([
+  'sexual',
+  'violent',
+  'spam',
+  'reveals_personal_details',
+  'other',
+]);
 export type PostFlagCategory = z.infer<typeof PostFlagCategory>;
+
+/** Max length on a free-text flag detail. 280 chars matches the
+ *  ergonomic ceiling on a single Alert prompt and is plenty for a
+ *  one-sentence reason. */
+export const FLAG_DETAIL_MAX = 280;
 
 export const PostInputSchema = z.object({
   contentType: PostContentType,
@@ -55,10 +71,24 @@ export const PostListQuerySchema = z.object({
 });
 export type PostListQuery = z.infer<typeof PostListQuerySchema>;
 
-/** Body of POST /v1/posts/:id/flag — the reason for the report. */
-export const PostFlagInputSchema = z.object({
-  category: PostFlagCategory,
-});
+/**
+ * Body of POST /v1/posts/:id/flag — the reason for the report.
+ *
+ * `detail` is optional in general but REQUIRED when category === 'other':
+ * a free-form "other" flag with no explanation is useless to moderators,
+ * so the schema rejects it at the boundary. The detail is also recorded
+ * into the moderation log for `reveals_personal_details` flags so the
+ * audit row carries why, not just what.
+ */
+export const PostFlagInputSchema = z
+  .object({
+    category: PostFlagCategory,
+    detail: z.string().min(1).max(FLAG_DETAIL_MAX).optional(),
+  })
+  .refine((v) => v.category !== 'other' || (v.detail && v.detail.trim().length > 0), {
+    message: 'detail is required when category is "other"',
+    path: ['detail'],
+  });
 export type PostFlagInput = z.infer<typeof PostFlagInputSchema>;
 
 export const PostFlagResponseSchema = z.object({

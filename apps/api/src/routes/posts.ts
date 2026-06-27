@@ -142,6 +142,7 @@ export const postsRoute: FastifyPluginAsyncZod<PostsRouteOptions> = async (fasti
         id: randomUUID(),
         postId: req.params.id,
         category: req.body.category,
+        ...(req.body.detail !== undefined ? { detail: req.body.detail } : {}),
         flaggedBy: pubkey,
         createdAt: now(),
       });

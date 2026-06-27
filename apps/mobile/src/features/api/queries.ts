@@ -18,7 +18,7 @@ import type {
   PostListResponse,
 } from '@secretnotebook/shared-types';
 import type { SqlExecutor } from '../../db/executor';
-import { cachePost, cachePosts, filterHiddenPosts, hidePost } from './cache';
+import { cachePost, cachePosts, hidePost, unhidePost } from './cache';
 import type { ApiClient } from './client';
 
 export const postsKeys = {
@@ -61,13 +61,12 @@ export function usePostsFeed(args: {
         limit: pageSize,
         audience: args.audience,
       });
-      if (args.exec) {
-        if (page.items.length > 0) await cachePosts(args.exec, page.items);
-        // Drop this device's locally-hidden posts from the rendered page;
-        // they're still cached above so an un-hide could restore them.
-        const items = await filterHiddenPosts(args.exec, page.items);
-        return { items, nextCursor: page.nextCursor };
-      }
+      if (args.exec && page.items.length > 0) await cachePosts(args.exec, page.items);
+      // NB: locally-hidden posts used to be filtered out here. They now STAY
+      // in the rendered page — the route reads the hidden set via
+      // listHiddenPostIds and the presentational layer collapses each hidden
+      // item into a "tap to show" stub. That keeps hide reversible at viewer
+      // level instead of vanishing the post.
       return page;
     },
   });
@@ -115,15 +114,22 @@ export function useSubmitPost(args: {
 }
 
 /** Flag a post for moderation (global, server-side). Invalidates the feed
- *  so the now-obscured post re-renders with its reason. */
+ *  so the now-obscured post re-renders with its reason. `detail` is
+ *  required when category='other'. */
+export interface FlagPostVars {
+  id: string;
+  category: PostFlagCategory;
+  detail?: string;
+}
+
 export function useFlagPost(args: {
   client: ApiClient;
   queryClient?: QueryClient;
-}): UseMutationResult<PostFlagResponse, Error, { id: string; category: PostFlagCategory }> {
+}): UseMutationResult<PostFlagResponse, Error, FlagPostVars> {
   const ctxQc = useQueryClient();
   const qc = args.queryClient ?? ctxQc;
-  return useMutation<PostFlagResponse, Error, { id: string; category: PostFlagCategory }>({
-    mutationFn: async ({ id, category }) => args.client.flagPost(id, category),
+  return useMutation<PostFlagResponse, Error, FlagPostVars>({
+    mutationFn: async ({ id, category, detail }) => args.client.flagPost(id, category, detail),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: postsKeys.all });
     },
@@ -140,6 +146,23 @@ export function useHidePost(args: {
   return useMutation<void, Error, string>({
     mutationFn: async (id) => {
       if (args.exec) await hidePost(args.exec, id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: postsKeys.all });
+    },
+  });
+}
+
+/** Reverse a local hide. Invalidates the feed so the body re-appears. */
+export function useUnhidePost(args: {
+  exec: SqlExecutor | null;
+  queryClient?: QueryClient;
+}): UseMutationResult<void, Error, string> {
+  const ctxQc = useQueryClient();
+  const qc = args.queryClient ?? ctxQc;
+  return useMutation<void, Error, string>({
+    mutationFn: async (id) => {
+      if (args.exec) await unhidePost(args.exec, id);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: postsKeys.all });

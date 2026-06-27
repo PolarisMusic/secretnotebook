@@ -148,12 +148,19 @@ export class ApiClient {
     return this.sendSigned<Post>({ method: 'GET', path: `/v1/posts/${id}` });
   }
 
-  /** Report a post for moderation. Idempotent server-side per device. */
-  async flagPost(id: string, category: PostFlagCategory): Promise<PostFlagResponse> {
+  /** Report a post for moderation. Idempotent server-side per device.
+   *  `detail` is required when category='other' (the server schema rejects
+   *  an "other" flag with no explanation) and recorded into the moderation
+   *  log when category='reveals_personal_details'. */
+  async flagPost(
+    id: string,
+    category: PostFlagCategory,
+    detail?: string,
+  ): Promise<PostFlagResponse> {
     return this.sendSigned<PostFlagResponse>({
       method: 'POST',
       path: `/v1/posts/${id}/flag`,
-      body: { category },
+      body: { category, ...(detail !== undefined ? { detail } : {}) },
     });
   }
 
