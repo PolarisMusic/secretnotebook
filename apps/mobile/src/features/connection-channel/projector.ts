@@ -293,17 +293,18 @@ export async function applyCrdtOp(
         );
       }
       const proposer = hexToBytes(op.proposerPubkey);
-      // Receiver side: stash the incoming verifier to match a typed
-      // candidate against. proposal_term stays NULL — we don't learn the
-      // word until the local user types it and it matches.
+      // Receiver side: stash the incoming verifier AND — when the op carries
+      // it — the plaintext term, so the UI can show it on the partner's side
+      // and let them tap "Accept" without re-typing. An older-build proposer
+      // sends no term; the receiver falls back to type-it-to-confirm.
       await exec.execute(
         `UPDATE connection
             SET safeword_proposal_verifier = ?,
                 safeword_proposal_by       = ?,
                 safeword_proposal_at       = ?,
-                safeword_proposal_term     = NULL
+                safeword_proposal_term     = ?
           WHERE partner_a_pubkey = ? OR partner_b_pubkey = ?`,
-        [hexToBytes(op.verifier), proposer, op.proposedAt, proposer, proposer],
+        [hexToBytes(op.verifier), proposer, op.proposedAt, op.term ?? null, proposer, proposer],
       );
       return;
     }

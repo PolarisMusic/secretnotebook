@@ -17,6 +17,7 @@ import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { isLockedOut, useSafeWordLockout } from '../../features/safeword/lockout';
 import {
+  acceptTerm,
   confirmTerm,
   getTermState,
   proposeTerm,
@@ -124,6 +125,26 @@ export function SafeWordRoute(): JSX.Element {
     }
   }, [termDeps, input, refresh, recordFailure, recordSuccess]);
 
+  // One-tap accept for an incoming proposal whose plaintext term was carried
+  // on the wire (new-build proposer). The store re-derives + verifies the
+  // verifier before promoting the term — defence in depth.
+  const handleAccept = useCallback(async () => {
+    const deps = termDeps();
+    if (!deps) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await acceptTerm(deps);
+      setInput('');
+      setChanging(false);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message ?? 'Could not accept term');
+    } finally {
+      setBusy(false);
+    }
+  }, [termDeps, refresh]);
+
   const handleTrigger = useCallback(() => {
     const deps = triggerDeps();
     if (!deps) return;
@@ -205,16 +226,48 @@ export function SafeWordRoute(): JSX.Element {
 
             {state.kind === 'incoming_proposal' && (
               <>
-                <Text style={styles.sectionLabel}>CONFIRM TERM</Text>
-                <Text style={styles.hint}>
-                  Your partner proposed a roleplay term. Type it below to confirm you both agree.
-                </Text>
-                {renderInput()}
-                {locked && <Text style={styles.error}>Too many attempts — wait a moment.</Text>}
-                {renderPrimary(
-                  'Confirm',
-                  () => void handleConfirm(),
-                  input.trim().length === 0 || locked,
+                <Text style={styles.sectionLabel}>PARTNER PROPOSED</Text>
+                {state.term != null ? (
+                  // Plaintext term on the wire (new-build proposer): show it
+                  // and let the local user accept with one tap or counter
+                  // with a different word.
+                  <>
+                    <View style={styles.tile}>
+                      <Text style={styles.termText}>{state.term}</Text>
+                    </View>
+                    <Text style={styles.hint}>
+                      Tap Accept if you both agree on this word, or propose a different one below.
+                    </Text>
+                    {renderPrimary('Accept', () => void handleAccept(), false)}
+                    <Text style={styles.sectionLabel}>OR PROPOSE A DIFFERENT WORD</Text>
+                    {renderInput()}
+                    <Pressable
+                      accessibilityRole="button"
+                      style={[styles.secondary, !canPropose() && styles.ctaDisabled]}
+                      hitSlop={8}
+                      disabled={!canPropose()}
+                      onPress={() => void handlePropose()}
+                      testID="safeword.counter-propose"
+                    >
+                      <Text style={styles.secondaryText}>Propose different</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  // Older-build proposer left no plaintext — fall back to the
+                  // legacy type-it-back path.
+                  <>
+                    <Text style={styles.hint}>
+                      Your partner proposed a roleplay term. Type it below to confirm you both
+                      agree.
+                    </Text>
+                    {renderInput()}
+                    {locked && <Text style={styles.error}>Too many attempts — wait a moment.</Text>}
+                    {renderPrimary(
+                      'Confirm',
+                      () => void handleConfirm(),
+                      input.trim().length === 0 || locked,
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -312,6 +365,9 @@ export function SafeWordRoute(): JSX.Element {
   }
 
   function renderInput(): JSX.Element {
+    // The roleplay term is shared, mutually-known content — not a password.
+    // Visible input matches what couples already say out loud, and the
+    // partner now SEES the proposal in plaintext on their device too.
     return (
       <TextInput
         value={input}
@@ -320,7 +376,6 @@ export function SafeWordRoute(): JSX.Element {
         placeholderTextColor="#666"
         autoCapitalize="none"
         autoCorrect={false}
-        secureTextEntry
         maxLength={SAFEWORD_TERM_MAX}
         style={styles.input}
         testID="safeword.input"

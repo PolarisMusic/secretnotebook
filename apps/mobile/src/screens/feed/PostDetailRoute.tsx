@@ -1,15 +1,20 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PostFlagCategory } from '@secretnotebook/shared-types';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
 import { useApiStore } from '../../features/api/store';
 import { useFlagPost, useHidePost, usePostDetail } from '../../features/api/queries';
+import {
+  findSavedFor,
+  removeSavedPost,
+  saveGlobalPost,
+  type SavedPostStoreDeps,
+} from '../../features/connection-channel/saved-post-store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
-import { writeSecretNote, writeSharedNote, type NoteStoreDeps } from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { PostDetail } from './PostDetail';
 
@@ -64,45 +69,58 @@ export function PostDetailRoute(): JSX.Element {
     [flagMut],
   );
 
-  const saveToNotes = useCallback(
-    async (kind: 'shared' | 'secret', body: string): Promise<void> => {
+  // Saved-post bookmark state. Reads on focus so a save/unsave done from
+  // the SavedByYou screen reflects when the user returns here.
+  const [savedRowId, setSavedRowId] = useState<string | null>(null);
+  useFocusEffect(
+    useCallback(() => {
       if (!exec || !engine) return;
-      const deps: NoteStoreDeps = {
-        exec,
-        selfPubkey: engine.selfPub,
-        enqueue: (op) => engine.enqueue(op),
+      let cancelled = false;
+      void findSavedFor(exec, engine.selfPub, route.params.id).then((row) => {
+        if (!cancelled) setSavedRowId(row?.id ?? null);
+      });
+      return () => {
+        cancelled = true;
       };
-      try {
-        if (kind === 'secret') await writeSecretNote(deps, body);
-        else await writeSharedNote(deps, body);
-        Alert.alert(
-          'Saved',
-          kind === 'secret' ? 'Added to your secret notes.' : 'Added to your shared notes.',
-        );
-      } catch (e) {
-        Alert.alert('Could not save', (e as Error).message);
-      }
-    },
-    [exec, engine],
+    }, [exec, engine, route.params.id]),
   );
 
-  const onSaveToNotes = useCallback(
+  const savedDeps = useCallback((): SavedPostStoreDeps | null => {
+    if (!exec || !engine) return null;
+    return {
+      exec,
+      selfPubkey: engine.selfPub,
+      enqueue: (op) => engine.enqueue(op),
+    };
+  }, [exec, engine]);
+
+  const onSave = useCallback(
     (id: string) => {
-      const post = query.data;
-      if (!post || post.id !== id) return;
-      const body = post.body.trim();
-      if (body.length === 0) {
-        Alert.alert('Nothing to save', 'This post has no text to add to your notes.');
-        return;
-      }
-      Alert.alert('Save to notes', "Add this post's text to your couple's notes.", [
-        { text: 'Shared note', onPress: () => void saveToNotes('shared', body) },
-        { text: 'Secret note', onPress: () => void saveToNotes('secret', body) },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
+      const deps = savedDeps();
+      if (!deps) return;
+      void (async () => {
+        try {
+          const row = await saveGlobalPost(deps, id);
+          setSavedRowId(row.id);
+        } catch (e) {
+          Alert.alert('Could not save', (e as Error).message);
+        }
+      })();
     },
-    [query.data, saveToNotes],
+    [savedDeps],
   );
+
+  const onUnsave = useCallback(() => {
+    if (!exec || !savedRowId) return;
+    void (async () => {
+      try {
+        await removeSavedPost(exec, savedRowId);
+        setSavedRowId(null);
+      } catch (e) {
+        Alert.alert('Could not remove from saved', (e as Error).message);
+      }
+    })();
+  }, [exec, savedRowId]);
 
   if (!client) {
     return (
@@ -121,7 +139,9 @@ export function PostDetailRoute(): JSX.Element {
       onBack={() => navigation.goBack()}
       onHide={onHide}
       onFlag={onFlag}
-      onSaveToNotes={engine ? onSaveToNotes : undefined}
+      onSave={engine ? onSave : undefined}
+      onUnsave={engine ? onUnsave : undefined}
+      alreadySaved={savedRowId != null}
     />
   );
 }

@@ -280,6 +280,15 @@ export const ConnectionSafeWordProposeOpSchema = z.object({
   kind: z.literal('connection.safeword.propose'),
   proposerPubkey: HexString(32),
   verifier: HexString(32),
+  /**
+   * The plaintext word, included so the partner can SEE the proposal and
+   * tap "Accept" instead of re-typing it. Privacy is preserved by the
+   * connection ratchet — the wire is already E2E-encrypted, so carrying
+   * the term doesn't widen the threat model. Optional to keep an older-
+   * build proposer's op (with verifier-only) interoperable; that receiver
+   * just falls back to the type-it-back path.
+   */
+  term: z.string().min(1).max(64).optional(),
   proposedAt: z.number().int().nonnegative(),
 });
 export type ConnectionSafeWordProposeOp = z.infer<typeof ConnectionSafeWordProposeOpSchema>;
