@@ -174,6 +174,7 @@ export function SecretUnlockListRoute(): JSX.Element {
       onRefresh={() => void refresh()}
       onStart={() => void onStart()}
       onSelect={(id) => navigation.navigate('SecretUnlockDetail', { id })}
+      onPreferences={() => navigation.navigate('PromptPreferences')}
     />
   );
 }

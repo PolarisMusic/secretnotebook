@@ -23,6 +23,7 @@ const EXPECTED_TABLES = [
   'secret_unlock_reflection',
   'hidden_post',
   'pending_note',
+  'prompt_preference',
 ];
 
 function tableNames(db: Database.Database): string[] {
@@ -56,6 +57,7 @@ describe('runMigrations', () => {
       'hidden-posts',
       'pending-notes',
       'note-edit-delete',
+      'prompt-preferences',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -98,6 +100,7 @@ describe('runMigrations', () => {
       'hidden-posts',
       'pending-notes',
       'note-edit-delete',
+      'prompt-preferences',
     ]);
   });
 

@@ -1,9 +1,18 @@
+import { isPromptCategory, type PromptCategory } from './categories';
+
 /**
  * R7 relationship-prompt library. Static, on-device content — the unlock
  * loop draws one prompt for the Unlocker to act on. Ops carry only the
  * stable `key`; the text is resolved here at render time, so editing or
  * expanding copy never breaks an in-flight attempt (an unknown key falls
  * back to a neutral line rather than throwing).
+ *
+ * Each prompt is tagged with one or more `categories`. The draw pool at
+ * `drawPromptKey` time is intersected against each partner's enabled
+ * categories (per `prompt_preference`), so a prompt qualifies iff it
+ * carries at least one category each partner has on. `general` is the
+ * universal safety tag and is on every prompt — a couple with only
+ * `general` enabled still has the full pool.
  *
  * Keep keys append-only and stable: a key that has shipped in an op must
  * keep resolving. Retire a prompt by removing it from the draw pool while
@@ -12,6 +21,7 @@
 export interface UnlockPrompt {
   readonly key: string;
   readonly text: string;
+  readonly categories: readonly PromptCategory[];
 }
 
 // Typed as a non-empty tuple so index 0 is always defined — the draw can
@@ -20,63 +30,249 @@ export const UNLOCK_PROMPTS: readonly [UnlockPrompt, ...UnlockPrompt[]] = [
   {
     key: 'pq_unhurried_walk',
     text: 'Take an unhurried walk together with no phones, and talk about something you have never told each other.',
+    categories: [
+      'general',
+      'dating',
+      'cohabitation',
+      'married',
+      'empty_nest',
+      'reconnection',
+      'intimacy',
+    ],
   },
   {
     key: 'pq_cook_favourite',
     text: "Cook or order your partner's favourite meal and serve it to them.",
+    categories: [
+      'general',
+      'dating',
+      'cohabitation',
+      'newlywed',
+      'married',
+      'blended_family',
+      'caregiving',
+    ],
   },
   {
     key: 'pq_love_letter',
     text: 'Hand-write a short note about a moment you felt closest to your partner, and read it to them.',
+    categories: [
+      'general',
+      'dating',
+      'engaged',
+      'newlywed',
+      'long_distance',
+      'reconnection',
+      'intimacy',
+    ],
   },
   {
     key: 'pq_recreate_first_date',
     text: 'Recreate a detail from one of your early dates — a place, a song, a meal.',
+    categories: [
+      'general',
+      'married',
+      'raising_kids',
+      'raising_teens',
+      'raising_adults',
+      'empty_nest',
+      'reconnection',
+    ],
   },
   {
     key: 'pq_full_attention',
     text: 'Give your partner thirty minutes of completely undivided attention doing whatever they choose.',
+    categories: [
+      'general',
+      'cohabitation',
+      'married',
+      'raising_babies',
+      'raising_toddlers',
+      'raising_kids',
+      'raising_teens',
+      'intimacy',
+    ],
   },
   {
     key: 'pq_three_gratitudes',
     text: 'Tell your partner three specific things you are grateful for about them today.',
+    categories: [
+      'general',
+      'dating',
+      'cohabitation',
+      'engaged',
+      'newlywed',
+      'married',
+      'expecting',
+      'raising_babies',
+      'raising_toddlers',
+      'raising_kids',
+      'raising_teens',
+      'raising_adults',
+      'empty_nest',
+      'blended_family',
+      'long_distance',
+      'reconnection',
+    ],
   },
   {
     key: 'pq_learn_their_day',
     text: "Ask about your partner's day and listen without offering advice or solutions.",
+    categories: [
+      'general',
+      'cohabitation',
+      'married',
+      'expecting',
+      'raising_babies',
+      'raising_toddlers',
+      'raising_kids',
+      'raising_teens',
+      'raising_adults',
+      'caregiving',
+      'long_distance',
+    ],
   },
   {
     key: 'pq_surprise_small',
     text: 'Surprise your partner with a small gesture that shows you were thinking of them.',
+    categories: [
+      'general',
+      'dating',
+      'cohabitation',
+      'engaged',
+      'newlywed',
+      'married',
+      'long_distance',
+      'reconnection',
+    ],
   },
-  { key: 'pq_dance_one_song', text: 'Slow dance to one full song together, wherever you are.' },
+  {
+    key: 'pq_dance_one_song',
+    text: 'Slow dance to one full song together, wherever you are.',
+    categories: [
+      'general',
+      'dating',
+      'newlywed',
+      'married',
+      'raising_kids',
+      'raising_teens',
+      'empty_nest',
+      'intimacy',
+    ],
+  },
   {
     key: 'pq_plan_future',
     text: 'Plan one small thing you are both looking forward to, and put it on the calendar together.',
+    categories: [
+      'general',
+      'dating',
+      'engaged',
+      'newlywed',
+      'married',
+      'expecting',
+      'long_distance',
+      'empty_nest',
+    ],
   },
   {
     key: 'pq_ask_a_dream',
     text: 'Ask your partner about a dream or goal they have, and really dig into it with them.',
+    categories: [
+      'general',
+      'dating',
+      'engaged',
+      'newlywed',
+      'married',
+      'raising_kids',
+      'raising_teens',
+      'raising_adults',
+      'empty_nest',
+    ],
   },
   {
     key: 'pq_unprompted_affection',
     text: 'Offer your partner ten seconds of unprompted physical affection — a hug, holding hands.',
+    categories: [
+      'general',
+      'dating',
+      'cohabitation',
+      'newlywed',
+      'married',
+      'raising_babies',
+      'raising_toddlers',
+      'raising_kids',
+      'raising_teens',
+      'empty_nest',
+      'intimacy',
+      'reconnection',
+    ],
   },
   {
     key: 'pq_handle_a_chore',
     text: 'Quietly take care of a chore your partner usually handles, no credit needed.',
+    categories: [
+      'general',
+      'cohabitation',
+      'newlywed',
+      'married',
+      'expecting',
+      'raising_babies',
+      'raising_toddlers',
+      'raising_kids',
+      'raising_teens',
+      'raising_adults',
+      'blended_family',
+      'caregiving',
+    ],
   },
   {
     key: 'pq_favourite_memory',
     text: 'Share your single favourite memory of the two of you and why it stuck with you.',
+    categories: [
+      'general',
+      'dating',
+      'engaged',
+      'married',
+      'long_distance',
+      'empty_nest',
+      'reconnection',
+      'intimacy',
+    ],
   },
   {
     key: 'pq_compliment_specific',
     text: 'Give your partner a compliment about who they are, not how they look.',
+    categories: [
+      'general',
+      'dating',
+      'cohabitation',
+      'engaged',
+      'newlywed',
+      'married',
+      'raising_babies',
+      'raising_toddlers',
+      'raising_kids',
+      'raising_teens',
+      'raising_adults',
+      'empty_nest',
+      'blended_family',
+      'caregiving',
+      'reconnection',
+    ],
   },
   {
     key: 'pq_phone_free_meal',
     text: 'Share one phone-free meal together and stay curious about each other the whole time.',
+    categories: [
+      'general',
+      'cohabitation',
+      'married',
+      'raising_kids',
+      'raising_teens',
+      'raising_adults',
+      'empty_nest',
+      'reconnection',
+    ],
   },
 ];
 
@@ -95,14 +291,63 @@ export function isKnownPromptKey(key: string): boolean {
   return PROMPTS_BY_KEY.has(key);
 }
 
+/** Filters for `drawPromptKey`. Each set is "categories this partner has
+ *  enabled in Preferences". An empty set on either side is treated as
+ *  "everything enabled" — that's the default for users who have never
+ *  opened the screen. */
+export interface DrawFilters {
+  readonly self: ReadonlySet<string>;
+  readonly peer: ReadonlySet<string>;
+}
+
+function matchesCategoryFilter(prompt: UnlockPrompt, enabled: ReadonlySet<string>): boolean {
+  // An empty `enabled` is "user has opted out of everything" — no prompt
+  // matches, and the caller falls back to the `general` safety pool.
+  return prompt.categories.some((c) => enabled.has(c));
+}
+
 /**
- * Draw a random prompt key from the live pool. `rng` is injectable so
- * tests can pin the draw; production passes nothing and gets Math.random.
+ * Draw a random prompt key. With `filters`, only prompts whose categories
+ * overlap BOTH partners' enabled sets qualify; this enforces mutual
+ * consent on what kind of prompt can land. A filter that produces an
+ * empty pool falls back to prompts carrying `general` (which every
+ * shipped prompt does), and finally to the full pool — so the draw can
+ * never fail.
+ *
+ * `rng` is injectable so tests can pin the draw; production passes
+ * nothing and gets `Math.random`.
  */
-export function drawPromptKey(rng: () => number = Math.random): string {
-  const idx = Math.floor(rng() * UNLOCK_PROMPTS.length);
-  // Clamp the rng() === 1 / negative edges so we never index out of bounds;
-  // fall back to the always-present first entry to satisfy the type.
-  const safe = Math.min(Math.max(idx, 0), UNLOCK_PROMPTS.length - 1);
-  return (UNLOCK_PROMPTS[safe] ?? UNLOCK_PROMPTS[0]).key;
+export function drawPromptKey(rng: () => number = Math.random, filters?: DrawFilters): string {
+  let pool: ReadonlyArray<UnlockPrompt> = UNLOCK_PROMPTS;
+  if (filters) {
+    const filtered = UNLOCK_PROMPTS.filter(
+      (p) => matchesCategoryFilter(p, filters.self) && matchesCategoryFilter(p, filters.peer),
+    );
+    if (filtered.length > 0) {
+      pool = filtered;
+    } else {
+      // Both sides excluded every tagged prompt. Fall back to the
+      // 'general' tag so something always draws.
+      const fallback = UNLOCK_PROMPTS.filter((p) => p.categories.includes('general'));
+      pool = fallback.length > 0 ? fallback : UNLOCK_PROMPTS;
+    }
+  }
+  const idx = Math.min(Math.floor(rng() * pool.length), pool.length - 1);
+  const safe = Math.max(idx, 0);
+  return (pool[safe] ?? pool[0] ?? UNLOCK_PROMPTS[0]).key;
+}
+
+/** Strip any category strings that aren't in the live taxonomy. Useful
+ *  when reading a `prompt_preference` row that might have been written
+ *  by an older or rolled-back build carrying a since-retired tag. */
+export function sanitizeCategories(input: readonly string[]): PromptCategory[] {
+  const seen = new Set<PromptCategory>();
+  const out: PromptCategory[] = [];
+  for (const c of input) {
+    if (isPromptCategory(c) && !seen.has(c)) {
+      seen.add(c);
+      out.push(c);
+    }
+  }
+  return out;
 }
