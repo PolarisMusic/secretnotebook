@@ -319,6 +319,18 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleSafeWordPropose, proposerPubkey: 'zz' })).toThrow();
   });
 
+  it('safeword.propose: round-trips with the optional plaintext `term` (new wire field)', () => {
+    // #9 product change: the propose op now carries the plaintext term so
+    // the partner can SEE it. Optional in the schema for back-compat with
+    // an older-build proposer.
+    const withTerm = { ...sampleSafeWordPropose, term: 'butterscotch' };
+    expect(deserialiseOp(serialiseOp(withTerm))).toEqual(withTerm);
+  });
+
+  it('safeword.propose: rejects a >64-char term', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSafeWordPropose, term: 'x'.repeat(65) })).toThrow();
+  });
+
   it('rejects a non-uuid id on safeword.trigger', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleSafeWordTrigger, id: 'not-a-uuid' })).toThrow();
   });

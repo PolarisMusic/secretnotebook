@@ -23,7 +23,14 @@ export type SafeWordTermState =
       readonly term: string | null;
       readonly proposedAt: number | null;
     }
-  | { readonly kind: 'incoming_proposal'; readonly proposedAt: number | null }
+  | {
+      readonly kind: 'incoming_proposal';
+      /** The plaintext term the partner proposed, when their build carries
+       *  it on the wire. Null on an older-build proposer; the UI then falls
+       *  back to type-it-to-confirm. */
+      readonly term: string | null;
+      readonly proposedAt: number | null;
+    }
   | { readonly kind: 'set'; readonly term: string | null; readonly confirmedAt: number };
 
 type SafeWordTermOp = ConnectionSafeWordProposeOp | ConnectionSafeWordConfirmOp;
@@ -123,6 +130,10 @@ export async function proposeTerm(deps: TermStoreDeps, word: string): Promise<vo
       kind: 'connection.safeword.propose',
       proposerPubkey: bytesToHex(deps.selfPubkey),
       verifier: bytesToHex(verifier),
+      // Carry the plaintext so the partner can SEE the proposal and accept
+      // it with a single tap instead of re-typing. The ratchet keeps this
+      // private end-to-end — see ConnectionSafeWordProposeOpSchema.
+      term: trimmed,
       proposedAt: at,
     });
   });
@@ -179,6 +190,66 @@ export async function confirmTerm(deps: TermStoreDeps, candidate: string): Promi
   });
 }
 
+/**
+ * One-tap confirmation of an incoming proposal whose plaintext term is
+ * already on this device (carried on the propose op). Re-derives the
+ * verifier from the stored term and runs the same constant-time compare as
+ * `confirmTerm` — defence in depth, since a malicious projector still can't
+ * make a verifier-mismatched term look like an agreement.
+ *
+ * Throws when:
+ *   - there's no incoming proposal,
+ *   - the proposer is self (waiting on the partner),
+ *   - the proposal's plaintext term wasn't carried (older-build proposer);
+ *     the UI then routes to `confirmTerm` with a typed candidate.
+ */
+export async function acceptTerm(deps: TermStoreDeps): Promise<void> {
+  const conn = await loadConn(deps.exec);
+  if (!conn) throw new Error('acceptTerm: no active connection');
+  assertSelfIsPartner(conn, deps.selfPubkey);
+  if (!conn.safeword_proposal_verifier || !conn.safeword_proposal_by) {
+    throw new Error('No proposal to accept');
+  }
+  if (sameBytes(bytesFromRow(conn.safeword_proposal_by), deps.selfPubkey)) {
+    throw new Error('Waiting for your partner to confirm');
+  }
+  const term = conn.safeword_proposal_term;
+  if (term == null || term.length === 0) {
+    throw new Error('No plaintext term on this proposal — type it to confirm');
+  }
+
+  // Re-derive + verify even though we already trust the column, so this path
+  // can't silently accept a mismatched verifier/term pair if something's
+  // corrupted on disk.
+  const { salt, verifier } = await deriveConnectionSafeWord(deps.connectionRoot, term);
+  if (!constantTimeEqual(verifier, bytesFromRow(conn.safeword_proposal_verifier))) {
+    throw new Error('Stored term and verifier disagree — refusing to accept');
+  }
+
+  const at = nowSec(deps);
+  await deps.exec.transaction(async () => {
+    await deps.exec.execute(
+      `UPDATE connection
+          SET safeword_verifier          = ?,
+              safeword_salt              = ?,
+              safeword_term              = ?,
+              safeword_confirmed_at      = ?,
+              safeword_proposal_verifier = NULL,
+              safeword_proposal_by       = NULL,
+              safeword_proposal_at       = NULL,
+              safeword_proposal_term     = NULL
+        WHERE id = ?`,
+      [verifier, salt, term, at, conn.id],
+    );
+    await deps.enqueue({
+      v: 1,
+      kind: 'connection.safeword.confirm',
+      confirmerPubkey: bytesToHex(deps.selfPubkey),
+      confirmedAt: at,
+    });
+  });
+}
+
 /** Snapshot of the term/handshake state for the UI. */
 export async function getTermState(
   exec: SqlExecutor,
@@ -196,7 +267,13 @@ export async function getTermState(
         proposedAt: conn.safeword_proposal_at,
       };
     }
-    return { kind: 'incoming_proposal', proposedAt: conn.safeword_proposal_at };
+    // Receiver side: surface the plaintext term when the proposer's build
+    // included it on the wire. Null falls the UI back to type-it-to-confirm.
+    return {
+      kind: 'incoming_proposal',
+      term: conn.safeword_proposal_term,
+      proposedAt: conn.safeword_proposal_at,
+    };
   }
 
   if (conn.safeword_confirmed_at != null) {

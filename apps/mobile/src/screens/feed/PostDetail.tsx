@@ -15,9 +15,15 @@ export interface PostDetailProps {
   readonly onUnhide: (id: string) => void;
   /** Report this post for moderation (the Route prompts for a category). */
   readonly onFlag: (id: string) => void;
-  /** Copy this post's text into the couple's notes. The Route prompts for
-   *  shared vs secret; absent when there's no connection to save into. */
-  readonly onSaveToNotes?: (id: string) => void;
+  /** Save this post to my couple's saved bookmarks (intermediate tier
+   *  between the public feed and a note). Absent when there's no
+   *  connection to save into. */
+  readonly onSave?: (id: string) => void;
+  /** True if I've already saved this post — toggles the button to
+   *  "Saved ✓" (still tappable to remove). */
+  readonly alreadySaved?: boolean;
+  /** Reverse a save (drops the bookmark on this device). */
+  readonly onUnsave?: (id: string) => void;
   /** Whether the viewer has locally hidden this post. */
   readonly hiddenLocally: boolean;
 }
@@ -152,14 +158,18 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
                 <Text style={styles.actionText}>Flag</Text>
               </Pressable>
             )}
-            {props.onSaveToNotes && !flagged && !hiddenLocally && (
+            {props.onSave && !flagged && !hiddenLocally && (
               <Pressable
                 accessibilityRole="button"
                 hitSlop={8}
-                onPress={() => props.onSaveToNotes!(props.post!.id)}
-                testID="post-detail.save-to-notes"
+                onPress={() =>
+                  props.alreadySaved
+                    ? props.onUnsave?.(props.post!.id)
+                    : props.onSave!(props.post!.id)
+                }
+                testID="post-detail.save"
               >
-                <Text style={styles.actionText}>Save to notes</Text>
+                <Text style={styles.actionText}>{props.alreadySaved ? 'Saved ✓' : 'Save'}</Text>
               </Pressable>
             )}
           </View>
