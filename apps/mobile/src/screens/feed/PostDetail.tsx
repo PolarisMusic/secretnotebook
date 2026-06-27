@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,11 +11,15 @@ export interface PostDetailProps {
   readonly onBack: () => void;
   /** Hide this post for me (local). */
   readonly onHide: (id: string) => void;
+  /** Reverse a local hide. */
+  readonly onUnhide: (id: string) => void;
   /** Report this post for moderation (the Route prompts for a category). */
   readonly onFlag: (id: string) => void;
   /** Copy this post's text into the couple's notes. The Route prompts for
    *  shared vs secret; absent when there's no connection to save into. */
   readonly onSaveToNotes?: (id: string) => void;
+  /** Whether the viewer has locally hidden this post. */
+  readonly hiddenLocally: boolean;
 }
 
 function isLinkLike(body: string): boolean {
@@ -22,6 +27,26 @@ function isLinkLike(body: string): boolean {
 }
 
 export function PostDetail(props: PostDetailProps): JSX.Element {
+  // Per-render override: the viewer can opt to see a hidden / non-personal
+  // flagged body anyway. Hardly any state — and importantly NOT persisted —
+  // so leaving the screen resets it.
+  const [showAnyway, setShowAnyway] = useState(false);
+
+  const revealsPersonal = props.post?.flags.includes('reveals_personal_details') ?? false;
+  const flagged = (props.post?.flags.length ?? 0) > 0;
+  const hiddenLocally = props.hiddenLocally;
+  // Some flag is suppressing the body; viewer can override unless it's the
+  // strict tier.
+  const obscured = flagged || hiddenLocally;
+  const canShowAnyway = obscured && !revealsPersonal;
+  const showBody = !obscured || (showAnyway && canShowAnyway);
+
+  // For server-flagged posts the body is the empty string (the API withholds
+  // it once flagged), so "show anyway" only meaningfully reveals locally-
+  // hidden posts. Surfaced in the UI text so a tap on a flagged-but-empty
+  // post isn't surprising.
+  const bodyAvailable = (props.post?.body.length ?? 0) > 0;
+
   return (
     <SafeAreaView style={styles.container} testID="screen.post-detail">
       <View style={styles.header}>
@@ -48,10 +73,33 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
             {props.post.contentType.toUpperCase()} ·{' '}
             {new Date(props.post.createdAt).toISOString().slice(0, 10)}
           </Text>
-          {props.post.flags.length > 0 ? (
-            <Text style={styles.obscured} testID="post-detail.obscured">
-              ⚠️ Content hidden — flagged as {props.post.flags.join(', ')}
+
+          {revealsPersonal ? (
+            <Text style={styles.obscured} testID="post-detail.reveals_personal">
+              ⛔ Hidden permanently — flagged as revealing personal details. The viewer cannot
+              override this.
             </Text>
+          ) : obscured && !showAnyway ? (
+            <View style={styles.collapsed} testID="post-detail.collapsed">
+              <Text style={styles.obscured}>
+                {flagged ? `⚠️ Flagged as ${props.post.flags.join(', ')}.` : '· Hidden by you ·'}
+              </Text>
+              {bodyAvailable ? (
+                <Pressable
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={() => setShowAnyway(true)}
+                  testID="post-detail.show-anyway"
+                  style={styles.showAnywayBtn}
+                >
+                  <Text style={styles.showAnywayText}>Show anyway</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.author}>
+                  Body withheld by the server — there's nothing to reveal locally.
+                </Text>
+              )}
+            </View>
           ) : props.post.contentType === 'link' && isLinkLike(props.post.body) ? (
             <Pressable
               accessibilityRole="link"
@@ -63,23 +111,38 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
                 {props.post.body.trim()}
               </Text>
             </Pressable>
-          ) : (
+          ) : showBody ? (
             <Text style={styles.body} testID="post-detail.body">
               {props.post.body}
             </Text>
-          )}
+          ) : null}
+
           <Text style={styles.author}>by {props.post.anonAuthor.slice(0, 16)}…</Text>
 
           <View style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => props.onHide(props.post!.id)}
-              testID="post-detail.hide"
-            >
-              <Text style={styles.actionText}>Hide for me</Text>
-            </Pressable>
-            {props.post.flags.length === 0 && (
+            {hiddenLocally ? (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => {
+                  setShowAnyway(false);
+                  props.onUnhide(props.post!.id);
+                }}
+                testID="post-detail.unhide"
+              >
+                <Text style={styles.actionText}>Unhide</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => props.onHide(props.post!.id)}
+                testID="post-detail.hide"
+              >
+                <Text style={styles.actionText}>Hide for me</Text>
+              </Pressable>
+            )}
+            {!flagged && (
               <Pressable
                 accessibilityRole="button"
                 hitSlop={8}
@@ -89,7 +152,7 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
                 <Text style={styles.actionText}>Flag</Text>
               </Pressable>
             )}
-            {props.onSaveToNotes && props.post.flags.length === 0 && (
+            {props.onSaveToNotes && !flagged && !hiddenLocally && (
               <Pressable
                 accessibilityRole="button"
                 hitSlop={8}
@@ -114,6 +177,17 @@ const styles = StyleSheet.create({
   meta: { color: '#808080', fontSize: 12, letterSpacing: 0.5 },
   body: { color: '#f5f5f5', fontSize: 17, lineHeight: 24 },
   obscured: { color: '#ffb4b4', fontSize: 16, fontStyle: 'italic', lineHeight: 23 },
+  collapsed: { gap: 10 },
+  showAnywayBtn: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  showAnywayText: { color: '#9ec5ff', fontSize: 14, fontWeight: '600' },
   actions: { flexDirection: 'row', gap: 20, marginTop: 8 },
   actionText: { color: '#9ec5ff', fontSize: 15, fontWeight: '600' },
   linkBox: {

@@ -1,14 +1,15 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { PostFlagCategory } from '@secretnotebook/shared-types';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useDatabaseStore } from '../../db/store';
+import { isPostHidden } from '../../features/api/cache';
 import { useApiStore } from '../../features/api/store';
-import { useFlagPost, useHidePost, usePostDetail } from '../../features/api/queries';
+import { useFlagPost, useHidePost, usePostDetail, useUnhidePost } from '../../features/api/queries';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
+import { promptForFlag } from '../../features/feed/flag-prompt';
 import { writeSecretNote, writeSharedNote, type NoteStoreDeps } from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { PostDetail } from './PostDetail';
@@ -32,36 +33,52 @@ export function PostDetailRoute(): JSX.Element {
     enabled: client != null,
   });
   const hideMut = useHidePost({ exec });
+  const unhideMut = useUnhidePost({ exec });
   const flagMut = useFlagPost({ client: client! });
 
+  // Whether THIS post is locally hidden, so PostDetail can collapse it +
+  // surface "Unhide". Refreshed on focus so a hide done elsewhere reflects.
+  const [hiddenLocally, setHiddenLocally] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!exec) return;
+      let cancelled = false;
+      void isPostHidden(exec, route.params.id).then((h) => {
+        if (!cancelled) setHiddenLocally(h);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [exec, route.params.id]),
+  );
+
   const onHide = useCallback(
-    (id: string) => {
-      hideMut.mutate(id);
-      navigation.goBack(); // it's now hidden from the feed; nothing to show here
+    async (id: string) => {
+      await hideMut.mutateAsync(id);
+      setHiddenLocally(true);
+      // Stay on screen so the collapsed state + Show anyway are reachable
+      // without bouncing back to the feed.
     },
-    [hideMut, navigation],
+    [hideMut],
+  );
+  const onUnhide = useCallback(
+    async (id: string) => {
+      await unhideMut.mutateAsync(id);
+      setHiddenLocally(false);
+    },
+    [unhideMut],
   );
   const onFlag = useCallback(
-    (id: string) => {
-      const choices: ReadonlyArray<{ label: string; category: PostFlagCategory }> = [
-        { label: 'Sexual content', category: 'sexual' },
-        { label: 'Violence', category: 'violent' },
-        { label: 'Spam', category: 'spam' },
-        { label: 'Other', category: 'other' },
-      ];
-      Alert.alert(
-        'Flag this post',
-        'Why are you reporting it? This hides the content for everyone.',
-        [
-          ...choices.map((c) => ({
-            text: c.label,
-            onPress: () => flagMut.mutate({ id, category: c.category }),
-          })),
-          { text: 'Cancel', style: 'cancel' as const },
-        ],
+    (_id: string) => {
+      void promptForFlag((category, detail) =>
+        flagMut.mutateAsync({
+          id: route.params.id,
+          category,
+          ...(detail !== undefined ? { detail } : {}),
+        }),
       );
     },
-    [flagMut],
+    [flagMut, route.params.id],
   );
 
   const saveToNotes = useCallback(
@@ -119,9 +136,11 @@ export function PostDetailRoute(): JSX.Element {
       isLoading={query.isLoading}
       error={query.error}
       onBack={() => navigation.goBack()}
-      onHide={onHide}
+      onHide={(id) => void onHide(id)}
+      onUnhide={(id) => void onUnhide(id)}
       onFlag={onFlag}
       onSaveToNotes={engine ? onSaveToNotes : undefined}
+      hiddenLocally={hiddenLocally}
     />
   );
 }
