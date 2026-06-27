@@ -14,6 +14,8 @@ import {
   MemoryBlobStore,
   MemoryDevicesStore,
   MemoryPostsStore,
+  MemoryPromptsStore,
+  MemoryPromptsStore,
   MemoryRelayStore,
 } from './helpers/memory-stores.js';
 
@@ -30,6 +32,7 @@ describe('GET /v1/health', () => {
       devicesStore: new MemoryDevicesStore(),
       relayStore: new MemoryRelayStore(),
       blobsStore: new MemoryBlobStore(),
+      promptsStore: new MemoryPromptsStore(),
     });
   });
   afterEach(async () => {
@@ -54,6 +57,7 @@ describe('signed-request enforcement on a protected fixture route', () => {
       devicesStore: new MemoryDevicesStore(),
       relayStore: new MemoryRelayStore(),
       blobsStore: new MemoryBlobStore(),
+      promptsStore: new MemoryPromptsStore(),
     });
     app.get('/v1/_test/protected', { preHandler: app.requireSignature }, async (req) => ({
       pubkey: req.devicePubkey ? bytesToHex(req.devicePubkey) : null,
