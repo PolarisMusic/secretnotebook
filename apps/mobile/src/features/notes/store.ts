@@ -52,6 +52,8 @@ export interface NoteRow {
    *  explaining why they chose to share it now. NULL for shared notes,
    *  unrevealed secrets, and reveals without a comment. */
   revealComment: string | null;
+  /** Optional short title set at compose time. NULL when not provided. */
+  title: string | null;
 }
 
 interface RawNoteRow {
@@ -67,6 +69,7 @@ interface RawNoteRow {
   last_edited_by: Uint8Array | ArrayBufferLike | null;
   deleted_at: number | null;
   reveal_comment: string | null;
+  title: string | null;
 }
 
 function bytesFromRow(value: Uint8Array | ArrayBufferLike): Uint8Array {
@@ -88,12 +91,13 @@ function rowOf(r: RawNoteRow): NoteRow {
     lastEditedBy: r.last_edited_by == null ? null : bytesFromRow(r.last_edited_by),
     deletedAt: r.deleted_at,
     revealComment: r.reveal_comment,
+    title: r.title,
   };
 }
 
 const NOTE_SELECT = `id, kind, author_pubkey, body, created_at, revealed_at,
                      published_at, published_global_post_id,
-                     last_edited_at, last_edited_by, deleted_at, reveal_comment`;
+                     last_edited_at, last_edited_by, deleted_at, reveal_comment, title`;
 
 /**
  * Anything the note store needs from the host: SQL access for the
@@ -165,6 +169,7 @@ export async function writeSharedNote(
   deps: NoteStoreDeps,
   body: string,
   attachments: readonly PreparedAttachment[] = [],
+  title?: string,
 ): Promise<NoteRow> {
   if (body.length === 0 && attachments.length === 0) {
     throw new Error('writeSharedNote: body or attachment required');
@@ -172,12 +177,13 @@ export async function writeSharedNote(
   const id = await randomUuidV4();
   const createdAt = nowSec(deps);
   const hasBody = body.length > 0;
+  const hasTitle = title != null && title.length > 0;
   const descriptors = attachments.map((a) => a.descriptor);
   await deps.exec.transaction(async () => {
     await deps.exec.execute(
-      `INSERT INTO note (id, kind, author_pubkey, body, created_at)
-       VALUES (?, 'shared', ?, ?, ?)`,
-      [id, deps.selfPubkey, hasBody ? body : null, createdAt],
+      `INSERT INTO note (id, kind, author_pubkey, body, title, created_at)
+       VALUES (?, 'shared', ?, ?, ?, ?)`,
+      [id, deps.selfPubkey, hasBody ? body : null, hasTitle ? title : null, createdAt],
     );
     await insertOwnAttachments(deps.exec, id, attachments, createdAt);
     await deps.enqueue({
@@ -185,6 +191,7 @@ export async function writeSharedNote(
       kind: 'note.share.add',
       id,
       authorPubkey: bytesToHex(deps.selfPubkey),
+      ...(hasTitle ? { title } : {}),
       ...(hasBody ? { body } : {}),
       ...(descriptors.length > 0 ? { attachments: descriptors } : {}),
       createdAt,
@@ -206,6 +213,7 @@ export async function writeSecretNote(
   deps: NoteStoreDeps,
   body: string,
   attachments: readonly PreparedAttachment[] = [],
+  title?: string,
 ): Promise<NoteRow> {
   if (body.length === 0 && attachments.length === 0) {
     throw new Error('writeSecretNote: body or attachment required');
@@ -213,11 +221,12 @@ export async function writeSecretNote(
   const id = await randomUuidV4();
   const createdAt = nowSec(deps);
   const hasBody = body.length > 0;
+  const hasTitle = title != null && title.length > 0;
   await deps.exec.transaction(async () => {
     await deps.exec.execute(
-      `INSERT INTO note (id, kind, author_pubkey, body, created_at)
-       VALUES (?, 'secret', ?, ?, ?)`,
-      [id, deps.selfPubkey, hasBody ? body : null, createdAt],
+      `INSERT INTO note (id, kind, author_pubkey, body, title, created_at)
+       VALUES (?, 'secret', ?, ?, ?, ?)`,
+      [id, deps.selfPubkey, hasBody ? body : null, hasTitle ? title : null, createdAt],
     );
     // Own attachment rows land locally now (state 'ready') so the author
     // can view them immediately; the descriptors stay OFF the wire until
@@ -300,6 +309,7 @@ export async function revealSecretNote(
       v: 1,
       kind: 'note.secret.reveal',
       id,
+      ...(row.title != null ? { title: row.title } : {}),
       ...(row.body != null ? { body: row.body } : {}),
       ...(descriptors.length > 0 ? { attachments: descriptors } : {}),
       ...(comment ? { revealComment: comment } : {}),

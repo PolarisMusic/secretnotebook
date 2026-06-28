@@ -116,11 +116,16 @@ const NoteAttachmentsSchema = z
  * substance as soon as the op is applied. Recipient INSERTs OR IGNOREs
  * keyed on id; replays + late deliveries collapse into one row.
  */
+/** Max length of a note title. Synced with the UI maxLength and the DB column. */
+export const NOTE_TITLE_MAX = 120;
+
 export const NoteShareAddOpSchema = z.object({
   v: z.literal(1),
   kind: z.literal('note.share.add'),
   id: z.string().uuid(),
   authorPubkey: HexString(32),
+  /** Optional short title set at compose time. */
+  title: z.string().min(1).max(NOTE_TITLE_MAX).optional(),
   // Optional so a media-only note (a photo with no caption) is expressible.
   // When present it is non-empty; writers enforce "non-empty body OR >=1
   // attachment" — the wire schema can't (a discriminatedUnion member may not
@@ -171,6 +176,9 @@ export const NoteSecretRevealOpSchema = z.object({
   v: z.literal(1),
   kind: z.literal('note.secret.reveal'),
   id: z.string().uuid(),
+  /** Title, when set at compose time — carried here (not on announce) so
+   *  the substance stays off the wire until the author chooses to reveal. */
+  title: z.string().min(1).max(NOTE_TITLE_MAX).optional(),
   // Optional, like share.add: a revealed secret may be media-only. The
   // substance (body and/or attachments) appears only here, never on announce.
   body: z.string().min(1).max(NOTE_BODY_MAX).optional(),
@@ -336,6 +344,24 @@ export const ConnectionSafeWordAckOpSchema = z.object({
   ackedAt: z.number().int().nonnegative(),
 });
 export type ConnectionSafeWordAckOp = z.infer<typeof ConnectionSafeWordAckOpSchema>;
+
+/**
+ * Proposer-only withdrawal of a pending Safe Word proposal. Lets the proposer
+ * cancel the handshake before the partner confirms, returning both devices to
+ * the previous state (no pending proposal; active term, if any, is unchanged).
+ * The projector clears the proposal columns only when `safeword_proposal_by`
+ * matches the withdrawer, so a replay or a hostile withdraw from the OTHER
+ * partner is a safe no-op.
+ */
+export const ConnectionSafeWordWithdrawOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('connection.safeword.withdraw'),
+    withdrawerPubkey: HexString(32),
+    withdrawnAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ConnectionSafeWordWithdrawOp = z.infer<typeof ConnectionSafeWordWithdrawOpSchema>;
 
 /** Cap on a single reflection answer — generous for a couple of
  *  paragraphs without letting one op fan out unbounded text. */
@@ -559,6 +585,7 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   ConnectionSafeWordConfirmOpSchema,
   ConnectionSafeWordTriggerOpSchema,
   ConnectionSafeWordAckOpSchema,
+  ConnectionSafeWordWithdrawOpSchema,
   SecretUnlockStartOpSchema,
   SecretUnlockSubmitOpSchema,
   SecretUnlockRejectOpSchema,

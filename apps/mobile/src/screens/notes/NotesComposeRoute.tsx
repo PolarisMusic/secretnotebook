@@ -65,7 +65,15 @@ export function NotesComposeRoute(): JSX.Element {
         return;
       }
       const id = await randomUuidV4();
-      setStaged((s) => [...s, { id, mediaType: picked.mediaType, status: 'preparing' }]);
+      setStaged((s) => [
+        ...s,
+        {
+          id,
+          mediaType: picked.mediaType,
+          status: 'preparing',
+          previewUri: picked.mediaType === 'image' ? picked.uri : undefined,
+        },
+      ]);
       try {
         // Tag the two external steps (file read + blob upload) so a failure
         // says which one threw; encrypt/local-write failures surface raw.
@@ -145,7 +153,7 @@ export function NotesComposeRoute(): JSX.Element {
       }
       onToggleRecord={mediaReady ? () => void onToggleRecord() : undefined}
       onRemoveMedia={(id) => setStaged((s) => s.filter((m) => m.id !== id))}
-      onSubmit={async ({ kind, body }) => {
+      onSubmit={async ({ kind, body, title }) => {
         try {
           if (engine) {
             const attachments = staged
@@ -156,6 +164,7 @@ export function NotesComposeRoute(): JSX.Element {
               kind,
               body,
               attachments,
+              title,
             );
             // Flush the just-enqueued op now instead of waiting up to 15s
             // for the next ticker cycle, so the note reaches the partner

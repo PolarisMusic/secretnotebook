@@ -25,6 +25,7 @@ import {
   SAFEWORD_TERM_MIN,
   type SafeWordTermState,
   type TermStoreDeps,
+  withdrawProposal,
 } from '../../features/safeword/term-store';
 import {
   ackTrigger,
@@ -145,6 +146,21 @@ export function SafeWordRoute(): JSX.Element {
     }
   }, [termDeps, refresh]);
 
+  const handleWithdraw = useCallback(async () => {
+    const deps = termDeps();
+    if (!deps) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await withdrawProposal(deps);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message ?? 'Could not withdraw proposal');
+    } finally {
+      setBusy(false);
+    }
+  }, [termDeps, refresh]);
+
   const handleTrigger = useCallback(() => {
     const deps = triggerDeps();
     if (!deps) return;
@@ -191,10 +207,10 @@ export function SafeWordRoute(): JSX.Element {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']} testID="screen.safeword">
-      <ScreenHeader title="Roleplay term" />
+      <ScreenHeader title="Safe Word" />
       <ScrollView contentContainerStyle={styles.content}>
         {!engine ? (
-          <Text style={styles.hint}>Pair with a partner to set a shared roleplay term.</Text>
+          <Text style={styles.hint}>Pair with a partner to set a shared Safe Word.</Text>
         ) : state == null ? (
           <ActivityIndicator color="#f5f5f5" />
         ) : (
@@ -257,8 +273,7 @@ export function SafeWordRoute(): JSX.Element {
                   // legacy type-it-back path.
                   <>
                     <Text style={styles.hint}>
-                      Your partner proposed a roleplay term. Type it below to confirm you both
-                      agree.
+                      Your partner proposed a Safe Word. Type it below to confirm you both agree.
                     </Text>
                     {renderInput()}
                     {locked && <Text style={styles.error}>Too many attempts — wait a moment.</Text>}
@@ -273,20 +288,32 @@ export function SafeWordRoute(): JSX.Element {
             )}
 
             {state.kind === 'awaiting_partner' && (
-              <View style={styles.tile}>
-                <Text style={styles.tileText}>
-                  Waiting for your partner to confirm
-                  {state.term ? ` "${state.term}"` : ' your proposed term'}…
-                </Text>
-              </View>
+              <>
+                <View style={styles.tile}>
+                  <Text style={styles.tileText}>
+                    Waiting for your partner to confirm
+                    {state.term ? ` "${state.term}"` : ' your proposed term'}…
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.secondary}
+                  hitSlop={8}
+                  disabled={busy}
+                  onPress={() => void handleWithdraw()}
+                  testID="safeword.withdraw"
+                >
+                  <Text style={styles.secondaryText}>Cancel proposal</Text>
+                </Pressable>
+              </>
             )}
 
             {state.kind === 'none' && (
               <>
                 <Text style={styles.sectionLabel}>SET A TERM</Text>
                 <Text style={styles.hint}>
-                  Agree on a shared word with your partner. They'll type it back to confirm. It's
-                  just for the two of you — nothing is locked behind it.
+                  This should be a distinctive word or phrase you would not typically use with each
+                  other. This is the term either person can use if they need to take a break.
                 </Text>
                 {renderInput()}
                 {renderPrimary('Propose to partner', () => void handlePropose(), !canPropose())}

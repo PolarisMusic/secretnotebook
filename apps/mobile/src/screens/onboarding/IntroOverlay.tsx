@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export interface IntroOverlayProps {
   readonly visible: boolean;
   readonly onDismiss: () => void;
+  /** Dismiss and open the pairing flow (from the "Pair with partner" CTA). */
+  readonly onPair?: () => void;
 }
 
 /**
@@ -26,10 +28,22 @@ export function IntroOverlay(props: IntroOverlayProps): JSX.Element | null {
             accessibilityRole="button"
             style={styles.cta}
             hitSlop={8}
+            onPress={() => {
+              props.onDismiss();
+              props.onPair?.();
+            }}
+            testID="intro.pair"
+          >
+            <Text style={styles.ctaText}>Pair with partner</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.skip}
+            hitSlop={8}
             onPress={props.onDismiss}
             testID="intro.dismiss"
           >
-            <Text style={styles.ctaText}>Get started</Text>
+            <Text style={styles.skipText}>Skip for now</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -55,4 +69,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   ctaText: { color: '#0a0a0a', fontSize: 16, fontWeight: '700' },
+  skip: { paddingVertical: 12, alignItems: 'center' },
+  skipText: { color: '#7a7a7a', fontSize: 14, fontWeight: '600' },
 });

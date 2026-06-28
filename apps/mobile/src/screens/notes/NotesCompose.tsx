@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,12 +24,14 @@ export interface StagedMedia {
   /** Surfaced when status is 'error', so a failed attachment shows *why*
    *  (e.g. "uploadBlob: Network request failed") instead of a bare "failed". */
   readonly error?: string;
+  /** Local plaintext URI for an image pick — shown as a thumbnail in the chip. */
+  readonly previewUri?: string;
 }
 
 export interface NotesComposeProps {
   /** Resolves to an error string to show inline, or null on success.
    *  Rejecting leaves the form intact with a generic message. */
-  readonly onSubmit: (input: { kind: NoteKind; body: string }) => Promise<string | null>;
+  readonly onSubmit: (input: { kind: NoteKind; body: string; title?: string }) => Promise<string | null>;
   readonly onCancel: () => void;
   /** When true and the note is secret, show a dismissible nudge to set a
    *  shared roleplay term. Purely informational — never gates saving. */
@@ -54,6 +57,7 @@ export interface NotesComposeProps {
  */
 export function NotesCompose(props: NotesComposeProps): JSX.Element {
   const [kind, setKind] = useState<NoteKind>('shared');
+  const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +79,12 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      const errMessage = await props.onSubmit({ kind, body: body.trim() });
+      const trimmedTitle = title.trim();
+      const errMessage = await props.onSubmit({
+        kind,
+        body: body.trim(),
+        ...(trimmedTitle.length > 0 ? { title: trimmedTitle } : {}),
+      });
       if (errMessage) setError(errMessage);
     } catch (e) {
       setError((e as Error).message ?? 'Could not save note');
@@ -163,9 +172,13 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
               <View style={styles.chips}>
                 {staged.map((m) => (
                   <View key={m.id} style={styles.chip} testID={`notes.media.chip.${m.id}`}>
-                    <Text style={styles.chipLabel}>
-                      {m.mediaType === 'image' ? 'Photo' : 'Voice'}
-                    </Text>
+                    {m.mediaType === 'image' && m.previewUri ? (
+                      <Image source={{ uri: m.previewUri }} style={styles.chipThumb} />
+                    ) : (
+                      <Text style={styles.chipLabel}>
+                        {m.mediaType === 'image' ? 'Photo' : 'Voice'}
+                      </Text>
+                    )}
                     {m.status === 'preparing' ? (
                       <ActivityIndicator color="#9ec5ff" size="small" />
                     ) : null}
@@ -191,7 +204,7 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
 
         {kind === 'secret' && props.termNotSet && !promptDismissed ? (
           <View style={styles.prompt} testID="notes.term-prompt">
-            <Text style={styles.promptText}>Set a shared roleplay term with your partner?</Text>
+            <Text style={styles.promptText}>Set a shared Safe Word with your partner?</Text>
             <View style={styles.promptActions}>
               <Pressable
                 accessibilityRole="button"
@@ -212,6 +225,17 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
             </View>
           </View>
         ) : null}
+
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Add a title…"
+          placeholderTextColor="#666"
+          maxLength={120}
+          style={styles.titleInput}
+          testID="notes.title"
+          returnKeyType="next"
+        />
 
         <TextInput
           value={body}
@@ -286,9 +310,21 @@ const styles = StyleSheet.create({
   radioActive: { backgroundColor: '#9ec5ff' },
   radioText: { color: '#9e9e9e', fontWeight: '600' },
   radioTextActive: { color: '#0a0a0a' },
+  titleInput: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: '#161616',
+    color: '#f5f5f5',
+    fontSize: 17,
+    fontWeight: '600',
+    borderRadius: 10,
+  },
   input: {
     flex: 1,
     margin: 16,
+    marginTop: 8,
     padding: 14,
     backgroundColor: '#161616',
     color: '#f5f5f5',
@@ -333,6 +369,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#161616',
   },
   chipLabel: { color: '#cfcfcf', fontSize: 13 },
+  chipThumb: { width: 44, height: 44, borderRadius: 6 },
   chipError: { color: '#ffb4b4', fontSize: 12 },
   chipRemove: { color: '#9e9e9e', fontSize: 14, fontWeight: '700' },
 });

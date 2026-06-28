@@ -191,7 +191,11 @@ export function NotesListRoute(): JSX.Element {
         onCompose={() => navigation.navigate('NotesCompose')}
         onPair={() => navigation.navigate('Pairing')}
       />
-      <IntroOverlay visible={showIntro} onDismiss={dismissIntro} />
+      <IntroOverlay
+        visible={showIntro}
+        onDismiss={dismissIntro}
+        onPair={() => navigation.navigate('Pairing')}
+      />
     </>
   );
 }

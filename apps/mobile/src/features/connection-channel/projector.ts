@@ -89,9 +89,9 @@ export async function applyCrdtOp(
       }
       await exec.execute(
         `INSERT OR IGNORE INTO note (
-           id, kind, author_pubkey, body, created_at
-         ) VALUES (?, 'shared', ?, ?, ?)`,
-        [op.id, hexToBytes(op.authorPubkey), op.body ?? null, op.createdAt],
+           id, kind, author_pubkey, title, body, created_at
+         ) VALUES (?, 'shared', ?, ?, ?, ?)`,
+        [op.id, hexToBytes(op.authorPubkey), op.title ?? null, op.body ?? null, op.createdAt],
       );
       // Media rides as descriptors on the op; project them as 'remote'
       // rows (no local file yet). INSERT OR IGNORE on the descriptor id
@@ -129,13 +129,14 @@ export async function applyCrdtOp(
       // preceded it carried the authorPubkey check.
       await exec.execute(
         `UPDATE note
-            SET body           = ?,
+            SET title          = COALESCE(?, title),
+                body           = ?,
                 revealed_at    = ?,
                 reveal_comment = ?
           WHERE id             = ?
             AND kind           = 'secret'
             AND revealed_at IS NULL`,
-        [op.body ?? null, op.revealedAt, op.revealComment ?? null, op.id],
+        [op.title ?? null, op.body ?? null, op.revealedAt, op.revealComment ?? null, op.id],
       );
       // Secret-note media appears only on the reveal (never the announce).
       // Project the descriptors as 'remote' rows; INSERT OR IGNORE keeps
@@ -373,6 +374,29 @@ export async function applyCrdtOp(
         [op.ackedAt, op.id, hexToBytes(op.ackedByPubkey)],
       );
       return;
+
+    case 'connection.safeword.withdraw': {
+      // Proposer-only: the withdrawer MUST be the sender. The WHERE pin
+      // (safeword_proposal_by == withdrawer) makes a replay or a hostile
+      // withdraw from the OTHER partner a safe no-op.
+      if (op.withdrawerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.safeword.withdraw withdrawerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const withdrawer = hexToBytes(op.withdrawerPubkey);
+      await exec.execute(
+        `UPDATE connection
+            SET safeword_proposal_verifier = NULL,
+                safeword_proposal_by       = NULL,
+                safeword_proposal_at       = NULL,
+                safeword_proposal_term     = NULL
+          WHERE (partner_a_pubkey = ? OR partner_b_pubkey = ?)
+            AND safeword_proposal_by = ?`,
+        [withdrawer, withdrawer, withdrawer],
+      );
+      return;
+    }
 
     case 'secret_unlock.start':
       // The Unlocker is the actor; reject ops claiming someone else

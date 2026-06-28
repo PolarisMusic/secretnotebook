@@ -11,6 +11,9 @@ import { NotesDetailRoute } from '../screens/notes/NotesDetailRoute';
 import { NotesEditRoute } from '../screens/notes/NotesEditRoute';
 import { NotesListRoute } from '../screens/notes/NotesListRoute';
 import { NotesTriageRoute } from '../screens/notes/NotesTriageRoute';
+import { OnboardingCategoriesRoute } from '../screens/onboarding/OnboardingCategoriesRoute';
+import { OnboardingRoleRoute } from '../screens/onboarding/OnboardingRoleRoute';
+import { OnboardingSafeWordRoute } from '../screens/onboarding/OnboardingSafeWordRoute';
 import { PairWithPartnerRoute } from '../screens/onboarding/PairWithPartnerRoute';
 import { SafeWordRoute } from '../screens/safeword/SafeWordRoute';
 import { PromptPreferencesRoute } from '../screens/secret-unlock/PromptPreferencesRoute';
@@ -34,6 +37,9 @@ export type MainStackParamList = {
   Settings: undefined;
   SafeWord: undefined;
   Pairing: undefined;
+  OnboardingRole: undefined;
+  OnboardingCategories: undefined;
+  OnboardingSafeWord: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -82,6 +88,9 @@ export function MainStack(): JSX.Element {
           component={PairWithPartnerRoute}
           options={{ presentation: 'modal' }}
         />
+        <Stack.Screen name="OnboardingRole" component={OnboardingRoleRoute} />
+        <Stack.Screen name="OnboardingCategories" component={OnboardingCategoriesRoute} />
+        <Stack.Screen name="OnboardingSafeWord" component={OnboardingSafeWordRoute} />
       </Stack.Navigator>
       {/* App-wide: an inbound safe-word trigger overlays every screen until
           it's acknowledged. */}
