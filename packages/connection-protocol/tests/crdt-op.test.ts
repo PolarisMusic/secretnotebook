@@ -472,6 +472,55 @@ const sampleSeverCancel: CrdtOp = {
   canceledAt: 1_700_600_100,
 };
 
+const samplePromptPreferenceSet: CrdtOp = {
+  v: 1,
+  kind: 'prompt_preference.set',
+  setterPubkey: '44'.repeat(32),
+  categories: ['dating', 'intimacy', 'general'],
+  updatedAt: 1_700_700_000,
+};
+
+describe('prompt_preference.set round-trip', () => {
+  it('round-trips byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(samplePromptPreferenceSet))).toEqual(
+      samplePromptPreferenceSet,
+    );
+  });
+
+  it('accepts an empty categories array (user opted out of everything)', () => {
+    const empty: CrdtOp = { ...samplePromptPreferenceSet, categories: [] };
+    expect(deserialiseOp(serialiseOp(empty))).toEqual(empty);
+  });
+
+  it('rejects a non-32-byte setterPubkey', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...samplePromptPreferenceSet, setterPubkey: 'ab' }),
+    ).toThrow();
+  });
+
+  it('rejects more than 64 categories — fan-out cap', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        ...samplePromptPreferenceSet,
+        categories: Array.from({ length: 65 }, (_, i) => `cat_${i}`),
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a category string longer than the per-key cap', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        ...samplePromptPreferenceSet,
+        categories: ['x'.repeat(41)],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an unknown field (strict)', () => {
+    expect(() => CrdtOpSchema.parse({ ...samplePromptPreferenceSet, extra: 1 })).toThrow();
+  });
+});
+
 describe('connection sever ops round-trip', () => {
   it('round-trips schedule + cancel byte-for-byte', () => {
     expect(deserialiseOp(serialiseOp(sampleSeverSchedule))).toEqual(sampleSeverSchedule);

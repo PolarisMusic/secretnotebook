@@ -36,6 +36,8 @@ export interface SecretUnlockListProps {
   readonly onRefresh: () => void;
   readonly onStart: () => void;
   readonly onSelect: (id: string) => void;
+  /** Open the prompt-category preferences screen. */
+  readonly onPreferences: () => void;
 }
 
 function isoDate(secs: number): string {
@@ -84,6 +86,15 @@ export function SecretUnlockList(props: SecretUnlockListProps): JSX.Element {
           {props.startDisabledReason}
         </Text>
       )}
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={props.onPreferences}
+        style={styles.prefsLink}
+        testID="unlock.preferences"
+      >
+        <Text style={styles.prefsLinkText}>Prompt preferences →</Text>
+      </Pressable>
 
       <FlatList
         data={props.items as UnlockListItem[]}
@@ -172,6 +183,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
   },
+  prefsLink: { marginHorizontal: 16, marginTop: 12, paddingVertical: 8, alignItems: 'center' },
+  prefsLinkText: { color: '#9ec5ff', fontSize: 14, fontWeight: '600' },
   listContent: { padding: 16, paddingTop: 16 },
   row: { backgroundColor: '#161616', padding: 14, borderRadius: 10, marginBottom: 10, gap: 6 },
   rowNeedsYou: { borderWidth: 1, borderColor: '#3a3a5a' },

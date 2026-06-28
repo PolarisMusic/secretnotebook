@@ -14,6 +14,7 @@ import { NotesListRoute } from '../screens/notes/NotesListRoute';
 import { NotesTriageRoute } from '../screens/notes/NotesTriageRoute';
 import { PairWithPartnerRoute } from '../screens/onboarding/PairWithPartnerRoute';
 import { SafeWordRoute } from '../screens/safeword/SafeWordRoute';
+import { PromptPreferencesRoute } from '../screens/secret-unlock/PromptPreferencesRoute';
 import { SecretUnlockDetailRoute } from '../screens/secret-unlock/SecretUnlockDetailRoute';
 import { SecretUnlockListRoute } from '../screens/secret-unlock/SecretUnlockListRoute';
 import { SettingsRoute } from '../screens/settings/SettingsRoute';
@@ -29,7 +30,8 @@ export type MainStackParamList = {
   PostDetail: { id: string };
   SavedByYou: undefined;
   SecretUnlockList: undefined;
-  SecretUnlockDetail: { id: string };
+  SecretUnlockDetail: { id: string; intro?: boolean };
+  PromptPreferences: undefined;
   Settings: undefined;
   SafeWord: undefined;
   Pairing: undefined;
@@ -74,6 +76,7 @@ export function MainStack(): JSX.Element {
         <Stack.Screen name="SavedByYou" component={SavedByYouRoute} />
         <Stack.Screen name="SecretUnlockList" component={SecretUnlockListRoute} />
         <Stack.Screen name="SecretUnlockDetail" component={SecretUnlockDetailRoute} />
+        <Stack.Screen name="PromptPreferences" component={PromptPreferencesRoute} />
         <Stack.Screen name="Settings" component={SettingsRoute} />
         <Stack.Screen name="SyncDebug" component={SyncDebugRoute} />
         <Stack.Screen name="SafeWord" component={SafeWordRoute} />

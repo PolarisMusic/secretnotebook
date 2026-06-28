@@ -4,6 +4,7 @@ import { buildApp } from './server.js';
 import { DrizzleBlobStore } from './storage/blobs-drizzle.js';
 import { DrizzleDevicesStore } from './storage/devices-drizzle.js';
 import { DrizzlePostsStore } from './storage/posts-drizzle.js';
+import { DrizzlePromptsStore } from './storage/prompts-drizzle.js';
 import { DrizzleRelayStore } from './storage/relay-drizzle.js';
 
 async function main(): Promise<void> {
@@ -19,6 +20,7 @@ async function main(): Promise<void> {
     devicesStore: new DrizzleDevicesStore(db),
     relayStore: new DrizzleRelayStore(db),
     blobsStore: new DrizzleBlobStore(db),
+    promptsStore: new DrizzlePromptsStore(db),
   });
 
   const closeOnSignal = async (signal: string): Promise<void> => {

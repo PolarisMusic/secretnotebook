@@ -13,6 +13,7 @@ import type { SqlExecutor } from '../../db/executor';
 import { descriptorFromRow, listNoteAttachments } from '../attachments/store';
 import { randomUuidV4 } from '../connection-channel/uuid';
 import { awardCouplePoints } from '../ledger/store';
+import { getPromptCategories } from './preferences-store';
 import { drawPromptKey } from './prompts';
 
 /** Couple Points awarded when the Author verifies the task. */
@@ -257,7 +258,15 @@ export async function startUnlock(
     throw new Error('startUnlock: you can only unlock one secret a day — try again tomorrow');
   }
   const id = await randomUuidV4();
-  const promptKey = drawPromptKey(opts.rng);
+  // Both partners' enabled categories filter the draw — a prompt only
+  // qualifies if it overlaps both sets. A no-overlap configuration falls
+  // back to the `general` safety pool inside drawPromptKey, so the
+  // start never fails on a misconfigured pair.
+  const [selfCategories, peerCategories] = await Promise.all([
+    getPromptCategories(deps.exec, deps.selfPubkey),
+    getPromptCategories(deps.exec, deps.peerPubkey),
+  ]);
+  const promptKey = drawPromptKey(opts.rng, { self: selfCategories, peer: peerCategories });
   const createdAt = nowSec(deps);
   await deps.exec.transaction(async () => {
     // Re-read inside the txn: two concurrent starts would both pass the

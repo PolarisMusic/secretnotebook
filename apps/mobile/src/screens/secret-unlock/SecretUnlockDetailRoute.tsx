@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 
 import { bytesToHex } from '@secretnotebook/crypto';
@@ -9,7 +9,11 @@ import { useDatabaseStore } from '../../db/store';
 import { listNoteAttachments } from '../../features/attachments/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getNote } from '../../features/notes/store';
-import { resolvePromptText } from '../../features/secret-unlock/prompts';
+import {
+  drawRandomPromptTexts,
+  findPrompt,
+  resolvePromptText,
+} from '../../features/secret-unlock/prompts';
 import {
   cancelUnlock,
   discloseRevealedNoteToAuthor,
@@ -25,7 +29,11 @@ import {
   type UnlockState,
 } from '../../features/secret-unlock/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
-import { SecretUnlockDetail, type ReflectionView } from './SecretUnlockDetail';
+import {
+  SecretUnlockDetail,
+  type PromptSourceView,
+  type ReflectionView,
+} from './SecretUnlockDetail';
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 type Rt = RouteProp<MainStackParamList, 'SecretUnlockDetail'>;
@@ -34,6 +42,9 @@ interface ViewModel {
   role: 'author' | 'unlocker';
   state: UnlockState;
   promptText: string;
+  promptSource: PromptSourceView | null;
+  /** False for the Author until the Unlocker has at least once submitted. */
+  showPrompt: boolean;
   revealedBody: string | null;
   revealedHasMedia: boolean;
   showSecret: boolean;
@@ -61,6 +72,15 @@ export function SecretUnlockDetailRoute(): JSX.Element {
   const engine = useSyncEngineStore((s) => s.engine);
   const [vm, setVm] = useState<ViewModel | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Random snapshots to flash through the prompt card on first arrival from
+  // "Start an unlock" (params.intro). Pre-drawn once so a re-render mid-
+  // shuffle doesn't shake the texts; the component animates through them
+  // exactly once on mount.
+  const shuffleTexts = useMemo<readonly string[] | null>(
+    () => (params.intro ? drawRandomPromptTexts(9) : null),
+    [params.intro],
+  );
 
   const deps: SecretUnlockStoreDeps | null =
     exec && engine
@@ -114,10 +134,27 @@ export function SecretUnlockDetailRoute(): JSX.Element {
           ])
         : [null, null, false];
 
+    const prompt = findPrompt(attempt.promptKey);
+    const promptSource: PromptSourceView | null =
+      prompt && (prompt.sourceName || prompt.sponsored)
+        ? {
+            name: prompt.sourceName ?? null,
+            url: prompt.sourceUrl ?? null,
+            sponsored: prompt.sponsored ?? false,
+          }
+        : null;
+    // Author stays blind to the drawn prompt until the Unlocker has at
+    // least once submitted ("asks for verification"). `submittedAt` latches:
+    // once set it never unsets, so a later send-back / cancel keeps the
+    // prompt visible to the Author who has already seen it.
+    const showPrompt = role === 'unlocker' || attempt.submittedAt != null;
+
     setVm({
       role,
       state: attempt.state,
       promptText: resolvePromptText(attempt.promptKey),
+      promptSource,
+      showPrompt,
       revealedBody,
       revealedHasMedia,
       showSecret,
@@ -156,6 +193,9 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       role={vm?.role ?? 'unlocker'}
       state={vm?.state ?? 'assigned'}
       promptText={vm?.promptText ?? ''}
+      promptSource={vm?.promptSource ?? null}
+      showPrompt={vm?.showPrompt ?? false}
+      shuffleTexts={shuffleTexts}
       revealedBody={vm?.revealedBody ?? null}
       revealedHasMedia={vm?.revealedHasMedia ?? false}
       showSecret={vm?.showSecret ?? false}
