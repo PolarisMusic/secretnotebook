@@ -116,11 +116,16 @@ const NoteAttachmentsSchema = z
  * substance as soon as the op is applied. Recipient INSERTs OR IGNOREs
  * keyed on id; replays + late deliveries collapse into one row.
  */
+/** Max length of a note title. Synced with the UI maxLength and the DB column. */
+export const NOTE_TITLE_MAX = 120;
+
 export const NoteShareAddOpSchema = z.object({
   v: z.literal(1),
   kind: z.literal('note.share.add'),
   id: z.string().uuid(),
   authorPubkey: HexString(32),
+  /** Optional short title set at compose time. */
+  title: z.string().min(1).max(NOTE_TITLE_MAX).optional(),
   // Optional so a media-only note (a photo with no caption) is expressible.
   // When present it is non-empty; writers enforce "non-empty body OR >=1
   // attachment" — the wire schema can't (a discriminatedUnion member may not
@@ -171,6 +176,9 @@ export const NoteSecretRevealOpSchema = z.object({
   v: z.literal(1),
   kind: z.literal('note.secret.reveal'),
   id: z.string().uuid(),
+  /** Title, when set at compose time — carried here (not on announce) so
+   *  the substance stays off the wire until the author chooses to reveal. */
+  title: z.string().min(1).max(NOTE_TITLE_MAX).optional(),
   // Optional, like share.add: a revealed secret may be media-only. The
   // substance (body and/or attachments) appears only here, never on announce.
   body: z.string().min(1).max(NOTE_BODY_MAX).optional(),

@@ -157,6 +157,12 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
             {note.kind.toUpperCase()} · {isoDate(note.createdAt)}
           </Text>
 
+          {note.title != null ? (
+            <Text style={styles.title} testID="notes-detail.title">
+              {note.title}
+            </Text>
+          ) : null}
+
           {note.body != null ? (
             <Text style={styles.body} testID="notes-detail.body">
               {note.body}
@@ -351,6 +357,7 @@ const styles = StyleSheet.create({
   menuItemTextDestructive: { color: '#ffb4b4', fontSize: 16 },
   content: { padding: 16, gap: 16 },
   meta: { color: '#808080', fontSize: 12, letterSpacing: 0.5 },
+  title: { color: '#f5f5f5', fontSize: 22, fontWeight: '700', lineHeight: 28 },
   body: { color: '#f5f5f5', fontSize: 17, lineHeight: 24 },
   locked: { color: '#9e9e9e', fontSize: 15, fontStyle: 'italic' },
   revealCommentBox: {

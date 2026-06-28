@@ -89,9 +89,9 @@ export async function applyCrdtOp(
       }
       await exec.execute(
         `INSERT OR IGNORE INTO note (
-           id, kind, author_pubkey, body, created_at
-         ) VALUES (?, 'shared', ?, ?, ?)`,
-        [op.id, hexToBytes(op.authorPubkey), op.body ?? null, op.createdAt],
+           id, kind, author_pubkey, title, body, created_at
+         ) VALUES (?, 'shared', ?, ?, ?, ?)`,
+        [op.id, hexToBytes(op.authorPubkey), op.title ?? null, op.body ?? null, op.createdAt],
       );
       // Media rides as descriptors on the op; project them as 'remote'
       // rows (no local file yet). INSERT OR IGNORE on the descriptor id
@@ -129,13 +129,14 @@ export async function applyCrdtOp(
       // preceded it carried the authorPubkey check.
       await exec.execute(
         `UPDATE note
-            SET body           = ?,
+            SET title          = COALESCE(?, title),
+                body           = ?,
                 revealed_at    = ?,
                 reveal_comment = ?
           WHERE id             = ?
             AND kind           = 'secret'
             AND revealed_at IS NULL`,
-        [op.body ?? null, op.revealedAt, op.revealComment ?? null, op.id],
+        [op.title ?? null, op.body ?? null, op.revealedAt, op.revealComment ?? null, op.id],
       );
       // Secret-note media appears only on the reveal (never the announce).
       // Project the descriptors as 'remote' rows; INSERT OR IGNORE keeps

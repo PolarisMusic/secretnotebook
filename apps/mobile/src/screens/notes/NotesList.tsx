@@ -136,7 +136,12 @@ export function NotesList(props: NotesListProps): JSX.Element {
                 </Text>
               ) : null}
             </View>
-            <Text style={styles.rowBody} numberOfLines={3}>
+            {item.title ? (
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
+            ) : null}
+            <Text style={styles.rowBody} numberOfLines={2}>
               {previewBody(item)}
             </Text>
             <Text style={styles.rowMeta}>{isoDate(item.createdAt)}</Text>
@@ -199,7 +204,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 4,
   },
-  rowBody: { color: '#f5f5f5', fontSize: 15, lineHeight: 20 },
+  rowTitle: { color: '#f5f5f5', fontSize: 15, fontWeight: '600', lineHeight: 20 },
+  rowBody: { color: '#b0b0b0', fontSize: 14, lineHeight: 19 },
   rowMeta: { color: '#808080', fontSize: 12 },
   empty: { paddingTop: 80, alignItems: 'center', gap: 8, paddingHorizontal: 32 },
   emptyTitle: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },

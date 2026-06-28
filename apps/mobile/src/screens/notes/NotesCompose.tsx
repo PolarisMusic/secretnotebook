@@ -31,7 +31,7 @@ export interface StagedMedia {
 export interface NotesComposeProps {
   /** Resolves to an error string to show inline, or null on success.
    *  Rejecting leaves the form intact with a generic message. */
-  readonly onSubmit: (input: { kind: NoteKind; body: string }) => Promise<string | null>;
+  readonly onSubmit: (input: { kind: NoteKind; body: string; title?: string }) => Promise<string | null>;
   readonly onCancel: () => void;
   /** When true and the note is secret, show a dismissible nudge to set a
    *  shared roleplay term. Purely informational — never gates saving. */
@@ -57,6 +57,7 @@ export interface NotesComposeProps {
  */
 export function NotesCompose(props: NotesComposeProps): JSX.Element {
   const [kind, setKind] = useState<NoteKind>('shared');
+  const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +79,12 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      const errMessage = await props.onSubmit({ kind, body: body.trim() });
+      const trimmedTitle = title.trim();
+      const errMessage = await props.onSubmit({
+        kind,
+        body: body.trim(),
+        ...(trimmedTitle.length > 0 ? { title: trimmedTitle } : {}),
+      });
       if (errMessage) setError(errMessage);
     } catch (e) {
       setError((e as Error).message ?? 'Could not save note');
@@ -221,6 +227,17 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
         ) : null}
 
         <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Add a title…"
+          placeholderTextColor="#666"
+          maxLength={120}
+          style={styles.titleInput}
+          testID="notes.title"
+          returnKeyType="next"
+        />
+
+        <TextInput
           value={body}
           onChangeText={setBody}
           placeholder={
@@ -293,9 +310,21 @@ const styles = StyleSheet.create({
   radioActive: { backgroundColor: '#9ec5ff' },
   radioText: { color: '#9e9e9e', fontWeight: '600' },
   radioTextActive: { color: '#0a0a0a' },
+  titleInput: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: '#161616',
+    color: '#f5f5f5',
+    fontSize: 17,
+    fontWeight: '600',
+    borderRadius: 10,
+  },
   input: {
     flex: 1,
     margin: 16,
+    marginTop: 8,
     padding: 14,
     backgroundColor: '#161616',
     color: '#f5f5f5',
