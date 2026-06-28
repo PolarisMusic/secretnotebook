@@ -18,10 +18,10 @@ import { getPromptCategories } from './preferences-store';
 import { drawPromptKey } from './prompts';
 import { getAppSetting, setAppSetting } from '../settings/store';
 
-/** Couple Points awarded when the Author verifies the task. */
-export const UNLOCK_VERIFY_POINTS = 500;
-/** Couple Points awarded once BOTH partners have reflected. */
-export const UNLOCK_REFLECT_POINTS = 500;
+/** Sparks awarded when the Author verifies the task. */
+export const UNLOCK_VERIFY_POINTS = 50;
+/** Sparks awarded once BOTH partners have reflected. */
+export const UNLOCK_REFLECT_POINTS = 50;
 export const UNLOCK_REASON_VERIFY = 'unlock_verified';
 export const UNLOCK_REASON_REFLECT = 'unlock_reflected';
 /** Minimum unrevealed secrets the Author must hold for the Unlocker to

@@ -448,7 +448,7 @@ describe('CrdtOp dispatch — revived ledger_entry.add (R7)', () => {
       kind: 'ledger_entry.add',
       id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
       ledgerKind: 'couple_points',
-      delta: 500,
+      delta: 50,
       reason: 'unlock_verified',
       refId: null,
       createdAt: 1_700_000_000,
