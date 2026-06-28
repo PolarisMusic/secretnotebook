@@ -46,6 +46,7 @@ export async function runBoot(): Promise<void> {
     // fire a second biometric prompt for the same cold-launch unlock.
     useAppLockSession.getState().unlock();
     useAppLockSession.getState().markAutoPrompted();
+    useAppLockSession.getState().markRecentlyAuthenticated();
     useDatabaseStore.getState().setExec(result.executor);
 
     const apiClient = new ApiClient({

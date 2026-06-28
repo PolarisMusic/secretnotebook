@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { createBiometricPrompt } from '../../features/pairing/biometric';
-import { useAppLockSession } from '../../features/app-lock/session';
+import { useAppLockSession, isRecentlyAuthenticated } from '../../features/app-lock/session';
 import { AppLockGate } from './AppLockGate';
 
 // Metro inlines `process.env.EXPO_PUBLIC_*` at bundle time; declare the
@@ -22,6 +22,7 @@ const APP_LOCK_DISABLED =
 export function AppLockGateRoute(): JSX.Element {
   const biometric = useMemo(() => createBiometricPrompt(), []);
   const unlock = useAppLockSession((s) => s.unlock);
+  const markRecentlyAuthenticated = useAppLockSession((s) => s.markRecentlyAuthenticated);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +31,11 @@ export function AppLockGateRoute(): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      if (APP_LOCK_DISABLED) {
+      // Skip biometric when explicitly disabled (dev/test) OR when the user
+      // successfully scanned very recently — avoids a double-prompt on the
+      // cold-launch path (bootstrap's keychain read already triggered Face ID)
+      // and on short background-lock cycles.
+      if (APP_LOCK_DISABLED || isRecentlyAuthenticated()) {
         unlock();
         return;
       }
@@ -43,6 +48,7 @@ export function AppLockGateRoute(): JSX.Element {
       }
       const res = await biometric.authenticate('Unlock to open your notes');
       if (res.ok) {
+        markRecentlyAuthenticated();
         unlock();
       } else {
         setError('Unlock cancelled. Tap Unlock to try again.');

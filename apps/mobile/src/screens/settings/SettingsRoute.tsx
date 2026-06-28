@@ -215,27 +215,20 @@ export function SettingsRoute(): JSX.Element {
         {paired && (
           <>
             <Text style={styles.sectionLabel}>ROLEPLAY TERM</Text>
-            {termState?.kind === 'awaiting_partner' ? (
-              <View style={styles.tile}>
-                <Text style={styles.tileText}>{termSummary(termState)}</Text>
-                <Text style={styles.hint}>
-                  Your partner hasn't confirmed the term yet — no action needed on your end.
-                </Text>
-              </View>
-            ) : (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.tile}
-                hitSlop={6}
-                onPress={() => navigation.navigate('SafeWord')}
-                testID="settings.safeword"
-              >
-                <Text style={styles.tileText}>{termSummary(termState)}</Text>
-                <Text style={styles.hint}>
-                  An optional shared safe word. Tap to set, change, or use it.
-                </Text>
-              </Pressable>
-            )}
+            <Pressable
+              accessibilityRole="button"
+              style={styles.tile}
+              hitSlop={6}
+              onPress={() => navigation.navigate('SafeWord')}
+              testID="settings.safeword"
+            >
+              <Text style={styles.tileText}>{termSummary(termState)}</Text>
+              <Text style={styles.hint}>
+                {termState?.kind === 'awaiting_partner'
+                  ? 'Waiting for your partner to confirm — tap to manage or cancel.'
+                  : 'An optional shared safe word. Tap to set, change, or use it.'}
+              </Text>
+            </Pressable>
 
             <Text style={styles.sectionLabel}>DANGER ZONE</Text>
             {severAt != null ? (

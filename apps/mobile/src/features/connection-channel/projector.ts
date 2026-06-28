@@ -129,12 +129,13 @@ export async function applyCrdtOp(
       // preceded it carried the authorPubkey check.
       await exec.execute(
         `UPDATE note
-            SET body        = ?,
-                revealed_at = ?
-          WHERE id          = ?
-            AND kind        = 'secret'
+            SET body           = ?,
+                revealed_at    = ?,
+                reveal_comment = ?
+          WHERE id             = ?
+            AND kind           = 'secret'
             AND revealed_at IS NULL`,
-        [op.body ?? null, op.revealedAt, op.id],
+        [op.body ?? null, op.revealedAt, op.revealComment ?? null, op.id],
       );
       // Secret-note media appears only on the reveal (never the announce).
       // Project the descriptors as 'remote' rows; INSERT OR IGNORE keeps

@@ -166,6 +166,12 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
             </Text>
           ) : null}
 
+          {note.kind === 'secret' && note.revealedAt != null && note.revealComment ? (
+            <View style={styles.revealCommentBox} testID="notes-detail.reveal-comment">
+              <Text style={styles.revealCommentText}>{note.revealComment}</Text>
+            </View>
+          ) : null}
+
           {props.attachments && props.attachments.length > 0 ? (
             <View style={styles.media} testID="notes-detail.media">
               {props.attachments.map((a) => {
@@ -346,6 +352,15 @@ const styles = StyleSheet.create({
   meta: { color: '#808080', fontSize: 12, letterSpacing: 0.5 },
   body: { color: '#f5f5f5', fontSize: 17, lineHeight: 24 },
   locked: { color: '#9e9e9e', fontSize: 15, fontStyle: 'italic' },
+  revealCommentBox: {
+    backgroundColor: '#1a1a2e',
+    borderLeftWidth: 3,
+    borderLeftColor: '#9ec5ff',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+  },
+  revealCommentText: { color: '#c8d8ff', fontSize: 14, lineHeight: 20, fontStyle: 'italic' },
   publishedBadge: {
     backgroundColor: '#1a2a1a',
     padding: 12,

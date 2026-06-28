@@ -11,13 +11,7 @@ import { downloadAttachment, openAttachment } from '../../features/attachments/p
 import { listNoteAttachments } from '../../features/attachments/store';
 import type { AttachmentRow } from '../../features/attachments/types';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
-import {
-  deleteNote,
-  getNote,
-  revealSecretNote,
-  writeSharedNote,
-  type NoteRow,
-} from '../../features/notes/store';
+import { deleteNote, getNote, revealSecretNote, type NoteRow } from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { NotesDetail, type DetailAttachment } from './NotesDetail';
 
@@ -133,11 +127,8 @@ export function NotesDetailRoute(): JSX.Element {
         selfPubkey: engine.selfPub,
         enqueue: (op: Parameters<typeof engine.enqueue>[0]) => engine.enqueue(op),
       };
-      await revealSecretNote(deps, note.id);
       const trimmed = message.trim();
-      if (trimmed.length > 0) {
-        await writeSharedNote(deps, trimmed);
-      }
+      await revealSecretNote(deps, note.id, trimmed || undefined);
       await refresh();
     } catch (e) {
       setError((e as Error).message ?? 'Could not reveal');

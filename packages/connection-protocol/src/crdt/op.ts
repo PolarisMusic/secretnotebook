@@ -175,6 +175,10 @@ export const NoteSecretRevealOpSchema = z.object({
   // substance (body and/or attachments) appears only here, never on announce.
   body: z.string().min(1).max(NOTE_BODY_MAX).optional(),
   attachments: NoteAttachmentsSchema,
+  /** Optional message from the author explaining why they're revealing
+   *  this secret now. Shown to the partner on the note detail screen
+   *  after the reveal. Travels E2E-encrypted inside the ratchet. */
+  revealComment: z.string().min(1).max(500).optional(),
   revealedAt: z.number().int().nonnegative(),
 });
 export type NoteSecretRevealOp = z.infer<typeof NoteSecretRevealOpSchema>;
