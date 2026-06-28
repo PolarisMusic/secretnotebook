@@ -18,13 +18,17 @@ import type { PostsStore, StoredPost } from '../storage/types.js';
 const FLAG_HIDE_THRESHOLD = 1;
 
 function toApiPost(row: StoredPost, flags: string[]): Post {
-  const obscured = flags.length >= FLAG_HIDE_THRESHOLD;
+  const flagged = flags.length >= FLAG_HIDE_THRESHOLD;
+  // Only the strict `reveals_personal_details` flag causes the server to
+  // withhold the body entirely — the client cannot override this. All other
+  // flags (spam, inappropriate, …) still ship the body so the client can
+  // offer a "show anyway" reveal; those flags only trigger a client-side
+  // collapse by default.
+  const strictFlag = flags.includes('reveals_personal_details');
   return {
     id: row.id,
     contentType: row.contentType as Post['contentType'],
-    // Once flagged, the body is withheld; the client renders `flags` in
-    // its place so the post stays visible-as-existing but unreadable.
-    body: obscured ? '' : row.body,
+    body: flagged && strictFlag ? '' : row.body,
     audience: row.audience as Post['audience'],
     anonAuthor: bytesToHex(row.anonAuthor),
     createdAt: row.createdAt.toISOString(),

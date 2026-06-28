@@ -117,15 +117,18 @@ export function NotesDetailRoute(): JSX.Element {
     durationMs: r.durationMs,
   }));
 
-  async function handleReveal(): Promise<void> {
+  async function handleReveal(message: string): Promise<void> {
     if (!engine || !note) return;
     setBusy(true);
     setError(null);
     try {
-      await revealSecretNote(
-        { exec: exec!, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
-        note.id,
-      );
+      const deps = {
+        exec: exec!,
+        selfPubkey: engine.selfPub,
+        enqueue: (op: Parameters<typeof engine.enqueue>[0]) => engine.enqueue(op),
+      };
+      const trimmed = message.trim();
+      await revealSecretNote(deps, note.id, trimmed || undefined);
       await refresh();
     } catch (e) {
       setError((e as Error).message ?? 'Could not reveal');
@@ -186,7 +189,7 @@ export function NotesDetailRoute(): JSX.Element {
       attachments={attachments}
       onOpenAttachment={(id) => void handleOpenAttachment(id)}
       onBack={() => navigation.goBack()}
-      onReveal={() => void handleReveal()}
+      onReveal={(msg) => void handleReveal(msg)}
       onOpenPublishedPost={(id) => navigation.navigate('PostDetail', { id })}
       canEdit={canEdit}
       canDelete={canDelete}

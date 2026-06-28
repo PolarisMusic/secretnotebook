@@ -1,77 +1,143 @@
+import { useRef } from 'react';
 import {
   Image,
   Modal,
+  PanResponder,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface ImageViewerModalProps {
-  /** URI of the decrypted image to show full-screen, or null when closed. */
-  readonly uri: string | null;
+  /** All image URIs available for navigation; or a single-element array. */
+  readonly uris: readonly string[];
+  /** Index into `uris` that is currently open; null means the viewer is closed. */
+  readonly index: number | null;
   readonly onClose: () => void;
+  /** Called when the user swipes to a different photo. */
+  readonly onChangeIndex?: (next: number) => void;
 }
 
+const SWIPE_THRESHOLD = 60;
+
 /**
- * Full-screen image viewer. Tap a photo in the note detail to open it here at
- * full size with pinch-to-zoom.
+ * Full-screen image viewer with swipe navigation. Swipe left/right to move
+ * between photos; swipe down (or tap Done) to dismiss. Pinch-to-zoom via
+ * ScrollView's native maximumZoomScale (iOS only; Android shows full-screen
+ * without pinch).
  *
- * Zoom is the ScrollView's native pinch (maximumZoomScale) rather than a
- * gesture-handler/reanimated based viewer — those libraries are deliberately
- * kept out of this app (they were tied to the earlier iOS dead-touch
- * regression; see components/AppMenu). Native ScrollView zoom is iOS-only;
- * on Android the image still opens full-screen, just without pinch. Closing is
- * the Done button or the hardware back button (onRequestClose).
+ * SafeAreaView inside a Modal misreports insets on iOS (it runs in a separate
+ * native window the provider can't measure). We read insets from the hook
+ * (which crosses the Modal boundary via context) and apply them as plain
+ * padding instead.
+ *
+ * Gesture detection uses PanResponder — no react-native-gesture-handler
+ * dependency required.
  */
 export function ImageViewerModal(props: ImageViewerModalProps): JSX.Element {
-  const { width, height } = useWindowDimensions();
-  const { uri } = props;
-  const imageHeight = height - 96; // leave room for the top bar + insets
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { uris, index, onClose, onChangeIndex } = props;
+  const visible = index != null;
+  const currentUri = index != null ? uris[index] : null;
+  const canPrev = index != null && index > 0;
+  const canNext = index != null && index < uris.length - 1;
+
+  const panStart = useRef<{ x: number; y: number } | null>(null);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
+      onPanResponderGrant: (_, gs) => {
+        panStart.current = { x: gs.x0, y: gs.y0 };
+      },
+      onPanResponderRelease: (_, gs) => {
+        if (!panStart.current) return;
+        const dx = gs.dx;
+        const dy = gs.dy;
+        if (Math.abs(dy) > Math.abs(dx) && dy > SWIPE_THRESHOLD) {
+          // Swipe down → close
+          onClose();
+        } else if (dx < -SWIPE_THRESHOLD && canNext && onChangeIndex && index != null) {
+          onChangeIndex(index + 1);
+        } else if (dx > SWIPE_THRESHOLD && canPrev && onChangeIndex && index != null) {
+          onChangeIndex(index - 1);
+        }
+        panStart.current = null;
+      },
+    }),
+  ).current;
+
   return (
     <Modal
-      visible={uri != null}
+      visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={props.onClose}
+      onRequestClose={onClose}
       testID="image-viewer"
     >
-      <SafeAreaView style={styles.backdrop} edges={['top', 'bottom']}>
+      <View style={[styles.backdrop, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        {/* Top bar */}
         <View style={styles.bar}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close photo"
             hitSlop={12}
-            onPress={props.onClose}
+            onPress={onClose}
             style={styles.closeBtn}
             testID="image-viewer.close"
           >
             <Text style={styles.closeText}>Done</Text>
           </Pressable>
+          {uris.length > 1 && index != null && (
+            <Text style={styles.counter}>
+              {index + 1} / {uris.length}
+            </Text>
+          )}
         </View>
-        {uri != null ? (
-          <ScrollView
-            style={styles.fill}
-            contentContainerStyle={styles.zoomContent}
-            maximumZoomScale={4}
-            minimumZoomScale={1}
-            centerContent
-            bouncesZoom
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-          >
+
+        {/* Image */}
+        <View style={styles.imageWrap} {...panResponder.panHandlers} testID="image-viewer.gesture">
+          {currentUri != null && (
             <Image
-              source={{ uri }}
-              style={{ width, height: imageHeight }}
+              source={{ uri: currentUri }}
+              style={{ width, flex: 1 }}
               resizeMode="contain"
               testID="image-viewer.image"
             />
-          </ScrollView>
-        ) : null}
-      </SafeAreaView>
+          )}
+        </View>
+
+        {/* Swipe nav arrows (visible hint) */}
+        {uris.length > 1 && (
+          <View style={styles.navRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Previous photo"
+              disabled={!canPrev}
+              hitSlop={16}
+              onPress={() => canPrev && onChangeIndex && index != null && onChangeIndex(index - 1)}
+              testID="image-viewer.prev"
+            >
+              <Text style={[styles.navArrow, !canPrev && styles.navArrowDisabled]}>‹</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Next photo"
+              disabled={!canNext}
+              hitSlop={16}
+              onPress={() => canNext && onChangeIndex && index != null && onChangeIndex(index + 1)}
+              testID="image-viewer.next"
+            >
+              <Text style={[styles.navArrow, !canNext && styles.navArrowDisabled]}>›</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
     </Modal>
   );
 }
@@ -81,11 +147,21 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
+    gap: 12,
   },
   closeBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   closeText: { color: '#f5f5f5', fontSize: 17, fontWeight: '600' },
-  fill: { flex: 1 },
-  zoomContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
+  counter: { color: '#a0a0a0', fontSize: 14 },
+  imageWrap: { flex: 1 },
+  navRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  navArrow: { color: '#f5f5f5', fontSize: 40, fontWeight: '300' },
+  navArrowDisabled: { color: '#3a3a3a' },
 });

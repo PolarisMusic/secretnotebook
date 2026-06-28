@@ -759,7 +759,7 @@ describe('moderation obscuring on GET', () => {
     });
   }
 
-  it('withholds a flagged post body in the list and returns its reasons', async () => {
+  it('passes through body for a non-doxxing flag and returns its reasons', async () => {
     seed();
     const kp = await generateEd25519KeyPair();
     const ts = Math.floor(ctx.now() / 1000);
@@ -775,13 +775,14 @@ describe('moderation obscuring on GET', () => {
     const body = res.json() as { items: Array<{ id: string; body: string; flags: string[] }> };
     const flagged = body.items.find((i) => i.id === FLAGGED_ID);
     const clean = body.items.find((i) => i.id === CLEAN_ID);
-    expect(flagged?.body).toBe('');
+    // Non-doxxing flags let body through so the client can offer "show anyway"
+    expect(flagged?.body).toBe('flagged content');
     expect(flagged?.flags).toEqual(['sexual']);
     expect(clean?.body).toBe('clean content');
     expect(clean?.flags).toEqual([]);
   });
 
-  it('withholds a flagged post body on detail and returns its reasons', async () => {
+  it('passes through body on detail for a non-doxxing flag', async () => {
     seed();
     const kp = await generateEd25519KeyPair();
     const ts = Math.floor(ctx.now() / 1000);
@@ -795,7 +796,7 @@ describe('moderation obscuring on GET', () => {
     const res = await ctx.app.inject({ method: req.method, url: req.url, headers: req.headers });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { body: string; flags: string[] };
-    expect(body.body).toBe('');
+    expect(body.body).toBe('flagged content');
     expect(body.flags).toEqual(['sexual']);
   });
 });

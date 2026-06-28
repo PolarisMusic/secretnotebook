@@ -155,11 +155,6 @@ export async function recordSyncCycle(
       lastDeliveredAt: flushed.delivered > 0 ? Date.now() : prevTotals.lastDeliveredAt,
       noteCount,
       pendingNoteCount,
-      // peakOutboxDepth uses Math.max(depth, attempted) so a flush that
-      // drained rows BEFORE we could query countOutbox (e.g. a compose-
-      // triggered flush completing in <1s) still leaves a trace via
-      // attempted=N. Without this, depth=0 + attempted=N would look like
-      // "no ops ever existed" instead of "we just shipped N".
       // Clear a stale send error only when a flush actually drained rows
       // cleanly. A flush that THREW entirely reports attempted=0/failed=0
       // (runSyncCycle caught it) — that must not wipe the error onError just

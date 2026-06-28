@@ -129,12 +129,13 @@ export async function applyCrdtOp(
       // preceded it carried the authorPubkey check.
       await exec.execute(
         `UPDATE note
-            SET body        = ?,
-                revealed_at = ?
-          WHERE id          = ?
-            AND kind        = 'secret'
+            SET body           = ?,
+                revealed_at    = ?,
+                reveal_comment = ?
+          WHERE id             = ?
+            AND kind           = 'secret'
             AND revealed_at IS NULL`,
-        [op.body ?? null, op.revealedAt, op.id],
+        [op.body ?? null, op.revealedAt, op.revealComment ?? null, op.id],
       );
       // Secret-note media appears only on the reveal (never the announce).
       // Project the descriptors as 'remote' rows; INSERT OR IGNORE keeps
@@ -492,6 +493,24 @@ export async function applyCrdtOp(
            attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at
          ) VALUES (?, ?, ?, ?, ?)`,
         [op.attemptId, hexToBytes(op.byPubkey), op.appreciate, op.uncomfortable, op.reflectedAt],
+      );
+      return;
+
+    case 'secret_unlock.reroll':
+      // Unlocker replaces the prompt before submitting. Only the Unlocker
+      // can reroll (unlockerPubkey must match sender). Update prompt_key
+      // only while the attempt is still in an active, pre-submit state so
+      // a replayed op can't overwrite an already-verified attempt.
+      if (op.unlockerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.reroll unlockerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `UPDATE secret_unlock SET prompt_key = ?
+          WHERE id = ? AND unlocker_pubkey = ?
+            AND state IN ('assigned', 'returned')`,
+        [op.promptKey, op.attemptId, hexToBytes(op.unlockerPubkey)],
       );
       return;
 

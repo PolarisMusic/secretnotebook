@@ -48,6 +48,10 @@ export interface NoteRow {
    *  listNotes / the unlock pool filter on this; the row itself survives
    *  with body NULL so a future "show deleted" affordance has the data. */
   deletedAt: number | null;
+  /** Optional message the author attached when revealing this secret note,
+   *  explaining why they chose to share it now. NULL for shared notes,
+   *  unrevealed secrets, and reveals without a comment. */
+  revealComment: string | null;
 }
 
 interface RawNoteRow {
@@ -62,6 +66,7 @@ interface RawNoteRow {
   last_edited_at: number | null;
   last_edited_by: Uint8Array | ArrayBufferLike | null;
   deleted_at: number | null;
+  reveal_comment: string | null;
 }
 
 function bytesFromRow(value: Uint8Array | ArrayBufferLike): Uint8Array {
@@ -82,12 +87,13 @@ function rowOf(r: RawNoteRow): NoteRow {
     lastEditedAt: r.last_edited_at,
     lastEditedBy: r.last_edited_by == null ? null : bytesFromRow(r.last_edited_by),
     deletedAt: r.deleted_at,
+    revealComment: r.reveal_comment,
   };
 }
 
 const NOTE_SELECT = `id, kind, author_pubkey, body, created_at, revealed_at,
                      published_at, published_global_post_id,
-                     last_edited_at, last_edited_by, deleted_at`;
+                     last_edited_at, last_edited_by, deleted_at, reveal_comment`;
 
 /**
  * Anything the note store needs from the host: SQL access for the
@@ -257,7 +263,11 @@ async function insertOwnAttachments(
  * fire the action twice on a slow connection without flooding the
  * outbox with redundant reveal ops.
  */
-export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise<void> {
+export async function revealSecretNote(
+  deps: NoteStoreDeps,
+  id: string,
+  comment?: string,
+): Promise<void> {
   const row = await getNoteInternal(deps.exec, id);
   if (!row) throw new Error(`revealSecretNote: no note with id ${id}`);
   if (row.kind !== 'secret') throw new Error(`revealSecretNote: note ${id} is not secret`);
@@ -283,8 +293,8 @@ export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise
     const fresh = await getNoteInternal(deps.exec, id);
     if (fresh?.revealedAt != null) return;
     await deps.exec.execute(
-      `UPDATE note SET revealed_at = ? WHERE id = ? AND revealed_at IS NULL`,
-      [revealedAt, id],
+      `UPDATE note SET revealed_at = ?, reveal_comment = ? WHERE id = ? AND revealed_at IS NULL`,
+      [revealedAt, comment ?? null, id],
     );
     await deps.enqueue({
       v: 1,
@@ -292,6 +302,7 @@ export async function revealSecretNote(deps: NoteStoreDeps, id: string): Promise
       id,
       ...(row.body != null ? { body: row.body } : {}),
       ...(descriptors.length > 0 ? { attachments: descriptors } : {}),
+      ...(comment ? { revealComment: comment } : {}),
       revealedAt,
     });
   });

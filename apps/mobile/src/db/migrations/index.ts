@@ -18,6 +18,7 @@ import { sql as pendingNotesSql } from './018-pending-notes';
 import { sql as noteEditDeleteSql } from './019-note-edit-delete';
 import { sql as promptPreferencesSql } from './020-prompt-preferences';
 import { sql as promptCacheSql } from './021-prompt-cache';
+import { sql as revealCommentSql } from './022-reveal-comment';
 
 export interface Migration {
   readonly id: number;
@@ -48,4 +49,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 19, name: 'note-edit-delete', sql: noteEditDeleteSql },
   { id: 20, name: 'prompt-preferences', sql: promptPreferencesSql },
   { id: 21, name: 'prompt-cache', sql: promptCacheSql },
+  { id: 22, name: 'reveal-comment', sql: revealCommentSql },
 ];

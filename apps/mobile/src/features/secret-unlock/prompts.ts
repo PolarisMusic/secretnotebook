@@ -328,44 +328,34 @@ export function isKnownPromptKey(key: string): boolean {
   return findPrompt(key) != null;
 }
 
-/** Filters for `drawPromptKey`. Each set is "categories this partner has
- *  enabled in Preferences". An empty set on either side is treated as
- *  "everything enabled" — that's the default for users who have never
- *  opened the screen. */
+/** The unlocker's enabled category set. An empty set means "everything
+ *  enabled" — the default before the user has opened Preferences. */
 export interface DrawFilters {
   readonly self: ReadonlySet<string>;
-  readonly peer: ReadonlySet<string>;
 }
 
 function matchesCategoryFilter(prompt: UnlockPrompt, enabled: ReadonlySet<string>): boolean {
-  // An empty `enabled` is "user has opted out of everything" — no prompt
-  // matches, and the caller falls back to the `general` safety pool.
+  if (enabled.size === 0) return true;
   return prompt.categories.some((c) => enabled.has(c));
 }
 
 /**
- * Draw a random prompt key. With `filters`, only prompts whose categories
- * overlap BOTH partners' enabled sets qualify; this enforces mutual
- * consent on what kind of prompt can land. A filter that produces an
- * empty pool falls back to prompts carrying `general` (which every
- * shipped prompt does), and finally to the full pool — so the draw can
- * never fail.
+ * Draw a random prompt key. Preferences are the *unlocker's own* setting —
+ * each person's filter is independent and never requires matching the
+ * partner's. A filter that produces an empty pool falls back to prompts
+ * carrying `general`, then the full pool — so the draw can never fail.
  *
- * `rng` is injectable so tests can pin the draw; production passes
- * nothing and gets `Math.random`.
+ * `rng` is injectable so tests can pin the draw; production passes nothing
+ * and gets `Math.random`.
  */
 export function drawPromptKey(rng: () => number = Math.random, filters?: DrawFilters): string {
   const active = getActivePrompts();
   let pool: ReadonlyArray<UnlockPrompt> = active;
-  if (filters) {
-    const filtered = active.filter(
-      (p) => matchesCategoryFilter(p, filters.self) && matchesCategoryFilter(p, filters.peer),
-    );
+  if (filters && filters.self.size > 0) {
+    const filtered = active.filter((p) => matchesCategoryFilter(p, filters.self));
     if (filtered.length > 0) {
       pool = filtered;
     } else {
-      // Both sides excluded every tagged prompt. Fall back to the
-      // 'general' tag so something always draws.
       const fallback = active.filter((p) => p.categories.includes('general'));
       pool = fallback.length > 0 ? fallback : active;
     }
