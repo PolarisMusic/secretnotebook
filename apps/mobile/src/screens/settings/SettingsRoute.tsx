@@ -191,9 +191,7 @@ export function SettingsRoute(): JSX.Element {
               ))}
             </View>
             {error !== null && <Text style={styles.error}>{error}</Text>}
-            <Text style={styles.hint}>
-              Used to personalise your experience and the Sparks display default.
-            </Text>
+            <Text style={styles.hint}>How the app speaks to you.</Text>
           </>
         )}
 
