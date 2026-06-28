@@ -25,6 +25,7 @@ import {
   SAFEWORD_TERM_MIN,
   type SafeWordTermState,
   type TermStoreDeps,
+  withdrawProposal,
 } from '../../features/safeword/term-store';
 import {
   ackTrigger,
@@ -140,6 +141,21 @@ export function SafeWordRoute(): JSX.Element {
       await refresh();
     } catch (e) {
       setError((e as Error).message ?? 'Could not accept term');
+    } finally {
+      setBusy(false);
+    }
+  }, [termDeps, refresh]);
+
+  const handleWithdraw = useCallback(async () => {
+    const deps = termDeps();
+    if (!deps) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await withdrawProposal(deps);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message ?? 'Could not withdraw proposal');
     } finally {
       setBusy(false);
     }
@@ -272,12 +288,24 @@ export function SafeWordRoute(): JSX.Element {
             )}
 
             {state.kind === 'awaiting_partner' && (
-              <View style={styles.tile}>
-                <Text style={styles.tileText}>
-                  Waiting for your partner to confirm
-                  {state.term ? ` "${state.term}"` : ' your proposed term'}…
-                </Text>
-              </View>
+              <>
+                <View style={styles.tile}>
+                  <Text style={styles.tileText}>
+                    Waiting for your partner to confirm
+                    {state.term ? ` "${state.term}"` : ' your proposed term'}…
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.secondary}
+                  hitSlop={8}
+                  disabled={busy}
+                  onPress={() => void handleWithdraw()}
+                  testID="safeword.withdraw"
+                >
+                  <Text style={styles.secondaryText}>Cancel proposal</Text>
+                </Pressable>
+              </>
             )}
 
             {state.kind === 'none' && (

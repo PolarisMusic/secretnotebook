@@ -337,6 +337,24 @@ export const ConnectionSafeWordAckOpSchema = z.object({
 });
 export type ConnectionSafeWordAckOp = z.infer<typeof ConnectionSafeWordAckOpSchema>;
 
+/**
+ * Proposer-only withdrawal of a pending Safe Word proposal. Lets the proposer
+ * cancel the handshake before the partner confirms, returning both devices to
+ * the previous state (no pending proposal; active term, if any, is unchanged).
+ * The projector clears the proposal columns only when `safeword_proposal_by`
+ * matches the withdrawer, so a replay or a hostile withdraw from the OTHER
+ * partner is a safe no-op.
+ */
+export const ConnectionSafeWordWithdrawOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('connection.safeword.withdraw'),
+    withdrawerPubkey: HexString(32),
+    withdrawnAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ConnectionSafeWordWithdrawOp = z.infer<typeof ConnectionSafeWordWithdrawOpSchema>;
+
 /** Cap on a single reflection answer — generous for a couple of
  *  paragraphs without letting one op fan out unbounded text. */
 const REFLECTION_TEXT_MAX = 2000;
@@ -559,6 +577,7 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   ConnectionSafeWordConfirmOpSchema,
   ConnectionSafeWordTriggerOpSchema,
   ConnectionSafeWordAckOpSchema,
+  ConnectionSafeWordWithdrawOpSchema,
   SecretUnlockStartOpSchema,
   SecretUnlockSubmitOpSchema,
   SecretUnlockRejectOpSchema,

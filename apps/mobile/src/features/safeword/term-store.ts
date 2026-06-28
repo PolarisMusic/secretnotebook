@@ -1,6 +1,7 @@
 import type {
   ConnectionSafeWordConfirmOp,
   ConnectionSafeWordProposeOp,
+  ConnectionSafeWordWithdrawOp,
 } from '@secretnotebook/connection-protocol';
 import { bytesToHex, constantTimeEqual } from '@secretnotebook/crypto';
 
@@ -33,7 +34,10 @@ export type SafeWordTermState =
     }
   | { readonly kind: 'set'; readonly term: string | null; readonly confirmedAt: number };
 
-type SafeWordTermOp = ConnectionSafeWordProposeOp | ConnectionSafeWordConfirmOp;
+type SafeWordTermOp =
+  | ConnectionSafeWordProposeOp
+  | ConnectionSafeWordConfirmOp
+  | ConnectionSafeWordWithdrawOp;
 
 export interface TermStoreDeps {
   readonly exec: SqlExecutor;
@@ -246,6 +250,48 @@ export async function acceptTerm(deps: TermStoreDeps): Promise<void> {
       kind: 'connection.safeword.confirm',
       confirmerPubkey: bytesToHex(deps.selfPubkey),
       confirmedAt: at,
+    });
+  });
+}
+
+/**
+ * Cancel (withdraw) a pending proposal that the local user sent. Both the
+ * local proposal columns and the partner's copy are cleared: the local
+ * transaction wipes the row immediately, and the enqueued withdraw op tells
+ * the partner's projector to do the same. The active term (if any) is
+ * unchanged — only the in-flight proposal is discarded.
+ *
+ * Throws when there is no pending proposal, or when the pending proposal was
+ * made by the partner rather than the local user.
+ */
+export async function withdrawProposal(deps: TermStoreDeps): Promise<void> {
+  const conn = await loadConn(deps.exec);
+  if (!conn) throw new Error('withdrawProposal: no active connection');
+  assertSelfIsPartner(conn, deps.selfPubkey);
+
+  if (!conn.safeword_proposal_by) {
+    throw new Error('No pending proposal to withdraw');
+  }
+  if (!sameBytes(bytesFromRow(conn.safeword_proposal_by), deps.selfPubkey)) {
+    throw new Error('Cannot withdraw — you are not the proposer');
+  }
+
+  const at = nowSec(deps);
+  await deps.exec.transaction(async () => {
+    await deps.exec.execute(
+      `UPDATE connection
+          SET safeword_proposal_verifier = NULL,
+              safeword_proposal_by       = NULL,
+              safeword_proposal_at       = NULL,
+              safeword_proposal_term     = NULL
+        WHERE id = ?`,
+      [conn.id],
+    );
+    await deps.enqueue({
+      v: 1,
+      kind: 'connection.safeword.withdraw',
+      withdrawerPubkey: bytesToHex(deps.selfPubkey),
+      withdrawnAt: at,
     });
   });
 }

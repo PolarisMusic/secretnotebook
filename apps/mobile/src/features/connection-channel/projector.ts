@@ -374,6 +374,29 @@ export async function applyCrdtOp(
       );
       return;
 
+    case 'connection.safeword.withdraw': {
+      // Proposer-only: the withdrawer MUST be the sender. The WHERE pin
+      // (safeword_proposal_by == withdrawer) makes a replay or a hostile
+      // withdraw from the OTHER partner a safe no-op.
+      if (op.withdrawerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.safeword.withdraw withdrawerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const withdrawer = hexToBytes(op.withdrawerPubkey);
+      await exec.execute(
+        `UPDATE connection
+            SET safeword_proposal_verifier = NULL,
+                safeword_proposal_by       = NULL,
+                safeword_proposal_at       = NULL,
+                safeword_proposal_term     = NULL
+          WHERE (partner_a_pubkey = ? OR partner_b_pubkey = ?)
+            AND safeword_proposal_by = ?`,
+        [withdrawer, withdrawer, withdrawer],
+      );
+      return;
+    }
+
     case 'secret_unlock.start':
       // The Unlocker is the actor; reject ops claiming someone else
       // started it. Add-only row create — INSERT OR IGNORE collapses
