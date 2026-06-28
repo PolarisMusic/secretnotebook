@@ -50,12 +50,16 @@ export interface SecretUnlockDetailProps {
   readonly partnerReflection: ReflectionView | null;
   readonly complete: boolean;
   readonly busy: boolean;
+  /** Current re-roll token balance (shown to Unlocker in 'assigned'/'returned'). */
+  readonly rerollBalance: number;
   readonly onSubmit: () => void;
   readonly onCancel: () => void;
   readonly onVerify: () => void;
   readonly onReject: () => void;
   readonly onDisclose: () => void;
   readonly onReflect: (appreciate: string, uncomfortable: string) => void;
+  /** Re-roll the current prompt (Unlocker only, pre-submit). */
+  readonly onReroll: () => void;
   readonly onBack: () => void;
 }
 
@@ -256,6 +260,17 @@ export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element 
             >
               <Text style={styles.primaryBtnText}>I did it — mark done</Text>
             </Pressable>
+            {props.rerollBalance > 0 && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={props.busy}
+                style={[styles.ghostBtn, props.busy && styles.btnDisabled]}
+                onPress={props.onReroll}
+                testID="unlock.reroll"
+              >
+                <Text style={styles.ghostBtnText}>Re-roll prompt ({props.rerollBalance} left)</Text>
+              </Pressable>
+            )}
             <Pressable
               accessibilityRole="button"
               disabled={props.busy}
@@ -293,7 +308,7 @@ export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element 
           <View style={styles.card}>
             <Text style={styles.note}>
               Your partner says they did it. Verify to reveal one of your secret notes to them (+500
-              Couple Points). You won't be told which one until you reflect.
+              Sparks). You won't be told which one until you reflect.
             </Text>
             <Pressable
               accessibilityRole="button"
@@ -361,7 +376,7 @@ export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element 
             {props.complete && (
               <View style={styles.bannerDone} testID="unlock.complete">
                 <Text style={styles.bannerDoneText}>
-                  Reflection complete — +500 Couple Points earned together. 💛
+                  Reflection complete — +500 Sparks earned together. ✨
                 </Text>
               </View>
             )}

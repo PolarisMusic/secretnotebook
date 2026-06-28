@@ -5,6 +5,7 @@ import { openDatabase } from '../../db/client';
 import { runMigrations } from '../../db/migrate';
 import { hydrateCacheFromDb, replacePromptCache } from '../secret-unlock/prompt-cache';
 import { MIGRATIONS } from '../../db/migrations';
+import { useAppLockSession } from '../app-lock/session';
 import { useDatabaseStore } from '../../db/store';
 import { createKeychainAdapter } from '../../security/keychain';
 import { useConnectionStore } from '../../state/connection';
@@ -39,6 +40,12 @@ export async function runBoot(): Promise<void> {
   boot.start();
   try {
     const result = await bootstrap(defaultDeps());
+    // Bootstrap reads the keychain item which is biometric-sealed on capable
+    // devices — the OS already prompted Face ID / Touch ID as part of that
+    // read. Grant the app-lock session immediately so AppLockGateRoute doesn't
+    // fire a second biometric prompt for the same cold-launch unlock.
+    useAppLockSession.getState().unlock();
+    useAppLockSession.getState().markAutoPrompted();
     useDatabaseStore.getState().setExec(result.executor);
 
     const apiClient = new ApiClient({

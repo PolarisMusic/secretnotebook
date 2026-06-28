@@ -18,10 +18,12 @@ import {
   cancelUnlock,
   discloseRevealedNoteToAuthor,
   getReflectionBy,
+  getRerollBalance,
   getUnlock,
   isReflectionComplete,
   reflectOnUnlock,
   rejectUnlock,
+  rerollUnlock,
   submitUnlock,
   verifyUnlock,
   type SecretUnlockStoreDeps,
@@ -52,6 +54,7 @@ interface ViewModel {
   myReflection: ReflectionView | null;
   partnerReflection: ReflectionView | null;
   complete: boolean;
+  rerollBalance: number;
 }
 
 function reflectionView(r: UnlockReflectionRow | null): ReflectionView | null {
@@ -148,6 +151,7 @@ export function SecretUnlockDetailRoute(): JSX.Element {
     // once set it never unsets, so a later send-back / cancel keeps the
     // prompt visible to the Author who has already seen it.
     const showPrompt = role === 'unlocker' || attempt.submittedAt != null;
+    const rerollBalance = role === 'unlocker' ? await getRerollBalance(exec) : 0;
 
     setVm({
       role,
@@ -162,6 +166,7 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       myReflection: reflectionView(myR),
       partnerReflection: reflectionView(partnerR),
       complete,
+      rerollBalance,
     });
   }, [exec, engine, attemptId]);
 
@@ -204,6 +209,7 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       partnerReflection={vm?.partnerReflection ?? null}
       complete={vm?.complete ?? false}
       busy={busy}
+      rerollBalance={vm?.rerollBalance ?? 0}
       onBack={() => navigation.goBack()}
       onSubmit={() => void run((d) => submitUnlock(d, attemptId), 'Could not submit')}
       onCancel={() => void run((d) => cancelUnlock(d, attemptId), 'Could not cancel')}
@@ -218,6 +224,7 @@ export function SecretUnlockDetailRoute(): JSX.Element {
           'Could not save reflection',
         )
       }
+      onReroll={() => void run((d) => rerollUnlock(d, attemptId), 'Could not re-roll')}
     />
   );
 }

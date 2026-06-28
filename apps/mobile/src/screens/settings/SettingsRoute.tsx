@@ -80,7 +80,7 @@ export function SettingsRoute(): JSX.Element {
     const points = await sumConnectionPoints(exec);
     Alert.alert(
       'Terminate connection?',
-      `You've earned ${points.toLocaleString()} Couple Points together.\n\nThis wipes your shared notes, secrets, and points on both devices after a 7-day grace period — you can undo any time before then. First save an archive of your notes; your saved posts and anything you published stay.`,
+      `You've earned ${points.toLocaleString()} Sparks together.\n\nThis wipes your shared notes, secrets, and Sparks on both devices after a 7-day grace period — you can undo any time before then. First save an archive of your notes; your saved posts and anything you published stay.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -192,15 +192,15 @@ export function SettingsRoute(): JSX.Element {
             </View>
             {error !== null && <Text style={styles.error}>{error}</Text>}
             <Text style={styles.hint}>
-              Your role affects what you see on the global feed and the Couple-Points default below.
+              Used to personalise your experience and the Sparks display default.
             </Text>
           </>
         )}
 
         {/* Always available — device-local KV, no engine required. */}
-        <Text style={styles.sectionLabel}>COUPLE POINTS</Text>
+        <Text style={styles.sectionLabel}>SPARKS</Text>
         <View style={styles.toggleRow}>
-          <Text style={styles.tileText}>Show Couple Points</Text>
+          <Text style={styles.tileText}>Show Sparks</Text>
           <Switch
             value={pointsVisible}
             onValueChange={(v) => void onTogglePoints(v)}
@@ -208,25 +208,34 @@ export function SettingsRoute(): JSX.Element {
           />
         </View>
         <Text style={styles.hint}>
-          Whether the Couple-Points total shows on the Unlock screen. Defaults to your role — hidden
-          for the feminine role — and your choice here overrides it on this device.
+          Whether the Sparks total shows on the Unlock screen. Defaults based on your role; your
+          choice here overrides it on this device.
         </Text>
 
         {paired && (
           <>
             <Text style={styles.sectionLabel}>ROLEPLAY TERM</Text>
-            <Pressable
-              accessibilityRole="button"
-              style={styles.tile}
-              hitSlop={6}
-              onPress={() => navigation.navigate('SafeWord')}
-              testID="settings.safeword"
-            >
-              <Text style={styles.tileText}>{termSummary(termState)}</Text>
-              <Text style={styles.hint}>
-                An optional shared safe word. Tap to set, change, or use it.
-              </Text>
-            </Pressable>
+            {termState?.kind === 'awaiting_partner' ? (
+              <View style={styles.tile}>
+                <Text style={styles.tileText}>{termSummary(termState)}</Text>
+                <Text style={styles.hint}>
+                  Your partner hasn't confirmed the term yet — no action needed on your end.
+                </Text>
+              </View>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.tile}
+                hitSlop={6}
+                onPress={() => navigation.navigate('SafeWord')}
+                testID="settings.safeword"
+              >
+                <Text style={styles.tileText}>{termSummary(termState)}</Text>
+                <Text style={styles.hint}>
+                  An optional shared safe word. Tap to set, change, or use it.
+                </Text>
+              </Pressable>
+            )}
 
             <Text style={styles.sectionLabel}>DANGER ZONE</Text>
             {severAt != null ? (

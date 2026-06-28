@@ -16,6 +16,7 @@ import {
 } from '../../features/connection-channel/saved-post-store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { promptForFlag } from '../../features/feed/flag-prompt';
+import { writeSecretNote, writeSharedNote } from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { PostDetail } from './PostDetail';
 
@@ -139,6 +140,54 @@ export function PostDetailRoute(): JSX.Element {
     })();
   }, [exec, savedRowId]);
 
+  const noteDeps = useCallback(() => {
+    if (!exec || !engine) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { exec, selfPubkey: engine.selfPub, enqueue: (op: any) => engine.enqueue(op) };
+  }, [exec, engine]);
+
+  const savedPostId = route.params.savedPostId;
+
+  const onAddToSharedNotes = useCallback(() => {
+    const deps = noteDeps();
+    const body = query.data?.body;
+    if (!deps || !body) return;
+    void (async () => {
+      try {
+        await writeSharedNote(deps, body);
+        navigation.goBack();
+      } catch (e) {
+        Alert.alert('Could not add to shared notes', (e as Error).message);
+      }
+    })();
+  }, [noteDeps, query.data, navigation]);
+
+  const onAddToSecretNotes = useCallback(() => {
+    const deps = noteDeps();
+    const body = query.data?.body;
+    if (!deps || !body) return;
+    void (async () => {
+      try {
+        await writeSecretNote(deps, body);
+        navigation.goBack();
+      } catch (e) {
+        Alert.alert('Could not add to secret notes', (e as Error).message);
+      }
+    })();
+  }, [noteDeps, query.data, navigation]);
+
+  const onRemoveFromSaved = useCallback(() => {
+    if (!exec || !savedRowId) return;
+    void (async () => {
+      try {
+        await removeSavedPost(exec, savedRowId);
+        navigation.goBack();
+      } catch (e) {
+        Alert.alert('Could not remove from saved', (e as Error).message);
+      }
+    })();
+  }, [exec, savedRowId, navigation]);
+
   if (!client) {
     return (
       <SafeAreaView style={styles.gate} testID="screen.post-detail.waiting">
@@ -147,6 +196,8 @@ export function PostDetailRoute(): JSX.Element {
       </SafeAreaView>
     );
   }
+
+  const hasBody = (query.data?.body.length ?? 0) > 0;
 
   return (
     <PostDetail
@@ -161,6 +212,9 @@ export function PostDetailRoute(): JSX.Element {
       onUnsave={engine ? onUnsave : undefined}
       alreadySaved={savedRowId != null}
       hiddenLocally={hiddenLocally}
+      onAddToSharedNotes={savedPostId && engine && hasBody ? onAddToSharedNotes : undefined}
+      onAddToSecretNotes={savedPostId && engine && hasBody ? onAddToSecretNotes : undefined}
+      onRemoveFromSaved={savedPostId && savedRowId ? onRemoveFromSaved : undefined}
     />
   );
 }

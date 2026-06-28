@@ -58,7 +58,7 @@ export function SecretUnlockList(props: SecretUnlockListProps): JSX.Element {
       {props.showPoints && (
         <View style={styles.pointsCard} testID="unlock.points">
           <Text style={styles.pointsValue}>{props.couplePoints.toLocaleString()}</Text>
-          <Text style={styles.pointsLabel}>Couple Points</Text>
+          <Text style={styles.pointsLabel}>Sparks</Text>
         </View>
       )}
 

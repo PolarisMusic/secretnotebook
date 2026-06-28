@@ -11,7 +11,13 @@ import { downloadAttachment, openAttachment } from '../../features/attachments/p
 import { listNoteAttachments } from '../../features/attachments/store';
 import type { AttachmentRow } from '../../features/attachments/types';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
-import { deleteNote, getNote, revealSecretNote, type NoteRow } from '../../features/notes/store';
+import {
+  deleteNote,
+  getNote,
+  revealSecretNote,
+  writeSharedNote,
+  type NoteRow,
+} from '../../features/notes/store';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { NotesDetail, type DetailAttachment } from './NotesDetail';
 
@@ -117,15 +123,21 @@ export function NotesDetailRoute(): JSX.Element {
     durationMs: r.durationMs,
   }));
 
-  async function handleReveal(): Promise<void> {
+  async function handleReveal(message: string): Promise<void> {
     if (!engine || !note) return;
     setBusy(true);
     setError(null);
     try {
-      await revealSecretNote(
-        { exec: exec!, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
-        note.id,
-      );
+      const deps = {
+        exec: exec!,
+        selfPubkey: engine.selfPub,
+        enqueue: (op: Parameters<typeof engine.enqueue>[0]) => engine.enqueue(op),
+      };
+      await revealSecretNote(deps, note.id);
+      const trimmed = message.trim();
+      if (trimmed.length > 0) {
+        await writeSharedNote(deps, trimmed);
+      }
       await refresh();
     } catch (e) {
       setError((e as Error).message ?? 'Could not reveal');
@@ -186,7 +198,7 @@ export function NotesDetailRoute(): JSX.Element {
       attachments={attachments}
       onOpenAttachment={(id) => void handleOpenAttachment(id)}
       onBack={() => navigation.goBack()}
-      onReveal={() => void handleReveal()}
+      onReveal={(msg) => void handleReveal(msg)}
       onOpenPublishedPost={(id) => navigation.navigate('PostDetail', { id })}
       canEdit={canEdit}
       canDelete={canDelete}

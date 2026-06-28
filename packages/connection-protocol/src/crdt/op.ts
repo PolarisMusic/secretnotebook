@@ -456,6 +456,26 @@ export const SecretUnlockReflectOpSchema = z
 export type SecretUnlockReflectOp = z.infer<typeof SecretUnlockReflectOpSchema>;
 
 /**
+ * Unlocker replaces the drawn prompt before submitting. The Unlocker is
+ * the sole actor (unlockerPubkey must match the ratchet sender); may only
+ * fire while the attempt is in an active, pre-submit state. The projector
+ * UPDATEs prompt_key on both devices so Author + Unlocker see the same
+ * prompt at submission time.
+ */
+export const SecretUnlockRerollOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.reroll'),
+    attemptId: z.string().uuid(),
+    unlockerPubkey: HexString(32),
+    /** The newly drawn prompt key (replaces the one in the start op). */
+    promptKey: z.string().min(1).max(120),
+    rerolledAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockRerollOp = z.infer<typeof SecretUnlockRerollOpSchema>;
+
+/**
  * Connection termination (R8). Unilateral with a grace window: either
  * partner can schedule the sever; both devices then wipe all
  * connection-scoped data once `severAt` passes (a local, E2E action —
@@ -541,6 +561,7 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SecretUnlockVerifyOpSchema,
   SecretUnlockCancelOpSchema,
   SecretUnlockReflectOpSchema,
+  SecretUnlockRerollOpSchema,
   ConnectionSeverScheduleOpSchema,
   ConnectionSeverCancelOpSchema,
   PromptPreferenceSetOpSchema,

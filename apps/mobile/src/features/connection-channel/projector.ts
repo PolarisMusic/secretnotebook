@@ -495,6 +495,24 @@ export async function applyCrdtOp(
       );
       return;
 
+    case 'secret_unlock.reroll':
+      // Unlocker replaces the prompt before submitting. Only the Unlocker
+      // can reroll (unlockerPubkey must match sender). Update prompt_key
+      // only while the attempt is still in an active, pre-submit state so
+      // a replayed op can't overwrite an already-verified attempt.
+      if (op.unlockerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.reroll unlockerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `UPDATE secret_unlock SET prompt_key = ?
+          WHERE id = ? AND unlocker_pubkey = ?
+            AND state IN ('assigned', 'returned')`,
+        [op.promptKey, op.attemptId, hexToBytes(op.unlockerPubkey)],
+      );
+      return;
+
     case 'connection.sever.schedule': {
       // Either partner may schedule a sever; the actor must be the sender
       // (same author check as role.set). Last-write-wins: a newer schedule

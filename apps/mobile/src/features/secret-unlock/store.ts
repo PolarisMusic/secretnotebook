@@ -3,6 +3,7 @@ import type {
   SecretUnlockCancelOp,
   SecretUnlockRejectOp,
   SecretUnlockReflectOp,
+  SecretUnlockRerollOp,
   SecretUnlockStartOp,
   SecretUnlockSubmitOp,
   SecretUnlockVerifyOp,
@@ -15,6 +16,7 @@ import { randomUuidV4 } from '../connection-channel/uuid';
 import { awardCouplePoints } from '../ledger/store';
 import { getPromptCategories } from './preferences-store';
 import { drawPromptKey } from './prompts';
+import { getAppSetting, setAppSetting } from '../settings/store';
 
 /** Couple Points awarded when the Author verifies the task. */
 export const UNLOCK_VERIFY_POINTS = 500;
@@ -141,9 +143,30 @@ export interface SecretUnlockStoreDeps {
       | SecretUnlockVerifyOp
       | SecretUnlockCancelOp
       | SecretUnlockReflectOp
+      | SecretUnlockRerollOp
       | LedgerEntryAddOp,
   ) => Promise<void>;
   readonly now?: () => Date;
+}
+
+/** Device-local re-roll token balance key in app_setting. */
+const REROLL_BALANCE_KEY = 'reroll_balance';
+/** Tokens granted per unlock attempt started. */
+export const REROLL_TOKENS_PER_UNLOCK = 2;
+/** Maximum accumulated tokens (unused ones carry forward). */
+export const REROLL_MAX_BALANCE = 6;
+
+export async function getRerollBalance(exec: SqlExecutor): Promise<number> {
+  const raw = await getAppSetting(exec, REROLL_BALANCE_KEY);
+  return raw != null ? Math.max(0, parseInt(raw, 10) || 0) : 0;
+}
+
+async function setRerollBalance(exec: SqlExecutor, n: number): Promise<void> {
+  await setAppSetting(
+    exec,
+    REROLL_BALANCE_KEY,
+    String(Math.max(0, Math.min(REROLL_MAX_BALANCE, n))),
+  );
 }
 
 /**
@@ -258,15 +281,10 @@ export async function startUnlock(
     throw new Error('startUnlock: you can only unlock one secret a day — try again tomorrow');
   }
   const id = await randomUuidV4();
-  // Both partners' enabled categories filter the draw — a prompt only
-  // qualifies if it overlaps both sets. A no-overlap configuration falls
-  // back to the `general` safety pool inside drawPromptKey, so the
-  // start never fails on a misconfigured pair.
-  const [selfCategories, peerCategories] = await Promise.all([
-    getPromptCategories(deps.exec, deps.selfPubkey),
-    getPromptCategories(deps.exec, deps.peerPubkey),
-  ]);
-  const promptKey = drawPromptKey(opts.rng, { self: selfCategories, peer: peerCategories });
+  // The draw respects only the unlocker's own preferences — each person's
+  // category filter is independent. The unlocker IS `deps.selfPubkey`.
+  const selfCategories = await getPromptCategories(deps.exec, deps.selfPubkey);
+  const promptKey = drawPromptKey(opts.rng, { self: selfCategories });
   const createdAt = nowSec(deps);
   await deps.exec.transaction(async () => {
     // Re-read inside the txn: two concurrent starts would both pass the
@@ -290,7 +308,52 @@ export async function startUnlock(
       createdAt,
     });
   });
+  // Grant 2 re-roll tokens to the Unlocker's device-local balance.
+  const currentBalance = await getRerollBalance(deps.exec);
+  await setRerollBalance(deps.exec, currentBalance + REROLL_TOKENS_PER_UNLOCK);
+
   return (await getUnlockInternal(deps.exec, id)) as SecretUnlockRow;
+}
+
+/**
+ * Replace the drawn prompt before the Unlocker submits. Costs 1 re-roll
+ * token from the device-local balance. The new promptKey is sent to the
+ * partner via a reroll op so both sides show the same prompt at submission.
+ * Only valid in 'assigned' or 'returned' state (before any submit).
+ */
+export async function rerollUnlock(
+  deps: SecretUnlockStoreDeps,
+  attemptId: string,
+  opts: { rng?: () => number } = {},
+): Promise<void> {
+  const row = await requireParticipantRow(deps, attemptId, 'rerollUnlock');
+  if (!sameBytes(row.unlockerPubkey, deps.selfPubkey)) {
+    throw new Error('rerollUnlock: only the Unlocker can reroll');
+  }
+  if (row.state !== 'assigned' && row.state !== 'returned') {
+    throw new Error(`rerollUnlock: attempt is ${row.state}, cannot reroll after submission`);
+  }
+  const balance = await getRerollBalance(deps.exec);
+  if (balance <= 0) {
+    throw new Error('rerollUnlock: no re-roll tokens remaining');
+  }
+  const selfCategories = await getPromptCategories(deps.exec, deps.selfPubkey);
+  const promptKey = drawPromptKey(opts.rng, { self: selfCategories });
+  const rerolledAt = nowSec(deps);
+  await deps.exec.execute(
+    `UPDATE secret_unlock SET prompt_key = ?
+      WHERE id = ? AND state IN ('assigned', 'returned')`,
+    [promptKey, attemptId],
+  );
+  await deps.enqueue({
+    v: 1,
+    kind: 'secret_unlock.reroll',
+    attemptId,
+    unlockerPubkey: bytesToHex(deps.selfPubkey),
+    promptKey,
+    rerolledAt,
+  });
+  await setRerollBalance(deps.exec, balance - 1);
 }
 
 /** Unlocker marks the task done. assigned|returned → submitted. */

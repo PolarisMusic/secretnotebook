@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useNavigationState } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,7 +20,6 @@ const ITEMS: readonly MenuItem[] = [
   { key: 'saved', label: 'Saved', target: 'SavedByYou' },
   { key: 'feed', label: 'Feed', target: 'GlobalFeed' },
   { key: 'settings', label: 'Settings', target: 'Settings' },
-  { key: 'diagnostics', label: 'Sync diagnostics', target: 'SyncDebug' },
 ];
 
 /**
@@ -42,6 +41,9 @@ export function AppMenu(): JSX.Element | null {
   // padding on the panel instead.
   const insets = useSafeAreaInsets();
 
+  // Resolve the current route name so the active item can be highlighted.
+  const currentRoute = useNavigationState((state) => state?.routes[state.index]?.name);
+
   if (!isOpen) return null;
 
   function go(target: keyof MainStackParamList): void {
@@ -58,18 +60,23 @@ export function AppMenu(): JSX.Element | null {
             style={[styles.panel, { paddingTop: insets.top + 16, paddingLeft: insets.left + 20 }]}
           >
             <Text style={styles.heading}>Menu</Text>
-            {ITEMS.map((item) => (
-              <Pressable
-                key={item.key}
-                accessibilityRole="button"
-                style={styles.item}
-                hitSlop={6}
-                onPress={() => go(item.target)}
-                testID={`menu.${item.key}`}
-              >
-                <Text style={styles.itemText}>{item.label}</Text>
-              </Pressable>
-            ))}
+            {ITEMS.map((item) => {
+              const active = currentRoute === item.target;
+              return (
+                <Pressable
+                  key={item.key}
+                  accessibilityRole="button"
+                  style={[styles.item, active && styles.itemActive]}
+                  hitSlop={6}
+                  onPress={() => go(item.target)}
+                  testID={`menu.${item.key}`}
+                >
+                  <Text style={[styles.itemText, active && styles.itemTextActive]}>
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </Pressable>
       </Pressable>
@@ -96,5 +103,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   item: { paddingVertical: 16 },
+  itemActive: { borderLeftWidth: 3, borderLeftColor: '#9ec5ff', paddingLeft: 10, marginLeft: -10 },
   itemText: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
+  itemTextActive: { color: '#9ec5ff' },
 });

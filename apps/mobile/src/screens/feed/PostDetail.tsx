@@ -26,6 +26,12 @@ export interface PostDetailProps {
   readonly onUnsave?: (id: string) => void;
   /** Whether the viewer has locally hidden this post. */
   readonly hiddenLocally: boolean;
+  /** Promote the post body to a shared note (shown when viewing from Saved). */
+  readonly onAddToSharedNotes?: () => void;
+  /** Promote the post body to a secret note (shown when viewing from Saved). */
+  readonly onAddToSecretNotes?: () => void;
+  /** Remove this post from the saved bookmarks list (shown when viewing from Saved). */
+  readonly onRemoveFromSaved?: () => void;
 }
 
 function isLinkLike(body: string): boolean {
@@ -173,6 +179,41 @@ export function PostDetail(props: PostDetailProps): JSX.Element {
               </Pressable>
             )}
           </View>
+
+          {(props.onAddToSharedNotes || props.onAddToSecretNotes || props.onRemoveFromSaved) && (
+            <View style={styles.savedActions} testID="post-detail.saved-actions">
+              {props.onAddToSharedNotes && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={props.onAddToSharedNotes}
+                  style={styles.savedActionBtn}
+                  testID="post-detail.add-shared-note"
+                >
+                  <Text style={styles.savedActionText}>Add to shared notes</Text>
+                </Pressable>
+              )}
+              {props.onAddToSecretNotes && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={props.onAddToSecretNotes}
+                  style={styles.savedActionBtn}
+                  testID="post-detail.add-secret-note"
+                >
+                  <Text style={styles.savedActionText}>Add to secret notes</Text>
+                </Pressable>
+              )}
+              {props.onRemoveFromSaved && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={props.onRemoveFromSaved}
+                  style={[styles.savedActionBtn, styles.savedActionBtnDestructive]}
+                  testID="post-detail.remove-saved"
+                >
+                  <Text style={styles.savedActionTextDestructive}>Remove from saved</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
         </View>
       ) : null}
     </SafeAreaView>
@@ -209,4 +250,15 @@ const styles = StyleSheet.create({
   author: { color: '#5e5e5e', fontSize: 12 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   errorText: { color: '#ffb4b4', fontSize: 14, textAlign: 'center' },
+  savedActions: { gap: 10, paddingTop: 4 },
+  savedActionBtn: {
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  savedActionBtnDestructive: { backgroundColor: '#1a0a0a' },
+  savedActionText: { color: '#9ec5ff', fontWeight: '600', fontSize: 14 },
+  savedActionTextDestructive: { color: '#ffb4b4', fontWeight: '600', fontSize: 14 },
 });
