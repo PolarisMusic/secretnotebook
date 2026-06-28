@@ -44,6 +44,12 @@ export function AudioPlayer(props: AudioPlayerProps): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [trackWidth, setTrackWidth] = useState(0);
   const [scrubMs, setScrubMs] = useState<number | null>(null);
+  // false = loudspeaker (default); true = earpiece (private listening).
+  // Full AirPlay / Bluetooth route picking requires a native AVRoutePickerView
+  // (iOS) or MediaRouteButton (Android) — not yet exposed by expo-av. This
+  // toggle uses allowsRecordingIOS (iOS) and playThroughEarpieceAndroid (Android)
+  // as a lightweight, JS-only earpiece/speaker switch.
+  const [routeEarpiece, setRouteEarpiece] = useState(false);
 
   const scrubbingRef = useRef(false);
   const scrubMsRef = useRef<number | null>(null);
@@ -114,12 +120,31 @@ export function AudioPlayer(props: AudioPlayerProps): JSX.Element {
         if (totalMsRef.current > 0 && positionMs >= totalMsRef.current - 60) {
           await s.setPositionAsync(0);
         }
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          allowsRecordingIOS: routeEarpiece,
+          playThroughEarpieceAndroid: routeEarpiece,
+        });
         await s.playAsync();
       }
     } catch (e) {
       setError((e as Error)?.message ?? 'Playback error');
     }
-  }, [isPlaying, positionMs]);
+  }, [isPlaying, positionMs, routeEarpiece]);
+
+  const toggleRoute = useCallback(async () => {
+    const next = !routeEarpiece;
+    setRouteEarpiece(next);
+    try {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        allowsRecordingIOS: next,
+        playThroughEarpieceAndroid: next,
+      });
+    } catch {
+      // Non-fatal — routing is best-effort.
+    }
+  }, [routeEarpiece]);
 
   const seekFromX = useCallback((x: number) => {
     const w = trackWidthRef.current;
@@ -203,6 +228,16 @@ export function AudioPlayer(props: AudioPlayerProps): JSX.Element {
           <Text style={styles.time}>{fmt(totalMs)}</Text>
         </View>
       </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={routeEarpiece ? 'Switch to speaker' : 'Switch to earpiece'}
+        hitSlop={8}
+        onPress={() => void toggleRoute()}
+        style={styles.routeBtn}
+        testID="audio-player.route"
+      >
+        <Text style={styles.routeGlyph}>{routeEarpiece ? '🔈' : '🔊'}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -256,4 +291,6 @@ const styles = StyleSheet.create({
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
   time: { color: '#9e9e9e', fontSize: 12, fontVariant: ['tabular-nums'] },
   errText: { color: '#ffb4b4', fontSize: 14 },
+  routeBtn: { padding: 4 },
+  routeGlyph: { fontSize: 18 },
 });
