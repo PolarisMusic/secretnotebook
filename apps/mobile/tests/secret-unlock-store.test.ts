@@ -189,7 +189,7 @@ describe('secret-unlock store', () => {
   });
 
   describe('verifyUnlock (the blind draw)', () => {
-    it('draws a secret, reveals it via the verify op, awards +500, and stays blind on the Author UI', async () => {
+    it('draws a secret, reveals it via the verify op, awards +50, and stays blind on the Author UI', async () => {
       const { exec, deps, enqueued } = await freshHarness();
       // SELF is the Author here; two secrets in the pool.
       await seedSecret(exec, A1, SELF, 'secret one');
@@ -207,8 +207,8 @@ describe('secret-unlock store', () => {
       const verifyOp = enqueued.find((o) => o.kind === 'secret_unlock.verify');
       expect(verifyOp).toMatchObject({ revealedNoteId: A1, body: 'secret one' });
 
-      // +500 awarded (verify) and a ledger op enqueued.
-      expect(await sumConnectionPoints(exec)).toBe(500);
+      // +50 awarded (verify) and a ledger op enqueued.
+      expect(await sumConnectionPoints(exec)).toBe(50);
       expect(enqueued.some((o) => o.kind === 'ledger_entry.add')).toBe(true);
 
       // Blind-until-reflection: the Author's own note is NOT revealed yet.
@@ -253,7 +253,7 @@ describe('secret-unlock store', () => {
   });
 
   describe('reflection + mutual award', () => {
-    it('Author reflecting after the partner already reflected fires the +500 mutual award', async () => {
+    it('Author reflecting after the partner already reflected fires the +50 mutual award', async () => {
       const { exec, deps, enqueued } = await freshHarness();
       await seedSecret(exec, A1, SELF, 'the secret');
       await seedAttempt(exec, {
@@ -272,7 +272,7 @@ describe('secret-unlock store', () => {
 
       expect(enqueued.some((o) => o.kind === 'secret_unlock.reflect')).toBe(true);
       // Mutual award fired (only the reflect award here — no verify award seeded).
-      expect(await sumConnectionPoints(exec)).toBe(500);
+      expect(await sumConnectionPoints(exec)).toBe(50);
     });
 
     it('reflecting is idempotent per partner', async () => {
@@ -355,10 +355,10 @@ describe('secret-unlock store', () => {
       await seedReflection(exec, 'att', PEER);
 
       await reconcileUnlockRewards(deps);
-      expect(await sumConnectionPoints(exec)).toBe(1000); // 500 verify + 500 reflect
+      expect(await sumConnectionPoints(exec)).toBe(100); // 50 verify + 50 reflect
 
       await reconcileUnlockRewards(deps); // idempotent
-      expect(await sumConnectionPoints(exec)).toBe(1000);
+      expect(await sumConnectionPoints(exec)).toBe(100);
     });
 
     it('does not award for attempts the device did not author', async () => {

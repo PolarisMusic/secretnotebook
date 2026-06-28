@@ -52,7 +52,7 @@ async function seedAll(exec: SqlExecutor): Promise<void> {
   );
   await exec.execute(
     `INSERT INTO ledger_entry (id, kind, delta, reason, ref_id, created_at)
-     VALUES ('l1', 'couple_points', 500, 'unlock_verified', 'u1', ?)`,
+     VALUES ('l1', 'couple_points', 50, 'unlock_verified', 'u1', ?)`,
     [NOW],
   );
   await exec.execute(

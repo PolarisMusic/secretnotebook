@@ -775,13 +775,13 @@ describe('Phase-1.5 R7 — ledger_entry.add applies as an add-only insert', () =
  * R7 secret-note unlock loop — the full two-device round-trip:
  *   A authors secrets → B (Unlocker) starts + does the prompt + submits
  *   → A verifies, which draws ONE random secret and ships its body to B
- *   (Couple Points +500) → both reflect (Couple Points +500). Plus the
+ *   (Couple Points +50) → both reflect (Couple Points +50). Plus the
  *   two privacy invariants: B reads the secret only after verify, and A's
  *   own device stays blind to WHICH secret until they disclose it at
  *   reflection.
  */
 describe('Phase-1.5 R7 — secret-note unlock loop', () => {
-  it('runs end to end: start → submit → verify(+500) → mutual reflect(+500)', async () => {
+  it('runs end to end: start → submit → verify(+50) → mutual reflect(+50)', async () => {
     const relay = new FakeRelay();
     const a = await freshSide({ relay, selfPub: A_PUB, peerPub: B_PUB });
     const b = await freshSide({ relay, selfPub: B_PUB, peerPub: A_PUB });
@@ -801,21 +801,21 @@ describe('Phase-1.5 R7 — secret-note unlock loop', () => {
     await syncLoop(a, b);
     expect((await getUnlock(a.exec, attempt.id))?.state).toBe('submitted');
 
-    // A verifies → draws a secret, reveals it to B, +500 to the couple.
+    // A verifies → draws a secret, reveals it to B, +50 to the couple.
     const { revealedNoteId } = await verifyUnlock(unlockDeps(a, A_PUB, B_PUB), attempt.id, {
       rng: () => 0,
     });
-    expect(await sumConnectionPoints(a.exec)).toBe(500);
+    expect(await sumConnectionPoints(a.exec)).toBe(50);
     // A is blind: their own copy of the drawn note is not revealed yet.
     expect((await getNote(a.exec, revealedNoteId))?.revealedAt).toBeNull();
 
     await syncLoop(a, b);
-    // B can now READ the secret, and both sides agree on +500.
+    // B can now READ the secret, and both sides agree on +50.
     const revealedOnB = await getNote(b.exec, revealedNoteId);
     expect(revealedOnB?.body).not.toBeNull();
     expect(revealedOnB?.revealedAt).not.toBeNull();
     expect((await getUnlock(b.exec, attempt.id))?.state).toBe('revealed');
-    expect(await sumConnectionPoints(b.exec)).toBe(500);
+    expect(await sumConnectionPoints(b.exec)).toBe(50);
 
     // Reflection. B (Unlocker) reflects first; no award yet (needs both).
     await reflectOnUnlock(unlockDeps(b, B_PUB, A_PUB), attempt.id, {
@@ -823,7 +823,7 @@ describe('Phase-1.5 R7 — secret-note unlock loop', () => {
       uncomfortable: 'nothing really',
     });
     await syncLoop(a, b);
-    expect(await sumConnectionPoints(a.exec)).toBe(500); // still just verify
+    expect(await sumConnectionPoints(a.exec)).toBe(50); // still just verify
 
     // A discloses the note to themselves (reflection step), then reflects.
     await discloseRevealedNoteToAuthor(unlockDeps(a, A_PUB, B_PUB), attempt.id);
@@ -834,11 +834,11 @@ describe('Phase-1.5 R7 — secret-note unlock loop', () => {
     });
     await syncLoop(a, b);
 
-    // Mutual reflection complete → +500 again, converged on both devices.
+    // Mutual reflection complete → +50 again, converged on both devices.
     expect(await isReflectionComplete(a.exec, attempt.id)).toBe(true);
     expect(await isReflectionComplete(b.exec, attempt.id)).toBe(true);
-    expect(await sumConnectionPoints(a.exec)).toBe(1000);
-    expect(await sumConnectionPoints(b.exec)).toBe(1000);
+    expect(await sumConnectionPoints(a.exec)).toBe(100);
+    expect(await sumConnectionPoints(b.exec)).toBe(100);
   });
 
   it('gates the secret until verify and never puts it in plaintext on the wire', async () => {
@@ -894,7 +894,7 @@ describe('Phase-1.5 R7 — secret-note unlock loop', () => {
     await verifyUnlock(unlockDeps(a, A_PUB, B_PUB), attempt.id, { rng: () => 0 });
     await syncLoop(a, b);
     expect((await getUnlock(b.exec, attempt.id))?.state).toBe('revealed');
-    expect(await sumConnectionPoints(b.exec)).toBe(500);
+    expect(await sumConnectionPoints(b.exec)).toBe(50);
   });
 });
 
