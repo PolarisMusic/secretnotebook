@@ -49,9 +49,9 @@ export function SettingsRoute(): JSX.Element {
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
   const paired = status === 'paired';
-  const effectiveRole = myRole ?? 'neutral';
 
   const [myRole, setMyRoleState] = useState<ConnectionRole | null>(null);
+  const effectiveRole = myRole ?? 'neutral';
   const [termState, setTermState] = useState<SafeWordTermState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -59,12 +59,13 @@ export function PairWithPartnerRoute(): JSX.Element {
               const engine = await tryBuildSyncEngine({ exec, api: apiClient, connectionId });
               if (engine) setEngine(engine);
             }
-            // Drafts authored before pairing → first-connection triage
-            // (Share/Archive each); otherwise just dismiss the pairing modal.
+            // Drafts authored before pairing → first-connection triage.
+            // Otherwise step through the post-pairing setup wizard so new
+            // users can set their role, categories, and Safe Word up front.
             if ((await countPendingNotes(exec)) > 0) {
               navigation.navigate('NotesTriage');
             } else {
-              navigation.goBack();
+              navigation.replace('OnboardingRole');
             }
           }}
         />
