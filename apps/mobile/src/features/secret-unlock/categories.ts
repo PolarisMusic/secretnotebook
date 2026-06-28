@@ -37,6 +37,7 @@ export const PROMPT_CATEGORIES = [
   'long_distance',
   'caregiving',
   'general',
+  'platonic',
 ] as const;
 
 export type PromptCategory = (typeof PROMPT_CATEGORIES)[number];
@@ -61,6 +62,7 @@ export const DEFAULT_VISIBLE_CATEGORIES: readonly PromptCategory[] = [
   'married',
   'long_distance',
   'general',
+  'platonic',
 ];
 
 /**
@@ -95,6 +97,7 @@ export const CATEGORY_LABELS: Record<PromptCategory, string> = {
   long_distance: 'Long distance',
   caregiving: 'Caregiving',
   general: 'General',
+  platonic: 'Platonic',
 };
 
 /**
@@ -121,4 +124,5 @@ export const CATEGORY_DESCRIPTIONS: Record<PromptCategory, string> = {
   long_distance: 'Time apart, time-zones, intentional connection.',
   caregiving: 'Caring for aging parents, ill family, partner illness.',
   general: 'Universal — work for any couple, any stage.',
+  platonic: 'Friendship, play, and connection without pressure.',
 };

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,6 +24,8 @@ export interface StagedMedia {
   /** Surfaced when status is 'error', so a failed attachment shows *why*
    *  (e.g. "uploadBlob: Network request failed") instead of a bare "failed". */
   readonly error?: string;
+  /** Local plaintext URI for an image pick — shown as a thumbnail in the chip. */
+  readonly previewUri?: string;
 }
 
 export interface NotesComposeProps {
@@ -163,9 +166,13 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
               <View style={styles.chips}>
                 {staged.map((m) => (
                   <View key={m.id} style={styles.chip} testID={`notes.media.chip.${m.id}`}>
-                    <Text style={styles.chipLabel}>
-                      {m.mediaType === 'image' ? 'Photo' : 'Voice'}
-                    </Text>
+                    {m.mediaType === 'image' && m.previewUri ? (
+                      <Image source={{ uri: m.previewUri }} style={styles.chipThumb} />
+                    ) : (
+                      <Text style={styles.chipLabel}>
+                        {m.mediaType === 'image' ? 'Photo' : 'Voice'}
+                      </Text>
+                    )}
                     {m.status === 'preparing' ? (
                       <ActivityIndicator color="#9ec5ff" size="small" />
                     ) : null}
@@ -191,7 +198,7 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
 
         {kind === 'secret' && props.termNotSet && !promptDismissed ? (
           <View style={styles.prompt} testID="notes.term-prompt">
-            <Text style={styles.promptText}>Set a shared roleplay term with your partner?</Text>
+            <Text style={styles.promptText}>Set a shared Safe Word with your partner?</Text>
             <View style={styles.promptActions}>
               <Pressable
                 accessibilityRole="button"
@@ -333,6 +340,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#161616',
   },
   chipLabel: { color: '#cfcfcf', fontSize: 13 },
+  chipThumb: { width: 44, height: 44, borderRadius: 6 },
   chipError: { color: '#ffb4b4', fontSize: 12 },
   chipRemove: { color: '#9e9e9e', fontSize: 14, fontWeight: '700' },
 });

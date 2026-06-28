@@ -65,7 +65,15 @@ export function NotesComposeRoute(): JSX.Element {
         return;
       }
       const id = await randomUuidV4();
-      setStaged((s) => [...s, { id, mediaType: picked.mediaType, status: 'preparing' }]);
+      setStaged((s) => [
+        ...s,
+        {
+          id,
+          mediaType: picked.mediaType,
+          status: 'preparing',
+          previewUri: picked.mediaType === 'image' ? picked.uri : undefined,
+        },
+      ]);
       try {
         // Tag the two external steps (file read + blob upload) so a failure
         // says which one threw; encrypt/local-write failures surface raw.

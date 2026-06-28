@@ -4,6 +4,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -151,7 +152,7 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
       ) : null}
 
       {note ? (
-        <View style={styles.content}>
+        <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.meta}>
             {note.kind.toUpperCase()} · {isoDate(note.createdAt)}
           </Text>
@@ -307,7 +308,7 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
               {props.error}
             </Text>
           ) : null}
-        </View>
+        </ScrollView>
       ) : null}
 
       <ImageViewerModal

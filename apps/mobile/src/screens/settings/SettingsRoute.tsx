@@ -49,6 +49,7 @@ export function SettingsRoute(): JSX.Element {
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
   const paired = status === 'paired';
+  const effectiveRole = myRole ?? 'neutral';
 
   const [myRole, setMyRoleState] = useState<ConnectionRole | null>(null);
   const [termState, setTermState] = useState<SafeWordTermState | null>(null);
@@ -179,19 +180,22 @@ export function SettingsRoute(): JSX.Element {
                   key={role}
                   accessibilityRole="button"
                   disabled={busy}
-                  style={[styles.rolePill, myRole === role && styles.rolePillActive]}
+                  style={[styles.rolePill, effectiveRole === role && styles.rolePillActive]}
                   hitSlop={6}
                   onPress={() => void handleSetRole(role)}
                   testID={`settings.role.${role}`}
                 >
-                  <Text style={[styles.roleText, myRole === role && styles.roleTextActive]}>
+                  <Text style={[styles.roleText, effectiveRole === role && styles.roleTextActive]}>
                     {role}
                   </Text>
                 </Pressable>
               ))}
             </View>
             {error !== null && <Text style={styles.error}>{error}</Text>}
-            <Text style={styles.hint}>How the app speaks to you.</Text>
+            <Text style={styles.hint}>
+              Controls the default view of the public feed and certain UI settings. All other
+              settings can be changed independently of this setting.
+            </Text>
           </>
         )}
 
@@ -212,7 +216,7 @@ export function SettingsRoute(): JSX.Element {
 
         {paired && (
           <>
-            <Text style={styles.sectionLabel}>ROLEPLAY TERM</Text>
+            <Text style={styles.sectionLabel}>SAFE WORD</Text>
             <Pressable
               accessibilityRole="button"
               style={styles.tile}

@@ -30,7 +30,7 @@ export interface ConnectionHomeProps {
 const ROLES: ConnectionRole[] = ['masculine', 'feminine', 'neutral'];
 
 function roleLabel(role: ConnectionRole | null): string {
-  return role ?? '— (not set)';
+  return role ?? 'neutral';
 }
 
 /**
@@ -135,13 +135,13 @@ export function ConnectionHome(props: ConnectionHomeProps): JSX.Element {
               <Pressable
                 key={r}
                 accessibilityRole="radio"
-                accessibilityState={{ selected: props.myRole === r }}
+                accessibilityState={{ selected: (props.myRole ?? 'neutral') === r }}
                 testID={`connection-home.role.${r}`}
                 onPress={() => void pick(r)}
-                style={[styles.roleOption, props.myRole === r && styles.roleOptionActive]}
+                style={[styles.roleOption, (props.myRole ?? 'neutral') === r && styles.roleOptionActive]}
               >
                 <Text
-                  style={[styles.roleOptionText, props.myRole === r && styles.roleOptionTextActive]}
+                  style={[styles.roleOptionText, (props.myRole ?? 'neutral') === r && styles.roleOptionTextActive]}
                 >
                   {r}
                 </Text>

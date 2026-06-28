@@ -31,6 +31,7 @@ const CATEGORY_HINTS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'long_distance', label: 'Long distance' },
   { key: 'caregiving', label: 'Caregiving' },
   { key: 'general', label: 'General' },
+  { key: 'platonic', label: 'Platonic' },
 ];
 
 const COOKIE_NAME = 'admin_token';
