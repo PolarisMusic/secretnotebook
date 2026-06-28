@@ -1,16 +1,18 @@
 import type { Ed25519KeyPair } from '@secretnotebook/crypto';
-import type {
-  BlobUploadResponse,
-  DeviceRegisterResponse,
-  Post,
-  PostFlagCategory,
-  PostFlagResponse,
-  PostInput,
-  PostListResponse,
-  RelayDeleteResponse,
-  RelayPostResponse,
-  SyncEnvelope,
-  SyncEnvelopeList,
+import {
+  PromptListResponseSchema,
+  type BlobUploadResponse,
+  type DeviceRegisterResponse,
+  type Post,
+  type PostFlagCategory,
+  type PostFlagResponse,
+  type PostInput,
+  type PostListResponse,
+  type PromptListResponse,
+  type RelayDeleteResponse,
+  type RelayPostResponse,
+  type SyncEnvelope,
+  type SyncEnvelopeList,
 } from '@secretnotebook/shared-types';
 import { buildSignedHeaders } from './signing';
 
@@ -195,6 +197,26 @@ export class ApiClient {
       method: 'DELETE',
       path: `/v1/relay/inbox/${blindedIdHex}/${envelopeId}`,
     });
+  }
+
+  /**
+   * Fetch the public prompt library. Unsigned — the endpoint is public
+   * and the response is the same for everyone. Validated against the
+   * shared schema before returning so a malformed payload (e.g. an
+   * intermediate proxy munging JSON) fails loudly here rather than at
+   * draw time.
+   */
+  async fetchPrompts(): Promise<PromptListResponse> {
+    const res = await this.fetcher(`${this.baseUrl}/v1/prompts`, {
+      method: 'GET',
+      headers: {},
+    });
+    const text = await res.text();
+    if (res.status !== 200) {
+      throw new ApiError(res.status, text);
+    }
+    const parsed = JSON.parse(text) as unknown;
+    return PromptListResponseSchema.parse(parsed);
   }
 
   /**

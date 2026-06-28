@@ -489,6 +489,38 @@ export const ConnectionSeverCancelOpSchema = z
   .strict();
 export type ConnectionSeverCancelOp = z.infer<typeof ConnectionSeverCancelOpSchema>;
 
+/** Max length of a single category key. Matches the longest shipped key
+ *  (`raising_toddlers`) with room for future additions. */
+export const PROMPT_CATEGORY_KEY_MAX = 40;
+/** Cap categories per op so one preference write can't fan out an
+ *  unbounded list. The shipped taxonomy has 18 entries; 64 is generous
+ *  headroom for future additions and de-dup'd local writes. */
+export const MAX_PROMPT_CATEGORIES = 64;
+
+/**
+ * Per-user prompt-category preferences for the secret-unlock draw. The
+ * setter picks the categories they want served (e.g. `dating`,
+ * `intimacy`); at draw time both partners' enabled sets are intersected
+ * against each prompt's tags, so a prompt only fires when both sides
+ * have at least one matching category on. Empty = "everything on".
+ *
+ * Last-write-wins by `updatedAt`. The setter writes locally + projects
+ * the op; the partner's projector applies only when this op's
+ * `updatedAt` is newer than the stored row's. `setterPubkey` must match
+ * the ratchet sender (same identity guard as `connection.role.set`) so a
+ * peer can't spoof preference flips onto the local user's row.
+ */
+export const PromptPreferenceSetOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('prompt_preference.set'),
+    setterPubkey: HexString(32),
+    categories: z.array(z.string().min(1).max(PROMPT_CATEGORY_KEY_MAX)).max(MAX_PROMPT_CATEGORIES),
+    updatedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type PromptPreferenceSetOp = z.infer<typeof PromptPreferenceSetOpSchema>;
+
 export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SavedPostAddOpSchema,
   LedgerEntryAddOpSchema,
@@ -511,6 +543,7 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SecretUnlockReflectOpSchema,
   ConnectionSeverScheduleOpSchema,
   ConnectionSeverCancelOpSchema,
+  PromptPreferenceSetOpSchema,
 ]);
 export type CrdtOp = z.infer<typeof CrdtOpSchema>;
 

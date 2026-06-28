@@ -535,6 +535,31 @@ export async function applyCrdtOp(
       return;
     }
 
+    case 'prompt_preference.set': {
+      // Per-user prompt-category preferences (R7 polish). Setter must
+      // match the ratchet sender — same identity guard as role.set, so
+      // a peer can't flip the local user's row. Last-write-wins by
+      // `updatedAt`: the upsert below either inserts (no prior row) or
+      // updates only when this op's stamp is strictly newer.
+      if (op.setterPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: prompt_preference.set setterPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const setter = hexToBytes(op.setterPubkey);
+      const categoriesJson = JSON.stringify(op.categories);
+      await exec.execute(
+        `INSERT INTO prompt_preference (pubkey, categories, updated_at)
+              VALUES (?, ?, ?)
+              ON CONFLICT(pubkey) DO UPDATE
+                SET categories = excluded.categories,
+                    updated_at = excluded.updated_at
+              WHERE excluded.updated_at > prompt_preference.updated_at`,
+        [setter, categoriesJson, op.updatedAt],
+      );
+      return;
+    }
+
     default: {
       // Exhaustiveness guard: if a new op kind is added to the
       // CrdtOp discriminated union without a branch here, this

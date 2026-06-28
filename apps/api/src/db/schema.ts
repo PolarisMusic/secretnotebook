@@ -1,4 +1,14 @@
-import { customType, integer, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  customType,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 const bytea = customType<{ data: Uint8Array; default: false }>({
   dataType() {
@@ -87,6 +97,31 @@ export const relayInbox = pgTable('relay_inbox', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
 
+/**
+ * Relationship-prompt library, now server-owned. Mobile clients fetch
+ * the active set on boot + cache locally; the bundled hardcoded list
+ * survives as an offline-first seed.
+ *
+ * `key` is the stable identifier mobile ops carry. Once a key has
+ * shipped in a `secret_unlock.start` op it MUST keep resolving — retire
+ * by setting `retired_at`, never by deleting.
+ *
+ * `categories` holds a JSON array of category strings (the taxonomy
+ * lives in the mobile package). Source attribution + sponsorship are
+ * inline so the admin can flip them per row.
+ */
+export const prompts = pgTable('prompt', {
+  key: text('key').primaryKey(),
+  text: text('text').notNull(),
+  categories: jsonb('categories').notNull().$type<string[]>().default([]),
+  sourceName: text('source_name'),
+  sourceUrl: text('source_url'),
+  sponsored: boolean('sponsored').notNull().default(false),
+  retiredAt: timestamp('retired_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const blobs = pgTable('blobs', {
   id: uuid('id').primaryKey(),
   // Opaque ciphertext (chunked-AEAD framed); the server never decrypts it.
@@ -108,3 +143,5 @@ export type RelayInboxRow = typeof relayInbox.$inferSelect;
 export type NewRelayInboxRow = typeof relayInbox.$inferInsert;
 export type BlobRow = typeof blobs.$inferSelect;
 export type NewBlobRow = typeof blobs.$inferInsert;
+export type PromptRow = typeof prompts.$inferSelect;
+export type NewPromptRow = typeof prompts.$inferInsert;

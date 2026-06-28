@@ -8,14 +8,18 @@ import type {
   NewEnvelopeInput,
   NewFlagInput,
   NewPostInput,
+  NewPromptInput,
   PostListOptions,
   PostListResult,
   PostsStore,
+  PromptPatch,
+  PromptsStore,
   RelayStore,
   StoredBlob,
   StoredEnvelope,
   StoredFlag,
   StoredPost,
+  StoredPrompt,
 } from '../../src/storage/types.js';
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -264,5 +268,70 @@ export class MemoryBlobStore implements BlobStore {
       if (row && row.expiresAt.getTime() <= now.getTime()) this.rows.splice(i, 1);
     }
     return before - this.rows.length;
+  }
+}
+
+export class MemoryPromptsStore implements PromptsStore {
+  readonly rows: StoredPrompt[] = [];
+
+  async listActive(): Promise<StoredPrompt[]> {
+    return [...this.rows]
+      .filter((r) => r.retiredAt == null)
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  }
+
+  async listAll(): Promise<StoredPrompt[]> {
+    return [...this.rows].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  }
+
+  async findByKey(key: string): Promise<StoredPrompt | null> {
+    return this.rows.find((r) => r.key === key) ?? null;
+  }
+
+  async create(input: NewPromptInput, now: Date): Promise<StoredPrompt> {
+    if (this.rows.some((r) => r.key === input.key)) {
+      throw new Error(`MemoryPromptsStore.create: duplicate key ${input.key}`);
+    }
+    const row: StoredPrompt = {
+      key: input.key,
+      text: input.text,
+      categories: [...input.categories],
+      sourceName: input.sourceName ?? null,
+      sourceUrl: input.sourceUrl ?? null,
+      sponsored: input.sponsored ?? false,
+      retiredAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    return row;
+  }
+
+  async update(key: string, patch: PromptPatch, now: Date): Promise<StoredPrompt | null> {
+    const row = this.rows.find((r) => r.key === key);
+    if (!row) return null;
+    if (patch.text !== undefined) row.text = patch.text;
+    if (patch.categories !== undefined) row.categories = [...patch.categories];
+    if (patch.sourceName !== undefined) row.sourceName = patch.sourceName;
+    if (patch.sourceUrl !== undefined) row.sourceUrl = patch.sourceUrl;
+    if (patch.sponsored !== undefined) row.sponsored = patch.sponsored;
+    row.updatedAt = now;
+    return row;
+  }
+
+  async retire(key: string, now: Date): Promise<boolean> {
+    const row = this.rows.find((r) => r.key === key);
+    if (!row || row.retiredAt != null) return false;
+    row.retiredAt = now;
+    row.updatedAt = now;
+    return true;
+  }
+
+  async unretire(key: string, now: Date): Promise<boolean> {
+    const row = this.rows.find((r) => r.key === key);
+    if (!row || row.retiredAt == null) return false;
+    row.retiredAt = null;
+    row.updatedAt = now;
+    return true;
   }
 }
