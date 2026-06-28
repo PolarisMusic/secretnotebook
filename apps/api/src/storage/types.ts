@@ -36,6 +36,9 @@ export interface StoredFlag {
   id: string;
   postId: string;
   category: string;
+  /** Optional free-text reason. Required at the request boundary when
+   *  category='other'; persisted on the row whenever it's provided. */
+  detail: string | null;
   flaggedBy: Uint8Array;
   createdAt: Date;
 }
@@ -44,6 +47,7 @@ export interface NewFlagInput {
   id: string;
   postId: string;
   category: string;
+  detail?: string;
   flaggedBy: Uint8Array;
   createdAt: Date;
 }

@@ -61,6 +61,12 @@ export async function hidePost(
   );
 }
 
+/** Remove a post from this device's hidden set; the next render will show
+ *  its body again. Idempotent — unhiding a non-hidden post is a no-op. */
+export async function unhidePost(exec: SqlExecutor, globalId: string): Promise<void> {
+  await exec.execute(`DELETE FROM hidden_post WHERE global_post_id = ?`, [globalId]);
+}
+
 export async function isPostHidden(exec: SqlExecutor, globalId: string): Promise<boolean> {
   const rows = await exec.query<{ x: number }>(
     `SELECT 1 AS x FROM hidden_post WHERE global_post_id = ?`,

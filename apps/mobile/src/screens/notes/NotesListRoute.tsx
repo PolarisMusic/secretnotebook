@@ -51,41 +51,47 @@ export function NotesListRoute(): JSX.Element {
     if (exec) void setAppSetting(exec, INTRO_SEEN_KEY, '1');
   }, [exec]);
 
-  const refresh = useCallback(async () => {
+  // List-only re-read (no engine.pull). Never touches isRefreshing, so it
+  // can't strand the pull-to-refresh spinner.
+  const loadLists = useCallback(async () => {
     if (!exec) {
       setItems([]);
       setDrafts([]);
       return;
     }
-    setIsRefreshing(true);
-    try {
-      if (engine) {
-        try {
-          await engine.pull();
-        } catch {
-          // best-effort
-        }
-      }
-      // Drafts (pending_note) surface above the notes list so a pre-pairing
-      // note doesn't appear to vanish; the tap-action sheet promotes or
-      // discards them per pending-store.
-      const [rows, draftRows] = await Promise.all([listNotes(exec), listPendingNotes(exec)]);
-      setItems(rows);
-      setDrafts(draftRows);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [exec, engine]);
-
-  // List-only re-read (no engine.pull, so it can't race the App-level sync
-  // ticker's pull). Powers the focus interval below so notes the background
-  // ticker applies show up without a manual pull-to-refresh.
-  const relist = useCallback(async () => {
-    if (!exec) return;
+    // Drafts (pending_note) surface above the notes list so a pre-pairing
+    // note doesn't appear to vanish; the tap-action sheet promotes or
+    // discards them per pending-store.
     const [rows, draftRows] = await Promise.all([listNotes(exec), listPendingNotes(exec)]);
     setItems(rows);
     setDrafts(draftRows);
   }, [exec]);
+
+  // Pull the engine, then re-read. Used on focus + after draft actions.
+  // Deliberately does NOT drive isRefreshing: toggling the RefreshControl
+  // spinner programmatically (outside a user pull gesture) leaves it stranded
+  // on screen on iOS — that was the "refresh circle stays up after returning
+  // from a note" bug. Only onPullToRefresh below drives the spinner.
+  const syncLists = useCallback(async () => {
+    if (engine) {
+      try {
+        await engine.pull();
+      } catch {
+        // best-effort
+      }
+    }
+    await loadLists();
+  }, [engine, loadLists]);
+
+  // The one path that owns the spinner — a real user pull-to-refresh.
+  const onPullToRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await syncLists();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [syncLists]);
 
   const onSelectDraft = useCallback(
     (id: string) => {
@@ -104,7 +110,7 @@ export function NotesListRoute(): JSX.Element {
                       { exec, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
                       id,
                     );
-                    await refresh();
+                    await syncLists();
                   } catch (e) {
                     Alert.alert('Could not share', (e as Error).message);
                   }
@@ -129,7 +135,7 @@ export function NotesListRoute(): JSX.Element {
                       { exec, selfPubkey: engine.selfPub, enqueue: (op) => engine.enqueue(op) },
                       id,
                     );
-                    await refresh();
+                    await syncLists();
                   } catch (e) {
                     Alert.alert('Could not save', (e as Error).message);
                   }
@@ -147,7 +153,7 @@ export function NotesListRoute(): JSX.Element {
             void (async () => {
               try {
                 await discardPendingNote(exec, id);
-                await refresh();
+                await syncLists();
               } catch (e) {
                 Alert.alert('Could not discard', (e as Error).message);
               }
@@ -157,7 +163,7 @@ export function NotesListRoute(): JSX.Element {
         { text: 'Cancel', style: 'cancel' },
       ]);
     },
-    [drafts, exec, engine, refresh],
+    [drafts, exec, engine, syncLists],
   );
 
   useFocusEffect(
@@ -165,10 +171,10 @@ export function NotesListRoute(): JSX.Element {
       // On focus: pull + list once. Then re-read the DB every few seconds so
       // notes applied by the background sync ticker (App-level, every 15s)
       // appear live instead of only on the next focus / pull-to-refresh.
-      void refresh();
-      const handle = setInterval(() => void relist(), 4000);
+      void syncLists();
+      const handle = setInterval(() => void loadLists(), 4000);
       return () => clearInterval(handle);
-    }, [refresh, relist]),
+    }, [syncLists, loadLists]),
   );
 
   return (
@@ -179,7 +185,7 @@ export function NotesListRoute(): JSX.Element {
         isLoading={items == null}
         isRefreshing={isRefreshing}
         paired={status === 'paired'}
-        onRefresh={() => void refresh()}
+        onRefresh={() => void onPullToRefresh()}
         onSelectNote={(id) => navigation.navigate('NotesDetail', { id })}
         onSelectDraft={onSelectDraft}
         onCompose={() => navigation.navigate('NotesCompose')}

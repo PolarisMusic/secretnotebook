@@ -821,7 +821,6 @@ describe('Phase-1.5 R7 — secret-note unlock loop', () => {
     await reflectOnUnlock(unlockDeps(b, B_PUB, A_PUB), attempt.id, {
       appreciate: 'I felt trusted',
       uncomfortable: 'nothing really',
-      stars: 5,
     });
     await syncLoop(a, b);
     expect(await sumConnectionPoints(a.exec)).toBe(500); // still just verify

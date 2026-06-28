@@ -11,6 +11,7 @@ import { runMigrations } from '../src/db/migrate';
 import { MIGRATIONS } from '../src/db/migrations';
 import { applyCrdtOp } from '../src/features/connection-channel/projector';
 import {
+  acceptTerm,
   confirmTerm,
   getTermState,
   proposeTerm,
@@ -58,7 +59,11 @@ async function freshDevice(self: Uint8Array): Promise<Device> {
 }
 
 describe('safeword term store', () => {
-  it('propose stashes the term locally and enqueues only the verifier hash', async () => {
+  it('propose stashes the term locally and enqueues both the verifier hash and the plaintext term', async () => {
+    // Behaviour change (#9): the propose op now carries the plaintext term
+    // so the partner can SEE it and accept with one tap instead of
+    // re-typing. The ratchet keeps this private end-to-end — see
+    // ConnectionSafeWordProposeOpSchema.
     const a = await freshDevice(A_PUB);
     await proposeTerm(a.deps, 'butterscotch');
 
@@ -72,8 +77,7 @@ describe('safeword term store', () => {
     if (op.kind === 'connection.safeword.propose') {
       expect(op.proposerPubkey).toBe(bytesToHex(A_PUB));
       expect(op.verifier).toMatch(/^[0-9a-f]{64}$/);
-      // The plaintext word must never ride the wire.
-      expect(JSON.stringify(op)).not.toContain('butterscotch');
+      expect(op.term).toBe('butterscotch');
     }
   });
 
@@ -160,5 +164,61 @@ describe('safeword term store', () => {
     const finalA = await getTermState(a.exec, A_PUB);
     expect(finalA.kind).toBe('set');
     if (finalA.kind === 'set') expect(finalA.term).toBe('pineapple');
+  });
+
+  it('projector propagates the plaintext term so the partner can SEE the proposal', async () => {
+    const a = await freshDevice(A_PUB);
+    const b = await freshDevice(B_PUB);
+    await proposeTerm(a.deps, 'butterscotch');
+    await applyCrdtOp(b.exec, a.enqueued[0], A_PUB);
+
+    const bState = await getTermState(b.exec, B_PUB);
+    expect(bState.kind).toBe('incoming_proposal');
+    if (bState.kind === 'incoming_proposal') {
+      // The plaintext term rode through the projector — no re-typing
+      // required to see what was proposed.
+      expect(bState.term).toBe('butterscotch');
+    }
+  });
+
+  it('acceptTerm: one-tap confirm on the partner side without re-typing', async () => {
+    const a = await freshDevice(A_PUB);
+    const b = await freshDevice(B_PUB);
+    await proposeTerm(a.deps, 'butterscotch');
+    await applyCrdtOp(b.exec, a.enqueued[0], A_PUB);
+
+    // No candidate input — the store re-derives the verifier from the
+    // stored term, defence-in-depth checks it against the stashed verifier,
+    // then promotes the term.
+    await acceptTerm(b.deps);
+    const bState = await getTermState(b.exec, B_PUB);
+    expect(bState.kind).toBe('set');
+    if (bState.kind === 'set') expect(bState.term).toBe('butterscotch');
+
+    // Confirm op rides back to A; A ends up set on the next ratchet apply.
+    expect(b.enqueued.at(-1)?.kind).toBe('connection.safeword.confirm');
+    await applyCrdtOp(a.exec, b.enqueued.at(-1)!, B_PUB);
+    const aState = await getTermState(a.exec, A_PUB);
+    expect(aState.kind).toBe('set');
+    if (aState.kind === 'set') expect(aState.term).toBe('butterscotch');
+  });
+
+  it('acceptTerm throws when no proposal is pending', async () => {
+    const b = await freshDevice(B_PUB);
+    await expect(acceptTerm(b.deps)).rejects.toThrow(/No proposal to accept/);
+  });
+
+  it('acceptTerm throws when the plaintext term is absent (older-build proposer)', async () => {
+    // Simulate a propose op from an older build with no `term` key by
+    // mutating the op before delivery. The projector stores NULL; acceptTerm
+    // refuses and the UI falls back to typing.
+    const a = await freshDevice(A_PUB);
+    const b = await freshDevice(B_PUB);
+    await proposeTerm(a.deps, 'butterscotch');
+    const op = { ...a.enqueued[0] } as Record<string, unknown>;
+    delete op.term;
+    await applyCrdtOp(b.exec, op as never, A_PUB);
+
+    await expect(acceptTerm(b.deps)).rejects.toThrow(/No plaintext term/);
   });
 });

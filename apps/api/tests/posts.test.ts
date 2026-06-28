@@ -586,11 +586,11 @@ describe('POST /v1/posts/:id/flag', () => {
     seedPost();
     const kp = await generateEd25519KeyPair();
     const ts = Math.floor(ctx.now() / 1000);
-    const flag = async (category: string) => {
+    const flag = async (body: Record<string, unknown>) => {
       const req = await buildSignedRequest({
         method: 'POST',
         url: `/v1/posts/${POST_ID}/flag`,
-        body: { category },
+        body,
         timestampSec: ts,
         privateKey: kp.privateKey,
         publicKey: kp.publicKey,
@@ -602,9 +602,79 @@ describe('POST /v1/posts/:id/flag', () => {
         payload: req.body,
       });
     };
-    expect((await flag('spam')).statusCode).toBe(200);
-    expect((await flag('other')).statusCode).toBe(200);
+    expect((await flag({ category: 'spam' })).statusCode).toBe(200);
+    // 'other' requires `detail`; the schema rejects an empty other-flag.
+    expect((await flag({ category: 'other', detail: 'really off-topic' })).statusCode).toBe(200);
     expect(ctx.posts.flags).toHaveLength(1);
+  });
+
+  it('rejects an "other" flag with no detail (400) — explanation required', async () => {
+    seedPost();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'POST',
+      url: `/v1/posts/${POST_ID}/flag`,
+      body: { category: 'other' },
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    const res = await ctx.app.inject({
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      payload: req.body,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('persists the detail on a flag and writes the moderation log row for reveals_personal_details', async () => {
+    seedPost();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const req = await buildSignedRequest({
+      method: 'POST',
+      url: `/v1/posts/${POST_ID}/flag`,
+      body: { category: 'reveals_personal_details', detail: 'discloses partner identity' },
+      timestampSec: ts,
+      privateKey: kp.privateKey,
+      publicKey: kp.publicKey,
+    });
+    expect(
+      (
+        await ctx.app.inject({
+          method: req.method,
+          url: req.url,
+          headers: req.headers,
+          payload: req.body,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(ctx.posts.flags[0]?.detail).toBe('discloses partner identity');
+    // Audit row mirrors the original poster's anon_author, not the flagger.
+    expect(ctx.posts.flagLogRows).toHaveLength(1);
+    const audit = ctx.posts.flagLogRows[0]!;
+    expect(audit.category).toBe('reveals_personal_details');
+    expect(audit.detail).toBe('discloses partner identity');
+    expect(audit.postId).toBe(POST_ID);
+    // sexual/violent/spam don't audit — confirm a second category leaves the log alone.
+    const kp2 = await generateEd25519KeyPair();
+    const req2 = await buildSignedRequest({
+      method: 'POST',
+      url: `/v1/posts/${POST_ID}/flag`,
+      body: { category: 'spam' },
+      timestampSec: ts,
+      privateKey: kp2.privateKey,
+      publicKey: kp2.publicKey,
+    });
+    await ctx.app.inject({
+      method: req2.method,
+      url: req2.url,
+      headers: req2.headers,
+      payload: req2.body,
+    });
+    expect(ctx.posts.flagLogRows).toHaveLength(1);
   });
 
   it('returns 404 when flagging a post that does not exist', async () => {

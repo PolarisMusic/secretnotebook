@@ -32,8 +32,23 @@ function compareDesc(a: StoredPost, b: StoredPost): number {
   return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
 }
 
+/** Captured `flag_log` row in the in-memory store, mirroring the Drizzle
+ *  flag_log table. Tests inspect this directly to assert that a
+ *  `reveals_personal_details` flag wrote the audit trail. */
+export interface InMemoryFlagLogRow {
+  id: string;
+  postId: string;
+  postedBy: Uint8Array;
+  flagger: Uint8Array;
+  category: string;
+  detail: string | null;
+  createdAt: Date;
+}
+
 export class MemoryPostsStore implements PostsStore {
   readonly rows: StoredPost[] = [];
+  /** Audit log mirror — only `reveals_personal_details` reports populate it. */
+  readonly flagLogRows: InMemoryFlagLogRow[] = [];
   readonly flags: StoredFlag[] = [];
 
   async insertOrGetByBodyHash(input: NewPostInput): Promise<StoredPost> {
@@ -89,15 +104,36 @@ export class MemoryPostsStore implements PostsStore {
     const existing = this.flags.find(
       (f) => f.postId === input.postId && bytesEqual(f.flaggedBy, input.flaggedBy),
     );
-    if (existing) return existing;
-    const row: StoredFlag = {
-      id: input.id,
-      postId: input.postId,
-      category: input.category,
-      flaggedBy: input.flaggedBy,
-      createdAt: input.createdAt,
-    };
-    this.flags.push(row);
+    const row: StoredFlag =
+      existing ??
+      ({
+        id: input.id,
+        postId: input.postId,
+        category: input.category,
+        detail: input.detail ?? null,
+        flaggedBy: input.flaggedBy,
+        createdAt: input.createdAt,
+      } satisfies StoredFlag);
+    if (!existing) this.flags.push(row);
+
+    // Mirror the Drizzle path: only the strictest category writes an audit
+    // row, and it grows on EVERY report (per device, not deduped) so the
+    // moderator sees the full pattern. The post must exist to know the
+    // anon_author; absent post = no audit (matches the Drizzle behaviour).
+    if (input.category === 'reveals_personal_details') {
+      const post = this.rows.find((r) => r.id === input.postId);
+      if (post) {
+        this.flagLogRows.push({
+          id: `log-${this.flagLogRows.length + 1}`,
+          postId: input.postId,
+          postedBy: post.anonAuthor,
+          flagger: input.flaggedBy,
+          category: input.category,
+          detail: input.detail ?? null,
+          createdAt: input.createdAt,
+        });
+      }
+    }
     return row;
   }
 

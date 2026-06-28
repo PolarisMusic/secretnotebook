@@ -165,6 +165,101 @@ export async function applyCrdtOp(
       );
       return;
 
+    case 'note.edit': {
+      // First-line: the editor claim must match the ratchet sender. That
+      // alone is enough for shared notes (either partner is a valid
+      // editor). For secret notes we further require editor === original
+      // author — look up the row to enforce.
+      if (op.editorPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: note.edit editorPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const rows = await exec.query<{
+        kind: 'shared' | 'secret';
+        author_pubkey: Uint8Array | ArrayBufferLike;
+      }>(`SELECT kind, author_pubkey FROM note WHERE id = ? AND deleted_at IS NULL`, [op.id]);
+      const row = rows[0];
+      // No live row to edit — could be a tombstone or a not-yet-seen note.
+      // No-op: tombstone wins over a late edit; the announce/share that's
+      // arriving later will re-create the body separately.
+      if (!row) return;
+      if (row.kind === 'secret') {
+        const authorBytes = row.author_pubkey;
+        const authorHex = bytesToHex(
+          authorBytes instanceof Uint8Array ? authorBytes : new Uint8Array(authorBytes),
+        );
+        if (authorHex !== op.editorPubkey) {
+          throw new Error(
+            `applyCrdtOp: note.edit on a secret note must come from the original author — refusing to apply`,
+          );
+        }
+      }
+      // LWW: apply only when editedAt is strictly newer than the row's
+      // current last_edited_at (NULL on first-ever edit). The check lives
+      // in the WHERE clause so it's atomic with the UPDATE — a slightly
+      // older edit racing a slightly newer one cannot transiently overwrite.
+      await exec.execute(
+        `UPDATE note
+            SET body = ?, last_edited_at = ?, last_edited_by = ?
+          WHERE id = ?
+            AND deleted_at IS NULL
+            AND (last_edited_at IS NULL OR last_edited_at < ?)`,
+        [op.body, op.editedAt, hexToBytes(op.editorPubkey), op.id, op.editedAt],
+      );
+      return;
+    }
+
+    case 'note.delete': {
+      // Tombstone. Author-only for both kinds: enforce
+      // deleterPubkey === senderHex AND deleterPubkey === note.author_pubkey.
+      // The author identity is taken from the row, not the op (the op's
+      // claim wouldn't be authoritative without this).
+      if (op.deleterPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: note.delete deleterPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const rows = await exec.query<{ author_pubkey: Uint8Array | ArrayBufferLike }>(
+        `SELECT author_pubkey FROM note WHERE id = ?`,
+        [op.id],
+      );
+      const row = rows[0];
+      // No row to tombstone — partner deleted before any add/announce got
+      // applied here. Insert a tombstone so a future announce can't
+      // resurrect the row: we INSERT OR IGNORE with deleted_at set, kind
+      // defaulting to 'shared' (kind is unknown without an announce — the
+      // value doesn't matter because deleted_at filtering hides it).
+      if (!row) {
+        await exec.execute(
+          `INSERT OR IGNORE INTO note (id, kind, author_pubkey, body, created_at, deleted_at)
+           VALUES (?, 'shared', ?, NULL, ?, ?)`,
+          [op.id, hexToBytes(op.deleterPubkey), op.deletedAt, op.deletedAt],
+        );
+        return;
+      }
+      const authorBytes = row.author_pubkey;
+      const authorHex = bytesToHex(
+        authorBytes instanceof Uint8Array ? authorBytes : new Uint8Array(authorBytes),
+      );
+      if (authorHex !== op.deleterPubkey) {
+        throw new Error(
+          `applyCrdtOp: note.delete must come from the original author — refusing to apply`,
+        );
+      }
+      // First-delete-wins via WHERE deleted_at IS NULL; body cleared so a
+      // tombstoned row holds no plaintext, even if SQLCipher protects at
+      // rest. Replays no-op.
+      await exec.execute(
+        `UPDATE note
+            SET deleted_at = ?, body = NULL
+          WHERE id = ?
+            AND deleted_at IS NULL`,
+        [op.deletedAt, op.id],
+      );
+      return;
+    }
+
     case 'connection.role.set': {
       // Author identity check: the setter MUST be the sender. This
       // is what prevents partner B from spoofing role.set ops with
@@ -198,17 +293,18 @@ export async function applyCrdtOp(
         );
       }
       const proposer = hexToBytes(op.proposerPubkey);
-      // Receiver side: stash the incoming verifier to match a typed
-      // candidate against. proposal_term stays NULL — we don't learn the
-      // word until the local user types it and it matches.
+      // Receiver side: stash the incoming verifier AND — when the op carries
+      // it — the plaintext term, so the UI can show it on the partner's side
+      // and let them tap "Accept" without re-typing. An older-build proposer
+      // sends no term; the receiver falls back to type-it-to-confirm.
       await exec.execute(
         `UPDATE connection
             SET safeword_proposal_verifier = ?,
                 safeword_proposal_by       = ?,
                 safeword_proposal_at       = ?,
-                safeword_proposal_term     = NULL
+                safeword_proposal_term     = ?
           WHERE partner_a_pubkey = ? OR partner_b_pubkey = ?`,
-        [hexToBytes(op.verifier), proposer, op.proposedAt, proposer, proposer],
+        [hexToBytes(op.verifier), proposer, op.proposedAt, op.term ?? null, proposer, proposer],
       );
       return;
     }
@@ -388,18 +484,14 @@ export async function applyCrdtOp(
           `applyCrdtOp: secret_unlock.reflect byPubkey does not match sender — refusing to apply`,
         );
       }
+      // The `stars` column from migration 015 is preserved (always NULL now)
+      // rather than dropped — destructive SQL migrations would break any
+      // existing reflection row whose write happened before this change.
       await exec.execute(
         `INSERT OR IGNORE INTO secret_unlock_reflection (
-           attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          op.attemptId,
-          hexToBytes(op.byPubkey),
-          op.appreciate,
-          op.uncomfortable,
-          op.stars ?? null,
-          op.reflectedAt,
-        ],
+           attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at
+         ) VALUES (?, ?, ?, ?, ?)`,
+        [op.attemptId, hexToBytes(op.byPubkey), op.appreciate, op.uncomfortable, op.reflectedAt],
       );
       return;
 

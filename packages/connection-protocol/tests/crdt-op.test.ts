@@ -67,6 +67,23 @@ const sampleNotePublish: CrdtOp = {
   publishedAt: 1_700_000_500,
 };
 
+const sampleNoteEdit: CrdtOp = {
+  v: 1,
+  kind: 'note.edit',
+  id: '77777777-7777-7777-7777-777777777777',
+  editorPubkey: '11'.repeat(32),
+  body: 'fixed the typo',
+  editedAt: 1_700_000_600,
+};
+
+const sampleNoteDelete: CrdtOp = {
+  v: 1,
+  kind: 'note.delete',
+  id: '77777777-7777-7777-7777-777777777777',
+  deleterPubkey: '11'.repeat(32),
+  deletedAt: 1_700_000_700,
+};
+
 const sampleAttachment: AttachmentDescriptor = {
   id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   blobId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
@@ -215,18 +232,7 @@ const sampleUnlockReflect: CrdtOp = {
   byPubkey: '22'.repeat(32),
   appreciate: 'I loved that you trusted me with this.',
   uncomfortable: 'Nothing — it felt safe.',
-  stars: 5,
   reflectedAt: 1_700_002_400,
-};
-
-const sampleUnlockReflectNoStars: CrdtOp = {
-  v: 1,
-  kind: 'secret_unlock.reflect',
-  attemptId: ATTEMPT_ID,
-  byPubkey: '11'.repeat(32),
-  appreciate: 'Thank you for doing the prompt.',
-  uncomfortable: 'A little vulnerable, but good.',
-  reflectedAt: 1_700_002_401,
 };
 
 describe('serialiseOp / deserialiseOp round-trip', () => {
@@ -262,6 +268,28 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
     ).toThrow();
   });
 
+  it('round-trips a note.edit op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteEdit))).toEqual(sampleNoteEdit);
+  });
+
+  it('rejects an empty edit body — body is required and non-empty', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleNoteEdit, body: '' })).toThrow();
+  });
+
+  it('rejects a non-hex editorPubkey', () => {
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleNoteEdit, editorPubkey: 'zz'.repeat(32) }),
+    ).toThrow();
+  });
+
+  it('round-trips a note.delete op byte-for-byte', () => {
+    expect(deserialiseOp(serialiseOp(sampleNoteDelete))).toEqual(sampleNoteDelete);
+  });
+
+  it('rejects a non-hex deleterPubkey', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleNoteDelete, deleterPubkey: 'not-hex' })).toThrow();
+  });
+
   it('round-trips a connection.role.set op byte-for-byte', () => {
     expect(deserialiseOp(serialiseOp(sampleConnectionRoleSet))).toEqual(sampleConnectionRoleSet);
   });
@@ -289,6 +317,18 @@ describe('serialiseOp / deserialiseOp round-trip', () => {
 
   it('rejects a non-32-byte proposerPubkey on safeword.propose', () => {
     expect(() => CrdtOpSchema.parse({ ...sampleSafeWordPropose, proposerPubkey: 'zz' })).toThrow();
+  });
+
+  it('safeword.propose: round-trips with the optional plaintext `term` (new wire field)', () => {
+    // #9 product change: the propose op now carries the plaintext term so
+    // the partner can SEE it. Optional in the schema for back-compat with
+    // an older-build proposer.
+    const withTerm = { ...sampleSafeWordPropose, term: 'butterscotch' };
+    expect(deserialiseOp(serialiseOp(withTerm))).toEqual(withTerm);
+  });
+
+  it('safeword.propose: rejects a >64-char term', () => {
+    expect(() => CrdtOpSchema.parse({ ...sampleSafeWordPropose, term: 'x'.repeat(65) })).toThrow();
   });
 
   it('rejects a non-uuid id on safeword.trigger', () => {
@@ -462,16 +502,17 @@ describe('secret-unlock ops round-trip', () => {
     );
   });
 
-  it('round-trips reflect; omits the optional stars key when absent', () => {
+  it('round-trips reflect', () => {
     expect(deserialiseOp(serialiseOp(sampleUnlockReflect))).toEqual(sampleUnlockReflect);
-    const noStars = serialiseOp(sampleUnlockReflectNoStars);
-    expect(new TextDecoder().decode(noStars)).not.toContain('stars');
-    expect(deserialiseOp(noStars)).toEqual(sampleUnlockReflectNoStars);
   });
 
-  it('rejects stars outside 1–5', () => {
-    expect(() => CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 6 })).toThrow();
-    expect(() => CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 0 })).toThrow();
+  it('rejects an extra `stars` field — the rating feature was removed', () => {
+    // .strict() guards against a stale op from an older build smuggling stars
+    // through. An old-build partner running before this lands will have their
+    // reflect op stranded until they rebuild; that's the intended trade.
+    expect(() =>
+      CrdtOpSchema.parse({ ...sampleUnlockReflect, stars: 5 } as unknown as CrdtOp),
+    ).toThrow();
   });
 
   it('rejects an empty reflection answer', () => {

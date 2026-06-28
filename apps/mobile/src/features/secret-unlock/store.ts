@@ -52,8 +52,6 @@ export interface UnlockReflectionRow {
   byPubkey: Uint8Array;
   appreciate: string;
   uncomfortable: string;
-  /** Optional 1–5 rating. Cosmetic — never affects points. */
-  stars: number | null;
   reflectedAt: number;
 }
 
@@ -76,7 +74,6 @@ interface RawReflectionRow {
   by_pubkey: Uint8Array | ArrayBufferLike;
   appreciate: string;
   uncomfortable: string;
-  stars: number | null;
   reflected_at: number;
 }
 
@@ -107,7 +104,6 @@ function reflectionRowOf(r: RawReflectionRow): UnlockReflectionRow {
     byPubkey: bytesFromRow(r.by_pubkey),
     appreciate: r.appreciate,
     uncomfortable: r.uncomfortable,
-    stars: r.stars,
     reflectedAt: r.reflected_at,
   };
 }
@@ -220,14 +216,19 @@ async function countUnlocksStartedTodayBy(
 }
 
 /** How many unrevealed secret notes a given author still holds — the
- *  draw pool. Powers the start gate (≥ MIN_SECRET_POOL). */
+ *  draw pool. Powers the start gate (≥ MIN_SECRET_POOL).
+ *  Tombstoned (deleted_at IS NOT NULL) notes are excluded so a deleted
+ *  secret can't be drawn for an unlock. */
 export async function countUnrevealedSecretsBy(
   exec: SqlExecutor,
   authorPubkey: Uint8Array,
 ): Promise<number> {
   const rows = await exec.query<{ n: number }>(
     `SELECT COUNT(*) AS n FROM note
-      WHERE kind = 'secret' AND author_pubkey = ? AND revealed_at IS NULL`,
+      WHERE kind = 'secret'
+        AND author_pubkey = ?
+        AND revealed_at IS NULL
+        AND deleted_at IS NULL`,
     [authorPubkey],
   );
   return rows[0]?.n ?? 0;
@@ -371,6 +372,7 @@ export async function verifyUnlock(
   const candidates = await deps.exec.query<{ id: string; body: string | null }>(
     `SELECT id, body FROM note
       WHERE kind = 'secret' AND author_pubkey = ? AND revealed_at IS NULL
+        AND deleted_at IS NULL
         AND id NOT IN (
           SELECT revealed_note_id FROM secret_unlock
            WHERE revealed_note_id IS NOT NULL
@@ -484,7 +486,7 @@ export async function discloseRevealedNoteToAuthor(
 export async function reflectOnUnlock(
   deps: SecretUnlockStoreDeps,
   attemptId: string,
-  input: { appreciate: string; uncomfortable: string; stars?: number },
+  input: { appreciate: string; uncomfortable: string },
 ): Promise<void> {
   const row = await requireParticipantRow(deps, attemptId, 'reflectOnUnlock');
   if (row.state !== 'revealed') {
@@ -495,22 +497,19 @@ export async function reflectOnUnlock(
   if (appreciate.length === 0 || uncomfortable.length === 0) {
     throw new Error('reflectOnUnlock: both reflection answers are required');
   }
-  if (
-    input.stars != null &&
-    (input.stars < 1 || input.stars > 5 || !Number.isInteger(input.stars))
-  ) {
-    throw new Error('reflectOnUnlock: stars must be an integer 1–5');
-  }
   if (await getReflectionBy(deps.exec, attemptId, deps.selfPubkey)) return; // already reflected
 
   const reflectedAt = nowSec(deps);
   await deps.exec.transaction(async () => {
     if (await getReflectionBy(deps.exec, attemptId, deps.selfPubkey)) return;
+    // The `stars` column from migration 015 is preserved (always NULL now)
+    // rather than dropped — destructive SQL migrations would break any
+    // existing reflection row whose write happened before this change.
     await deps.exec.execute(
       `INSERT OR IGNORE INTO secret_unlock_reflection (
-         attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at
-       ) VALUES (?, ?, ?, ?, ?, ?)`,
-      [attemptId, deps.selfPubkey, appreciate, uncomfortable, input.stars ?? null, reflectedAt],
+         attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at
+       ) VALUES (?, ?, ?, ?, ?)`,
+      [attemptId, deps.selfPubkey, appreciate, uncomfortable, reflectedAt],
     );
     await deps.enqueue({
       v: 1,
@@ -519,7 +518,6 @@ export async function reflectOnUnlock(
       byPubkey: bytesToHex(deps.selfPubkey),
       appreciate,
       uncomfortable,
-      ...(input.stars != null ? { stars: input.stars } : {}),
       reflectedAt,
     });
   });
@@ -599,7 +597,7 @@ export async function listReflections(
   attemptId: string,
 ): Promise<UnlockReflectionRow[]> {
   const rows = await exec.query<RawReflectionRow>(
-    `SELECT attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at
+    `SELECT attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at
        FROM secret_unlock_reflection WHERE attempt_id = ?
       ORDER BY reflected_at ASC`,
     [attemptId],
@@ -613,7 +611,7 @@ export async function getReflectionBy(
   byPubkey: Uint8Array,
 ): Promise<UnlockReflectionRow | null> {
   const rows = await exec.query<RawReflectionRow>(
-    `SELECT attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at
+    `SELECT attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at
        FROM secret_unlock_reflection WHERE attempt_id = ? AND by_pubkey = ?`,
     [attemptId, byPubkey],
   );

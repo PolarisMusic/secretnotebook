@@ -99,6 +99,30 @@ export function SyncDebugRoute(): JSX.Element {
         />
         <Row label="Updated" value={agoText(snapshot?.updatedAt)} />
 
+        <Text style={styles.sectionLabel}>SESSION TOTALS</Text>
+        <Row
+          label="Cumulative"
+          value={`attempted=${snapshot?.totalAttempted ?? 0} delivered=${snapshot?.totalDelivered ?? 0} failed=${snapshot?.totalFailed ?? 0}`}
+        />
+        <Row label="Peak outbox" value={String(snapshot?.peakOutboxDepth ?? 0)} />
+        <Row label="Last delivery" value={agoText(snapshot?.lastDeliveredAt ?? undefined)} />
+        <Text style={styles.hint}>
+          peak=0 + cumulative attempted=0 after composing a shared note ⇒ the save never reached the
+          outbox. Compare against “Notes locally” below to spot the engine-null fork.
+        </Text>
+
+        <Text style={styles.sectionLabel}>LOCAL ROWS</Text>
+        <Row label="Notes locally" value={String(snapshot?.noteCount ?? 0)} />
+        <Row
+          label="Pending (drafts)"
+          value={String(snapshot?.pendingNoteCount ?? 0)}
+          danger={(snapshot?.pendingNoteCount ?? 0) > 0}
+        />
+        <Text style={styles.hint}>
+          Pending &gt; 0 means a save fell through to the pre-pairing draft path (engine was null at
+          submit). Those notes never enqueue; they sit until first-connection triage.
+        </Text>
+
         <Pressable
           accessibilityRole="button"
           style={[styles.cta, busy && styles.ctaDisabled]}
@@ -169,9 +193,12 @@ function snapshotToText(s: SyncDebugSnapshot | null, paired: boolean): string {
     `base=${s.baseUrl}`,
     `conn=${s.conn} root=${s.rootHex} self=${s.selfHex} peer=${s.peerHex}`,
     `sendInbox=${s.sendInbox} pollInbox=${s.pollInbox}`,
-    `outboxDepth=${s.outboxDepth}`,
+    `outboxDepth=${s.outboxDepth} peak=${s.peakOutboxDepth}`,
     `flush=${flushText(s)}`,
     `pull=${pullText(s)}`,
+    `totals=attempted=${s.totalAttempted} delivered=${s.totalDelivered} failed=${s.totalFailed}`,
+    `lastDelivered=${agoText(s.lastDeliveredAt ?? undefined)}`,
+    `noteCount=${s.noteCount} pending=${s.pendingNoteCount}`,
     `lastError=${s.lastError ?? 'none'}`,
     `updated=${agoText(s.updatedAt)}`,
   ].join('\n');

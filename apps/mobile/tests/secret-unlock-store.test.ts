@@ -97,8 +97,8 @@ async function seedAttempt(
 async function seedReflection(exec: SqlExecutor, attemptId: string, by: Uint8Array): Promise<void> {
   await exec.execute(
     `INSERT INTO secret_unlock_reflection (
-       attempt_id, by_pubkey, appreciate, uncomfortable, stars, reflected_at
-     ) VALUES (?, ?, 'a', 'b', NULL, ?)`,
+       attempt_id, by_pubkey, appreciate, uncomfortable, reflected_at
+     ) VALUES (?, ?, 'a', 'b', ?)`,
     [attemptId, by, FIXED_NOW_SEC],
   );
 }
@@ -268,7 +268,6 @@ describe('secret-unlock store', () => {
       await reflectOnUnlock(deps, 'att', {
         appreciate: 'loved it',
         uncomfortable: 'nothing',
-        stars: 4,
       });
 
       expect(enqueued.some((o) => o.kind === 'secret_unlock.reflect')).toBe(true);

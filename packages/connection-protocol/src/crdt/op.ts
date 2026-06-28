@@ -201,6 +201,46 @@ export const NotePublishOpSchema = z.object({
 });
 export type NotePublishOp = z.infer<typeof NotePublishOpSchema>;
 
+/**
+ * Edit a note's body. Last-write-wins by `editedAt` — the projector applies
+ * the op only if the local row's `last_edited_at` is strictly older (NULL
+ * counts as oldest). Permissions are enforced at the projector boundary:
+ *
+ *   - shared note: either partner may edit (editorPubkey must match sender)
+ *   - secret note: editor MUST equal the note's original author
+ *
+ * Edits to a tombstoned (deleted) row are dropped — `WHERE deleted_at IS
+ * NULL` guards the projector UPDATE, so a late edit can't resurrect a
+ * deleted note. Attachments cannot be edited via this op; only the body.
+ */
+export const NoteEditOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('note.edit'),
+  id: z.string().uuid(),
+  editorPubkey: HexString(32),
+  body: z.string().min(1).max(NOTE_BODY_MAX),
+  editedAt: z.number().int().nonnegative(),
+});
+export type NoteEditOp = z.infer<typeof NoteEditOpSchema>;
+
+/**
+ * Tombstone a note. Author-only (both kinds): the projector enforces
+ * `deleterPubkey === senderHex === note.author_pubkey`. First delete wins
+ * (`WHERE deleted_at IS NULL`); the projector clears `body` at the same
+ * time so a deleted row's contents leave local storage. The row itself
+ * survives as a tombstone — listNotes / the unlock pool filter on
+ * `deleted_at` so callers see them as gone, but a future "show deleted"
+ * affordance has the data.
+ */
+export const NoteDeleteOpSchema = z.object({
+  v: z.literal(1),
+  kind: z.literal('note.delete'),
+  id: z.string().uuid(),
+  deleterPubkey: HexString(32),
+  deletedAt: z.number().int().nonnegative(),
+});
+export type NoteDeleteOp = z.infer<typeof NoteDeleteOpSchema>;
+
 /** Three-value role taxonomy for now. Widening to additional values
  *  requires a coordinated migration + protocol version bump. */
 export const ConnectionRoleSchema = z.enum(['masculine', 'feminine', 'neutral']);
@@ -240,6 +280,15 @@ export const ConnectionSafeWordProposeOpSchema = z.object({
   kind: z.literal('connection.safeword.propose'),
   proposerPubkey: HexString(32),
   verifier: HexString(32),
+  /**
+   * The plaintext word, included so the partner can SEE the proposal and
+   * tap "Accept" instead of re-typing it. Privacy is preserved by the
+   * connection ratchet — the wire is already E2E-encrypted, so carrying
+   * the term doesn't widen the threat model. Optional to keep an older-
+   * build proposer's op (with verifier-only) interoperable; that receiver
+   * just falls back to the type-it-back path.
+   */
+  term: z.string().min(1).max(64).optional(),
   proposedAt: z.number().int().nonnegative(),
 });
 export type ConnectionSafeWordProposeOp = z.infer<typeof ConnectionSafeWordProposeOpSchema>;
@@ -386,7 +435,12 @@ export type SecretUnlockCancelOp = z.infer<typeof SecretUnlockCancelOpSchema>;
  * One partner's reflection on the revealed note. Add-only, keyed on
  * (attemptId, byPubkey) by the projector. The mutual-reflection award
  * fires once both partners' reflections exist (see ledger_entry.add).
- * `stars` is an optional 1–5 rating — cosmetic, never affects points.
+ *
+ * No star rating: rating your partner 1–5 is the wrong dynamic for a
+ * couples app. A `stars` field shipped briefly and is gone; any in-flight
+ * op from an old build that still carries it will fail strict validation
+ * here, but a quick partner rebuild recovers and the rejection is the
+ * point of `.strict()`.
  */
 export const SecretUnlockReflectOpSchema = z
   .object({
@@ -396,7 +450,6 @@ export const SecretUnlockReflectOpSchema = z
     byPubkey: HexString(32),
     appreciate: z.string().min(1).max(REFLECTION_TEXT_MAX),
     uncomfortable: z.string().min(1).max(REFLECTION_TEXT_MAX),
-    stars: z.number().int().min(1).max(5).optional(),
     reflectedAt: z.number().int().nonnegative(),
   })
   .strict();
@@ -443,6 +496,8 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   NoteSecretAnnounceOpSchema,
   NoteSecretRevealOpSchema,
   NotePublishOpSchema,
+  NoteEditOpSchema,
+  NoteDeleteOpSchema,
   ConnectionRoleSetOpSchema,
   ConnectionSafeWordProposeOpSchema,
   ConnectionSafeWordConfirmOpSchema,
