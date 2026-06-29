@@ -61,6 +61,7 @@ describe('runMigrations', () => {
       'prompt-preferences',
       'prompt-cache',
       'reveal-comment',
+      'note-title',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -106,6 +107,7 @@ describe('runMigrations', () => {
       'prompt-preferences',
       'prompt-cache',
       'reveal-comment',
+      'note-title',
     ]);
   });
 
