@@ -1,4 +1,4 @@
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
@@ -10,7 +10,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 RUN pnpm --filter @secretnotebook/api... build
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 RUN apk add --no-cache wget
