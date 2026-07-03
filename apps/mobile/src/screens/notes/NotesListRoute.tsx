@@ -1,7 +1,9 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
+
+import { bytesToHex } from '@secretnotebook/crypto';
 
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
@@ -12,7 +14,13 @@ import {
   type PendingNoteRow,
 } from '../../features/notes/pending-store';
 import { listNotes, type NoteRow } from '../../features/notes/store';
-import { getAppSetting, INTRO_SEEN_KEY, setAppSetting } from '../../features/settings/store';
+import {
+  getAppSetting,
+  getNotesLastViewedAt,
+  INTRO_SEEN_KEY,
+  setAppSetting,
+  setNotesLastViewedAt,
+} from '../../features/settings/store';
 import { useConnectionStore } from '../../state/connection';
 import type { MainStackParamList } from '../../navigation/MainStack';
 import { IntroOverlay } from '../onboarding/IntroOverlay';
@@ -33,6 +41,27 @@ export function NotesListRoute(): JSX.Element {
   const [drafts, setDrafts] = useState<PendingNoteRow[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
+  // Notes created after this Unix-seconds watermark (and not authored by us)
+  // are surfaced as "new". Captured once per focus, before we re-stamp the
+  // watermark to now, so the marker persists for the whole visit then clears.
+  const [newThreshold, setNewThreshold] = useState<number | null>(null);
+
+  const selfHex = useMemo(() => (engine ? bytesToHex(engine.selfPub) : null), [engine]);
+  const newNoteIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (newThreshold == null || items == null) return ids;
+    for (const n of items) {
+      // A note is "new" if it arrived after the last visit and someone else
+      // wrote it — your own just-composed note isn't news to you.
+      if (
+        n.createdAt > newThreshold &&
+        (selfHex == null || bytesToHex(n.authorPubkey) !== selfHex)
+      ) {
+        ids.add(n.id);
+      }
+    }
+    return ids;
+  }, [items, newThreshold, selfHex]);
 
   // One-time intro: show until the user dismisses it once.
   useEffect(() => {
@@ -172,19 +201,36 @@ export function NotesListRoute(): JSX.Element {
 
   useFocusEffect(
     useCallback(() => {
+      let active = true;
+      // Capture the "new" watermark before re-stamping it: notes newer than
+      // the last visit stay highlighted for this visit, then clear next time.
+      // First run (no stored value) uses now(), so pre-existing notes aren't
+      // all flagged new on upgrade.
+      void (async () => {
+        if (exec) {
+          const stored = await getNotesLastViewedAt(exec);
+          const nowSecs = Math.floor(Date.now() / 1000);
+          if (active) setNewThreshold(stored ?? nowSecs);
+          await setNotesLastViewedAt(exec, nowSecs);
+        }
+      })();
       // On focus: pull + list once. Then re-read the DB every few seconds so
       // notes applied by the background sync ticker (App-level, every 15s)
       // appear live instead of only on the next focus / pull-to-refresh.
       void syncLists();
       const handle = setInterval(() => void loadLists(), 4000);
-      return () => clearInterval(handle);
-    }, [syncLists, loadLists]),
+      return () => {
+        active = false;
+        clearInterval(handle);
+      };
+    }, [exec, syncLists, loadLists]),
   );
 
   return (
     <>
       <NotesList
         items={items ?? []}
+        newNoteIds={newNoteIds}
         drafts={drafts}
         isLoading={items == null}
         isRefreshing={isRefreshing}

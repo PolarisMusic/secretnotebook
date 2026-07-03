@@ -15,6 +15,10 @@ import type { NoteRow } from '../../features/notes/store';
 
 export interface NotesListProps {
   readonly items: ReadonlyArray<NoteRow>;
+  /** Ids of notes to flag as "new" — arrived since the last visit and not
+   *  authored by this device. Rendered with a blue dot + border, mirroring
+   *  the prompt list's "needs you" treatment. */
+  readonly newNoteIds: ReadonlySet<string>;
   /** Pre-pairing / pre-engine drafts (the `pending_note` table). Shown above
    *  the notes list with a DRAFT badge so they don't appear to vanish; tapping
    *  one opens a sheet to share or discard it. */
@@ -121,37 +125,47 @@ export function NotesList(props: NotesListProps): JSX.Element {
             </View>
           ) : null
         }
-        renderItem={({ item }) => (
-          <Pressable
-            accessibilityRole="button"
-            testID={`notes.row.${item.id}`}
-            onPress={() => props.onSelectNote(item.id)}
-            style={styles.row}
-          >
-            <View style={styles.rowTopRow}>
-              <Text
-                style={[styles.kindBadge, item.kind === 'secret' && styles.kindBadgeSecret]}
-                testID={`notes.row.${item.id}.kind`}
-              >
-                {item.kind.toUpperCase()}
-              </Text>
-              {item.publishedAt != null ? (
-                <Text style={styles.publishedBadge} testID={`notes.row.${item.id}.published`}>
-                  PUBLISHED
+        renderItem={({ item }) => {
+          const isNew = props.newNoteIds.has(item.id);
+          return (
+            <Pressable
+              accessibilityRole="button"
+              testID={`notes.row.${item.id}`}
+              onPress={() => props.onSelectNote(item.id)}
+              style={[styles.row, isNew && styles.rowNew]}
+            >
+              <View style={styles.rowTopRow}>
+                <Text
+                  style={[styles.kindBadge, item.kind === 'secret' && styles.kindBadgeSecret]}
+                  testID={`notes.row.${item.id}.kind`}
+                >
+                  {item.kind.toUpperCase()}
+                </Text>
+                <View style={styles.rowBadgesRight}>
+                  {isNew ? (
+                    <Text style={styles.newBadge} testID={`notes.row.${item.id}.new`}>
+                      ● NEW
+                    </Text>
+                  ) : null}
+                  {item.publishedAt != null ? (
+                    <Text style={styles.publishedBadge} testID={`notes.row.${item.id}.published`}>
+                      PUBLISHED
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+              {item.title ? (
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                  {item.title}
                 </Text>
               ) : null}
-            </View>
-            {item.title ? (
-              <Text style={styles.rowTitle} numberOfLines={1}>
-                {item.title}
+              <Text style={styles.rowBody} numberOfLines={2}>
+                {previewBody(item)}
               </Text>
-            ) : null}
-            <Text style={styles.rowBody} numberOfLines={2}>
-              {previewBody(item)}
-            </Text>
-            <Text style={styles.rowMeta}>{isoDate(item.createdAt)}</Text>
-          </Pressable>
-        )}
+              <Text style={styles.rowMeta}>{isoDate(item.createdAt)}</Text>
+            </Pressable>
+          );
+        }}
         ListEmptyComponent={
           props.isLoading ? (
             <View style={styles.center} testID="notes.loading">
@@ -196,9 +210,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 6,
   },
+  rowNew: { borderWidth: 1, borderColor: '#3a3a5a' },
   rowTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  rowBadgesRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   kindBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   kindBadgeSecret: { color: '#ffb4b4' },
+  newBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   publishedBadge: { color: '#9eff9e', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   draftBadge: { color: '#e0c080', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   draftsHeader: {
