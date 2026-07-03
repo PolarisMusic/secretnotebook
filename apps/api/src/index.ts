@@ -1,4 +1,5 @@
 import { loadEnv } from './config.js';
+import { startGc } from './cron/gc.js';
 import { createDb } from './db/client.js';
 import { buildApp } from './server.js';
 import { DrizzleBlobStore } from './storage/blobs-drizzle.js';
@@ -14,17 +15,24 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const { db, pool } = createDb(env.DATABASE_URL);
+  const relayStore = new DrizzleRelayStore(db);
+  const blobsStore = new DrizzleBlobStore(db);
   const app = await buildApp({
     env,
     postsStore: new DrizzlePostsStore(db),
     devicesStore: new DrizzleDevicesStore(db),
-    relayStore: new DrizzleRelayStore(db),
-    blobsStore: new DrizzleBlobStore(db),
+    relayStore,
+    blobsStore,
     promptsStore: new DrizzlePromptsStore(db),
   });
 
+  // Sweep TTL-expired blobs + relay envelopes so purged data stops costing
+  // storage. Reads the same clock the app uses; logs through the app logger.
+  const gc = startGc({ blobs: blobsStore, relay: relayStore }, { logger: app.log });
+
   const closeOnSignal = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');
+    gc.stop();
     await app.close();
     await pool.end();
     process.exit(0);

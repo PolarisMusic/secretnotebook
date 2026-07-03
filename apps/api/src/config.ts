@@ -9,7 +9,12 @@ const EnvSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RELAY_TTL_DAYS: z.coerce.number().int().positive().default(30),
-  BLOB_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  // Encrypted media blobs are an ephemeral transfer channel: once both
+  // peers have pulled an attachment it lives on-device, so the server copy
+  // only needs to survive long enough to bridge an offline partner. A short
+  // default keeps Fly/Postgres storage (and the bill) small. Override via
+  // the BLOB_TTL_DAYS secret without a redeploy.
+  BLOB_TTL_DAYS: z.coerce.number().int().positive().default(3),
   // Max ciphertext bytes per blob upload. 32 MiB covers a 25 MiB plaintext
   // attachment plus chunked-AEAD framing overhead.
   BLOB_MAX_BYTES: z.coerce
