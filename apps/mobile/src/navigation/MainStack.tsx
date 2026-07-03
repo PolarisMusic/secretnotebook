@@ -39,7 +39,8 @@ export type MainStackParamList = {
   Badges: undefined;
   Settings: undefined;
   SafeWord: undefined;
-  Pairing: undefined;
+  /** `code` present ⇒ resume/join that rendezvous (from a deep link). */
+  Pairing: { code?: string } | undefined;
   OnboardingRole: undefined;
   OnboardingCategories: undefined;
   OnboardingSafeWord: undefined;
