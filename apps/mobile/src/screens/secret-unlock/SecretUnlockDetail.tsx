@@ -56,8 +56,12 @@ export interface SecretUnlockDetailProps {
   readonly busy: boolean;
   /** Current re-roll token balance (shown to Unlocker in 'assigned'/'returned'). */
   readonly rerollBalance: number;
+  /** Whether to offer "Undo cancel" — Unlocker only, until the daily cap
+   *  resets at local midnight. */
+  readonly canUndoCancel: boolean;
   readonly onSubmit: () => void;
   readonly onCancel: () => void;
+  readonly onUndoCancel: () => void;
   readonly onVerify: () => void;
   readonly onReject: () => void;
   readonly onDisclose: () => void;
@@ -343,6 +347,22 @@ export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element 
         {state === 'canceled' && (
           <View style={styles.card}>
             <Text style={styles.note}>This unlock was canceled.</Text>
+            {props.canUndoCancel && (
+              <>
+                <Text style={styles.note}>
+                  Changed your mind? You can undo this until tomorrow.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={props.busy}
+                  style={[styles.primaryBtn, props.busy && styles.btnDisabled]}
+                  onPress={props.onUndoCancel}
+                  testID="unlock.undo-cancel"
+                >
+                  <Text style={styles.primaryBtnText}>Undo cancel</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         )}
 
