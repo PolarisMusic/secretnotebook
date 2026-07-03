@@ -35,6 +35,10 @@ export interface SecretUnlockDetailProps {
   /** When non-null, the prompt card flashes through these random snippets
    *  before settling on `promptText` — the on-start "shuffle" animation. */
   readonly shuffleTexts: readonly string[] | null;
+  /** Bumped each time the shuffle should (re)play — once on the intro draw
+   *  and again on every re-roll. The card replays whenever this changes and
+   *  `shuffleTexts` is present, so re-rolling animates like a fresh draw. */
+  readonly animationKey: number;
   /** Optional source attribution for the prompt — surfaced under the
    *  card when the prompt came from a named external library. Null for
    *  bundled prompts. */
@@ -71,19 +75,21 @@ function PromptCard(props: {
   promptText: string;
   shuffleTexts: readonly string[] | null;
   promptSource: PromptSourceView | null;
+  animationKey: number;
 }): JSX.Element {
   // `tick` counts up while the shuffle plays; null means settled on the
-  // real prompt. The shuffle only fires when `shuffleTexts` was non-null at
-  // mount — re-entries with the real text only render statically.
+  // real prompt. The shuffle (re)fires whenever `animationKey` changes and
+  // `shuffleTexts` is present — the intro draw and every re-roll bump it.
+  // A re-open of a settled unlock keeps the key steady, so it stays static.
   const [tick, setTick] = useState<number | null>(
     props.shuffleTexts && props.shuffleTexts.length > 0 ? 0 : null,
   );
   useEffect(() => {
-    if (tick == null) return;
     if (!props.shuffleTexts || props.shuffleTexts.length === 0) {
       setTick(null);
       return;
     }
+    setTick(0);
     const handle = setInterval(() => {
       setTick((prev) => {
         if (prev == null) return null;
@@ -95,7 +101,9 @@ function PromptCard(props: {
       });
     }, SHUFFLE_TICK_MS);
     return () => clearInterval(handle);
-  }, []);
+    // Keyed on the animation epoch only: shuffleTexts changes in lockstep
+    // with animationKey, so keying on both would double-fire the shuffle.
+  }, [props.animationKey]);
 
   const display =
     tick != null && props.shuffleTexts && props.shuffleTexts.length > 0
@@ -233,6 +241,7 @@ export function SecretUnlockDetail(props: SecretUnlockDetailProps): JSX.Element 
             promptText={props.promptText}
             shuffleTexts={props.shuffleTexts}
             promptSource={props.promptSource}
+            animationKey={props.animationKey}
           />
         ) : (
           <View style={styles.card} testID="unlock.prompt.hidden">
