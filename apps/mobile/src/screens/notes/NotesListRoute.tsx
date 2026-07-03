@@ -144,7 +144,11 @@ export function NotesListRoute(): JSX.Element {
             },
           ]
         : [];
-      Alert.alert('Draft', draft.body.slice(0, 200), [
+      Alert.alert(draft.title ? `Draft — ${draft.title}` : 'Draft', draft.body.slice(0, 200), [
+        {
+          text: 'Edit',
+          onPress: () => navigation.navigate('NotesCompose', { draftId: id }),
+        },
         ...shareShared,
         {
           text: 'Discard',
@@ -163,7 +167,7 @@ export function NotesListRoute(): JSX.Element {
         { text: 'Cancel', style: 'cancel' },
       ]);
     },
-    [drafts, exec, engine, syncLists],
+    [drafts, exec, engine, syncLists, navigation],
   );
 
   useFocusEffect(

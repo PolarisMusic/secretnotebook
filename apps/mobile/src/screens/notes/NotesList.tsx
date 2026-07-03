@@ -104,6 +104,11 @@ export function NotesList(props: NotesListProps): JSX.Element {
                     </Text>
                     <Text style={styles.draftBadge}>DRAFT</Text>
                   </View>
+                  {d.title ? (
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {d.title}
+                    </Text>
+                  ) : null}
                   <Text style={styles.rowBody} numberOfLines={3}>
                     {d.body.slice(0, 140)}
                   </Text>

@@ -23,7 +23,8 @@ import { SettingsRoute } from '../screens/settings/SettingsRoute';
 
 export type MainStackParamList = {
   NotesList: undefined;
-  NotesCompose: undefined;
+  /** `draftId` present ⇒ edit that pending draft in place; absent ⇒ new note. */
+  NotesCompose: { draftId?: string } | undefined;
   NotesDetail: { id: string };
   NotesEdit: { id: string };
   NotesTriage: undefined;
