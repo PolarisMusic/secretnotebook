@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { BlobStore, RelayStore } from '../storage/types.js';
+import type { BlobStore, PairRendezvousStore, RelayStore } from '../storage/types.js';
 
 /** Default sweep cadence: every 6 hours. */
 const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -7,6 +7,7 @@ const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export interface GcStores {
   readonly blobs: BlobStore;
   readonly relay: RelayStore;
+  readonly pairRendezvous: PairRendezvousStore;
 }
 
 export interface GcOptions {
@@ -42,12 +43,13 @@ export function startGc(stores: GcStores, opts: GcOptions = {}): GcHandle {
   const runOnce = async (): Promise<void> => {
     const at = now();
     try {
-      const [blobs, relay] = await Promise.all([
+      const [blobs, relay, pairRendezvous] = await Promise.all([
         stores.blobs.purgeExpired(at),
         stores.relay.purgeExpired(at),
+        stores.pairRendezvous.purgeExpired(at),
       ]);
-      if (blobs > 0 || relay > 0) {
-        logger?.info({ blobs, relay }, 'gc: purged expired rows');
+      if (blobs > 0 || relay > 0 || pairRendezvous > 0) {
+        logger?.info({ blobs, relay, pairRendezvous }, 'gc: purged expired rows');
       }
     } catch (err) {
       logger?.error({ err }, 'gc: sweep failed (will retry next tick)');

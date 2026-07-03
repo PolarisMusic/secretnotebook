@@ -5,6 +5,7 @@ import { buildApp } from '../src/server.js';
 import {
   MemoryBlobStore,
   MemoryDevicesStore,
+  MemoryPairRendezvousStore,
   MemoryPostsStore,
   MemoryPromptsStore,
   MemoryPromptsStore,
@@ -26,6 +27,7 @@ async function setupApp(): Promise<FastifyInstance> {
     relayStore: new MemoryRelayStore(),
     blobsStore: new MemoryBlobStore(),
     promptsStore: new MemoryPromptsStore(),
+    pairRendezvousStore: new MemoryPairRendezvousStore(),
   });
 }
 
@@ -110,5 +112,36 @@ describe('pair rendezvous', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/pair/mixedcase1' });
     const body = res.json() as { hellos: Array<{ hello: string }> };
     expect(body.hellos).toHaveLength(1);
+  });
+
+  it('keeps a hello for the 24h TTL and drops it after', async () => {
+    let nowMs = FIXED_NOW_MS;
+    const ttlApp = await buildApp({
+      env: loadEnv({ LOG_LEVEL: 'fatal', RATE_LIMIT_MAX: '1000', RATE_LIMIT_WINDOW_MS: '60000' }),
+      now: () => nowMs,
+      postsStore: new MemoryPostsStore(),
+      devicesStore: new MemoryDevicesStore(),
+      relayStore: new MemoryRelayStore(),
+      blobsStore: new MemoryBlobStore(),
+      promptsStore: new MemoryPromptsStore(),
+      pairRendezvousStore: new MemoryPairRendezvousStore(),
+    });
+    try {
+      await ttlApp.inject({
+        method: 'POST',
+        url: '/v1/pair/ttlcode99',
+        payload: { hello: 'aaaa' },
+      });
+      // 23h later — the long-distance partner can still find it.
+      nowMs = FIXED_NOW_MS + 23 * 60 * 60 * 1000;
+      const before = await ttlApp.inject({ method: 'GET', url: '/v1/pair/ttlcode99' });
+      expect((before.json() as { hellos: unknown[] }).hellos).toHaveLength(1);
+      // 25h later — expired.
+      nowMs = FIXED_NOW_MS + 25 * 60 * 60 * 1000;
+      const after = await ttlApp.inject({ method: 'GET', url: '/v1/pair/ttlcode99' });
+      expect((after.json() as { hellos: unknown[] }).hellos).toHaveLength(0);
+    } finally {
+      await ttlApp.close();
+    }
   });
 });

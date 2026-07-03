@@ -4,6 +4,7 @@ import { createDb } from './db/client.js';
 import { buildApp } from './server.js';
 import { DrizzleBlobStore } from './storage/blobs-drizzle.js';
 import { DrizzleDevicesStore } from './storage/devices-drizzle.js';
+import { DrizzlePairRendezvousStore } from './storage/pair-rendezvous-drizzle.js';
 import { DrizzlePostsStore } from './storage/posts-drizzle.js';
 import { DrizzlePromptsStore } from './storage/prompts-drizzle.js';
 import { DrizzleRelayStore } from './storage/relay-drizzle.js';
@@ -17,6 +18,7 @@ async function main(): Promise<void> {
   const { db, pool } = createDb(env.DATABASE_URL);
   const relayStore = new DrizzleRelayStore(db);
   const blobsStore = new DrizzleBlobStore(db);
+  const pairRendezvousStore = new DrizzlePairRendezvousStore(db);
   const app = await buildApp({
     env,
     postsStore: new DrizzlePostsStore(db),
@@ -24,11 +26,16 @@ async function main(): Promise<void> {
     relayStore,
     blobsStore,
     promptsStore: new DrizzlePromptsStore(db),
+    pairRendezvousStore,
   });
 
-  // Sweep TTL-expired blobs + relay envelopes so purged data stops costing
-  // storage. Reads the same clock the app uses; logs through the app logger.
-  const gc = startGc({ blobs: blobsStore, relay: relayStore }, { logger: app.log });
+  // Sweep TTL-expired blobs, relay envelopes, and pairing rendezvous rows so
+  // purged data stops costing storage. Same clock the app uses; logs through
+  // the app logger.
+  const gc = startGc(
+    { blobs: blobsStore, relay: relayStore, pairRendezvous: pairRendezvousStore },
+    { logger: app.log },
+  );
 
   const closeOnSignal = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');

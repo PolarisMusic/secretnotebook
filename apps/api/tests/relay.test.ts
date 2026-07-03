@@ -6,6 +6,7 @@ import { buildApp } from '../src/server.js';
 import {
   MemoryBlobStore,
   MemoryDevicesStore,
+  MemoryPairRendezvousStore,
   MemoryPostsStore,
   MemoryPromptsStore,
   MemoryRelayStore,
@@ -35,6 +36,7 @@ async function setupApp(): Promise<TestCtx> {
     relayStore: relay,
     blobsStore: new MemoryBlobStore(),
     promptsStore: new MemoryPromptsStore(),
+    pairRendezvousStore: new MemoryPairRendezvousStore(),
   });
   return { app, relay, ttlMs: 30 * 24 * 60 * 60 * 1000 };
 }

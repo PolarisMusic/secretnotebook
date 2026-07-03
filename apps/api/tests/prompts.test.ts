@@ -6,6 +6,7 @@ import { buildApp } from '../src/server.js';
 import {
   MemoryBlobStore,
   MemoryDevicesStore,
+  MemoryPairRendezvousStore,
   MemoryPostsStore,
   MemoryPromptsStore,
   MemoryRelayStore,
@@ -33,6 +34,7 @@ async function setupApp(opts: { adminToken?: string } = {}): Promise<{
     relayStore: new MemoryRelayStore(),
     blobsStore: new MemoryBlobStore(),
     promptsStore: prompts,
+    pairRendezvousStore: new MemoryPairRendezvousStore(),
   });
   return { app, prompts };
 }

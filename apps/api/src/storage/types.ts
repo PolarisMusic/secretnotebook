@@ -149,6 +149,27 @@ export interface BlobStore {
   purgeExpired(now: Date): Promise<number>;
 }
 
+export interface StoredHello {
+  hello: string;
+  postedAt: Date;
+}
+
+/**
+ * Persistent backing for the pairing rendezvous. Unlike the earlier
+ * in-memory map, this survives a machine restart / auto-stop, so a code
+ * posted before the API idled is still there when the partner polls — the
+ * long-distance flow can span hours or days. Each row is one hello (a pair
+ * of base64 public keys) under a short code, TTL'd like relay envelopes.
+ */
+export interface PairRendezvousStore {
+  /** Non-expired hellos posted under `code`, oldest first. */
+  listHellos(code: string, now: Date): Promise<StoredHello[]>;
+  /** Add a hello. Idempotent on (code, hello): a repeat is a no-op. */
+  insertHello(code: string, hello: string, postedAt: Date, expiresAt: Date): Promise<void>;
+  /** Sweep TTL-expired rows. Returns the number deleted. */
+  purgeExpired(now: Date): Promise<number>;
+}
+
 /**
  * Relationship-prompt row. `key` is the stable identifier mobile ops
  * carry; `categories` is whatever JSON array of strings the admin set.
