@@ -149,6 +149,49 @@ export interface BlobStore {
   purgeExpired(now: Date): Promise<number>;
 }
 
+/**
+ * Raw object bytes keyed by a string, backing the S3/R2 blob store. Kept
+ * deliberately tiny so the AWS SDK stays behind one adapter and the store
+ * logic can be unit-tested against an in-memory fake. Values are opaque
+ * ciphertext — the backend never decrypts them.
+ */
+export interface BlobObjectStore {
+  put(key: string, bytes: Uint8Array): Promise<void>;
+  /** Object bytes, or null if the key is absent. */
+  get(key: string): Promise<Uint8Array | null>;
+  /** Delete one object. Absent key is not an error. */
+  delete(key: string): Promise<void>;
+  /** Delete many objects in as few round trips as the backend allows. */
+  deleteMany(keys: string[]): Promise<void>;
+}
+
+/** Blob bookkeeping row: everything except the ciphertext bytes, which live
+ *  in the object store under `objectKey`. */
+export interface BlobMetadata {
+  id: string;
+  objectKey: string;
+  byteSize: number;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+/**
+ * Persistence for blob metadata (Postgres in prod). Separated from the object
+ * bytes so the S3 store is pure composition: metadata answers "does this blob
+ * exist / has it expired / which objects are dead", object store moves bytes.
+ */
+export interface BlobMetadataStore {
+  insert(meta: BlobMetadata): Promise<void>;
+  /** Metadata if present and not expired at `now`, else null. */
+  get(id: string, now: Date): Promise<BlobMetadata | null>;
+  /** Remove one row, returning it (for object cleanup) or null if absent. */
+  remove(id: string): Promise<BlobMetadata | null>;
+  /** Up to `limit` rows whose expires_at <= now — candidates for the sweep. */
+  listExpired(now: Date, limit: number): Promise<BlobMetadata[]>;
+  /** Delete rows by id. Returns the number removed. */
+  removeByIds(ids: string[]): Promise<number>;
+}
+
 export interface StoredHello {
   hello: string;
   postedAt: Date;

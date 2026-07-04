@@ -125,7 +125,11 @@ export const prompts = pgTable('prompt', {
 export const blobs = pgTable('blobs', {
   id: uuid('id').primaryKey(),
   // Opaque ciphertext (chunked-AEAD framed); the server never decrypts it.
-  data: bytea('data').notNull(),
+  // Nullable since 0009: set only by the inline Postgres backend. With the
+  // object-storage backend the bytes live in the bucket and this stays NULL.
+  data: bytea('data'),
+  // Object-store key for the S3/R2 backend (NULL for inline Postgres rows).
+  blobKey: text('blob_key'),
   byteSize: integer('byte_size').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
