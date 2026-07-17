@@ -225,6 +225,14 @@ const sampleUnlockCancel: CrdtOp = {
   canceledAt: 1_700_002_300,
 };
 
+const sampleUnlockUncancel: CrdtOp = {
+  v: 1,
+  kind: 'secret_unlock.uncancel',
+  attemptId: ATTEMPT_ID,
+  unlockerPubkey: '22'.repeat(32),
+  uncanceledAt: 1_700_002_400,
+};
+
 const sampleUnlockReflect: CrdtOp = {
   v: 1,
   kind: 'secret_unlock.reflect',
@@ -537,11 +545,12 @@ describe('connection sever ops round-trip', () => {
 });
 
 describe('secret-unlock ops round-trip', () => {
-  it('round-trips start / submit / reject / cancel byte-for-byte', () => {
+  it('round-trips start / submit / reject / cancel / uncancel byte-for-byte', () => {
     expect(deserialiseOp(serialiseOp(sampleUnlockStart))).toEqual(sampleUnlockStart);
     expect(deserialiseOp(serialiseOp(sampleUnlockSubmit))).toEqual(sampleUnlockSubmit);
     expect(deserialiseOp(serialiseOp(sampleUnlockReject))).toEqual(sampleUnlockReject);
     expect(deserialiseOp(serialiseOp(sampleUnlockCancel))).toEqual(sampleUnlockCancel);
+    expect(deserialiseOp(serialiseOp(sampleUnlockUncancel))).toEqual(sampleUnlockUncancel);
   });
 
   it('round-trips verify with and without media', () => {

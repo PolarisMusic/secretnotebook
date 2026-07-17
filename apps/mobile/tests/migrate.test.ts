@@ -62,6 +62,7 @@ describe('runMigrations', () => {
       'prompt-cache',
       'reveal-comment',
       'note-title',
+      'pending-note-title',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -108,6 +109,7 @@ describe('runMigrations', () => {
       'prompt-cache',
       'reveal-comment',
       'note-title',
+      'pending-note-title',
     ]);
   });
 

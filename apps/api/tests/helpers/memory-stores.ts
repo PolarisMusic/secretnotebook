@@ -9,6 +9,7 @@ import type {
   NewFlagInput,
   NewPostInput,
   NewPromptInput,
+  PairRendezvousStore,
   PostListOptions,
   PostListResult,
   PostsStore,
@@ -18,6 +19,7 @@ import type {
   StoredBlob,
   StoredEnvelope,
   StoredFlag,
+  StoredHello,
   StoredPost,
   StoredPrompt,
 } from '../../src/storage/types.js';
@@ -259,6 +261,39 @@ export class MemoryBlobStore implements BlobStore {
     if (idx === -1) return false;
     this.rows.splice(idx, 1);
     return true;
+  }
+
+  async purgeExpired(now: Date): Promise<number> {
+    const before = this.rows.length;
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      const row = this.rows[i];
+      if (row && row.expiresAt.getTime() <= now.getTime()) this.rows.splice(i, 1);
+    }
+    return before - this.rows.length;
+  }
+}
+
+interface MemHelloRow {
+  code: string;
+  hello: string;
+  postedAt: Date;
+  expiresAt: Date;
+}
+
+export class MemoryPairRendezvousStore implements PairRendezvousStore {
+  readonly rows: MemHelloRow[] = [];
+
+  async listHellos(code: string, now: Date): Promise<StoredHello[]> {
+    return this.rows
+      .filter((r) => r.code === code && r.expiresAt.getTime() > now.getTime())
+      .sort((a, b) => a.postedAt.getTime() - b.postedAt.getTime())
+      .map((r) => ({ hello: r.hello, postedAt: r.postedAt }));
+  }
+
+  async insertHello(code: string, hello: string, postedAt: Date, expiresAt: Date): Promise<void> {
+    // Idempotent on (code, hello), matching the Drizzle onConflictDoNothing.
+    if (this.rows.some((r) => r.code === code && r.hello === hello)) return;
+    this.rows.push({ code, hello, postedAt, expiresAt });
   }
 
   async purgeExpired(now: Date): Promise<number> {

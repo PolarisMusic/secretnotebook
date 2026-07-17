@@ -21,6 +21,7 @@ import { relayRoute } from './routes/relay.js';
 import type {
   BlobStore,
   DevicesStore,
+  PairRendezvousStore,
   PostsStore,
   PromptsStore,
   RelayStore,
@@ -34,6 +35,7 @@ export interface BuildAppOptions {
   relayStore: RelayStore;
   blobsStore: BlobStore;
   promptsStore: PromptsStore;
+  pairRendezvousStore: PairRendezvousStore;
 }
 
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
@@ -89,7 +91,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   // Unauthenticated: the 6-character rendezvous code is the auth, and the
   // posted hellos are public keys (not secrets). See
   // routes/pair-rendezvous.ts for the threat model.
-  await app.register(pairRendezvousRoute, { now: opts.now });
+  await app.register(pairRendezvousRoute, { store: opts.pairRendezvousStore, now: opts.now });
   const nowDate = (): Date => new Date((opts.now ?? Date.now)());
   await app.register(postsRoute, { store: opts.postsStore, now: nowDate });
   await app.register(devicesRoute, { store: opts.devicesStore, now: nowDate });

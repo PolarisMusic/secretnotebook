@@ -28,10 +28,27 @@ export interface StagedMedia {
   readonly previewUri?: string;
 }
 
+export interface ComposeInput {
+  readonly kind: NoteKind;
+  readonly body: string;
+  readonly title?: string;
+}
+
 export interface NotesComposeProps {
   /** Resolves to an error string to show inline, or null on success.
    *  Rejecting leaves the form intact with a generic message. */
-  readonly onSubmit: (input: { kind: NoteKind; body: string; title?: string }) => Promise<string | null>;
+  readonly onSubmit: (input: ComposeInput) => Promise<string | null>;
+  /** Optional secondary action: save the text as a device-local draft
+   *  instead of the primary action (publishing). Shown as a "Save as draft"
+   *  button only when provided — e.g. when already paired. Drafts are
+   *  text-only, so staged media is not carried. */
+  readonly onSaveDraft?: (input: ComposeInput) => Promise<string | null>;
+  /** Pre-fill the form (editing an existing draft). */
+  readonly initial?: ComposeInput;
+  /** Header label. Defaults to "New note". */
+  readonly headerTitle?: string;
+  /** Primary button label. Defaults to "Save". */
+  readonly submitLabel?: string;
   readonly onCancel: () => void;
   /** When true and the note is secret, show a dismissible nudge to set a
    *  shared roleplay term. Purely informational — never gates saving. */
@@ -56,9 +73,9 @@ export interface NotesComposeProps {
  * layer.
  */
 export function NotesCompose(props: NotesComposeProps): JSX.Element {
-  const [kind, setKind] = useState<NoteKind>('shared');
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
+  const [kind, setKind] = useState<NoteKind>(props.initial?.kind ?? 'shared');
+  const [title, setTitle] = useState(props.initial?.title ?? '');
+  const [body, setBody] = useState(props.initial?.body ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promptDismissed, setPromptDismissed] = useState(false);
@@ -73,24 +90,39 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
   // Block while media is still encrypting/uploading or a recording is live.
   const canSubmit =
     !busy && !tooLong && !anyPreparing && !props.isRecording && (!tooShort || hasReadyMedia);
+  // A draft is text-only, so it just needs a body — media state is irrelevant.
+  const canSaveDraft = !busy && !tooLong && !tooShort;
 
-  async function submit(): Promise<void> {
-    if (!canSubmit) return;
+  function buildInput(): ComposeInput {
+    const trimmedTitle = title.trim();
+    return {
+      kind,
+      body: body.trim(),
+      ...(trimmedTitle.length > 0 ? { title: trimmedTitle } : {}),
+    };
+  }
+
+  async function run(handler: (input: ComposeInput) => Promise<string | null>): Promise<void> {
     setBusy(true);
     setError(null);
     try {
-      const trimmedTitle = title.trim();
-      const errMessage = await props.onSubmit({
-        kind,
-        body: body.trim(),
-        ...(trimmedTitle.length > 0 ? { title: trimmedTitle } : {}),
-      });
+      const errMessage = await handler(buildInput());
       if (errMessage) setError(errMessage);
     } catch (e) {
       setError((e as Error).message ?? 'Could not save note');
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submit(): Promise<void> {
+    if (!canSubmit) return;
+    await run(props.onSubmit);
+  }
+
+  async function saveDraft(): Promise<void> {
+    if (!canSaveDraft || !props.onSaveDraft) return;
+    await run(props.onSaveDraft);
   }
 
   return (
@@ -107,7 +139,7 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
           >
             <Text style={styles.cancel}>Cancel</Text>
           </Pressable>
-          <Text style={styles.title}>New note</Text>
+          <Text style={styles.title}>{props.headerTitle ?? 'New note'}</Text>
           <Pressable
             accessibilityRole="button"
             disabled={!canSubmit}
@@ -118,7 +150,7 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
             {busy ? (
               <ActivityIndicator color="#0a0a0a" />
             ) : (
-              <Text style={styles.submitText}>Save</Text>
+              <Text style={styles.submitText}>{props.submitLabel ?? 'Save'}</Text>
             )}
           </Pressable>
         </View>
@@ -252,6 +284,20 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
           testID="notes.body"
         />
 
+        {props.onSaveDraft ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={!canSaveDraft}
+            onPress={saveDraft}
+            testID="notes.save-draft"
+            style={[styles.draftButton, !canSaveDraft && styles.draftButtonDisabled]}
+          >
+            <Text style={[styles.draftButtonText, !canSaveDraft && styles.draftButtonTextDisabled]}>
+              Save as draft
+            </Text>
+          </Pressable>
+        ) : null}
+
         <View style={styles.statusRow}>
           <Text style={styles.counter}>
             {body.length} / {MAX_LENGTH}
@@ -333,6 +379,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     textAlignVertical: 'top',
   },
+  draftButton: {
+    marginHorizontal: 16,
+    marginBottom: 4,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  draftButtonDisabled: { opacity: 0.5 },
+  draftButtonText: { color: '#cfcfcf', fontWeight: '600', fontSize: 15 },
+  draftButtonTextDisabled: { color: '#7a7a7a' },
   statusRow: { paddingHorizontal: 16, paddingBottom: 16, gap: 6 },
   counter: { color: '#666', fontSize: 12, textAlign: 'right' },
   errorText: { color: '#ffb4b4', fontSize: 13 },

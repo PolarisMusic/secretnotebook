@@ -22,10 +22,10 @@ import {
  *      every onMessage handler. The orchestrator dispatches PEER_FOUND
  *      and the handshake proceeds.
  *
- * The server stores at most two hellos per code and TTLs them at ~10 min;
- * cross-internet pairing is expected to complete well within that window.
- * The server never sees private keys, biometric confirmation, or the
- * derived root key.
+ * The server stores at most two hellos per code and TTLs them at 24h, so a
+ * long-distance couple in different time zones can pair across hours or a
+ * day — not just a single short window. The server never sees private keys,
+ * biometric confirmation, or the derived root key.
  */
 
 export interface RelayTransportOptions {
@@ -35,14 +35,16 @@ export interface RelayTransportOptions {
   readonly baseUrl: string;
   /** Polling interval (ms). Default 2000. */
   readonly pollIntervalMs?: number;
-  /** Total timeout for the pairing attempt (ms). Default 5 minutes. */
+  /** Total timeout for the pairing attempt (ms). Default 24 hours — matches
+   *  the server-side rendezvous TTL so the initiator can leave the app and
+   *  come back within the day. */
   readonly timeoutMs?: number;
   /** Injected fetch — defaults to global fetch. */
   readonly fetchImpl?: typeof fetch;
 }
 
 const DEFAULT_POLL_MS = 2000;
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 interface PairGetResponse {
   hellos: Array<{ hello: string; postedAt: string }>;
@@ -94,7 +96,11 @@ export class RelayTransport implements PairingTransport {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ hello: this.selfSerialized }),
     });
-    if (!res.ok) {
+    // 409 means the code already holds two hellos — expected when resuming a
+    // pairing whose earlier hello is still on the server, or when the partner
+    // is already waiting. Our hello may not have landed, but the peer's is
+    // there to be found, so keep polling instead of failing the attempt.
+    if (!res.ok && res.status !== 409) {
       throw new Error(`pair rendezvous POST failed: ${res.status}`);
     }
   }

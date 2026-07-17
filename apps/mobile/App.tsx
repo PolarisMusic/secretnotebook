@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, type LinkingOptions } from '@react-navigation/native';
 import { bytesToHex } from '@secretnotebook/crypto';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
@@ -92,6 +92,27 @@ function logSyncError(err: Error, step: SyncStep): void {
   recordSyncError(step, err.message);
 }
 
+/**
+ * Deep-link map. `secretnotebook://pair?code=XXXX` opens the pairing modal
+ * with the code pre-filled (the query param becomes the Pairing route's
+ * `code` param). The app scheme is declared in app.json. Cold-launch links
+ * that arrive while the biometric app-lock is showing are best-effort — the
+ * Main navigator that owns Pairing isn't mounted until unlock; the shared
+ * code can always be entered by hand as a fallback.
+ */
+const linking: LinkingOptions<ReactNavigation.RootParamList> = {
+  prefixes: ['secretnotebook://'],
+  config: {
+    screens: {
+      Main: {
+        screens: {
+          Pairing: 'pair',
+        },
+      },
+    },
+  },
+} as LinkingOptions<ReactNavigation.RootParamList>;
+
 export function App(): JSX.Element {
   const phase = useBootStore((s) => s.phase);
 
@@ -105,7 +126,7 @@ export function App(): JSX.Element {
         <StatusBar style="light" />
         <SyncTicker />
         {phase === 'ready' ? (
-          <NavigationContainer>
+          <NavigationContainer linking={linking}>
             <RootStack />
           </NavigationContainer>
         ) : (

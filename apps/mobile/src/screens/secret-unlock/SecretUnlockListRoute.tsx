@@ -8,6 +8,7 @@ import { bytesToHex } from '@secretnotebook/crypto';
 import { useDatabaseStore } from '../../db/store';
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { getMyRole } from '../../features/connection/role-store';
+import { collectNewlyEarnedBadges } from '../../features/ledger/badges';
 import { sumConnectionPoints } from '../../features/ledger/store';
 import {
   countUnrevealedSecretsBy,
@@ -135,10 +136,25 @@ export function SecretUnlockListRoute(): JSX.Element {
         canStart: reason == null,
         startDisabledReason: reason,
       });
+
+      // Celebrate any milestone crossed since the last check — once each.
+      const newBadges = await collectNewlyEarnedBadges(exec, points);
+      const top = newBadges[newBadges.length - 1];
+      if (top) {
+        const extra = newBadges.length > 1 ? ` (+${newBadges.length - 1} more)` : '';
+        Alert.alert(
+          `${top.emoji}  Badge unlocked!`,
+          `You reached “${top.name}” at ${top.threshold.toLocaleString()} Sparks.${extra}`,
+          [
+            { text: 'See badges', onPress: () => navigation.navigate('Badges') },
+            { text: 'Nice', style: 'cancel' },
+          ],
+        );
+      }
     } finally {
       setIsRefreshing(false);
     }
-  }, [exec, engine, status]);
+  }, [exec, engine, status, navigation]);
 
   useFocusEffect(
     useCallback(() => {

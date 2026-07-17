@@ -78,7 +78,7 @@ export function SeverBanner(): JSX.Element | null {
   if (severAt == null || !engine) return null;
 
   return (
-    <View style={[styles.wrap, { paddingTop: insets.top + 8 }]} testID="sever.banner">
+    <View style={[styles.wrap, { paddingBottom: insets.bottom + 12 }]} testID="sever.banner">
       <Text style={styles.text}>
         {isInitiator ? 'You’re ending this connection' : 'Your partner is ending this connection'} —
         all shared notes, secrets, and points will be wiped {whenText(severAt)}.
@@ -113,16 +113,20 @@ export function SeverBanner(): JSX.Element | null {
 
 const styles = StyleSheet.create({
   wrap: {
+    // Anchored to the bottom (snackbar-style) so it never covers the
+    // per-screen header — new-note button, hamburger menu, title. The
+    // navigator renders headerShown:false and each screen draws its own
+    // top bar, so a top-anchored banner used to sit right on top of them.
     position: 'absolute',
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
     backgroundColor: '#2a1414',
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingTop: 12,
     gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#5a2a2a',
+    borderTopWidth: 1,
+    borderTopColor: '#5a2a2a',
   },
   text: { color: '#ffd0d0', fontSize: 13, lineHeight: 18 },
   row: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },

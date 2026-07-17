@@ -17,6 +17,7 @@ import {
   rejectUnlock,
   startUnlock,
   submitUnlock,
+  uncancelUnlock,
   verifyUnlock,
   type SecretUnlockStoreDeps,
   type UnlockState,
@@ -249,6 +250,96 @@ describe('secret-unlock store', () => {
         revealedNoteId: A2,
       });
       await expect(cancelUnlock(deps, A1)).rejects.toThrow(/too late to cancel/);
+    });
+  });
+
+  describe('uncancelUnlock', () => {
+    it('Unlocker undoes a cancel: canceled → assigned + enqueues the op', async () => {
+      const { exec, deps, enqueued } = await freshHarness();
+      await seedAttempt(exec, { id: A1, author: PEER, unlocker: SELF, state: 'assigned' });
+      await cancelUnlock(deps, A1);
+      expect((await getUnlock(exec, A1))?.state).toBe('canceled');
+
+      await uncancelUnlock(deps, A1);
+      const row = await getUnlock(exec, A1);
+      expect(row?.state).toBe('assigned');
+      expect(row?.canceledAt).toBeNull();
+      expect(enqueued.at(-1)).toMatchObject({ kind: 'secret_unlock.uncancel', attemptId: A1 });
+    });
+
+    it('is a no-op when the attempt is already active', async () => {
+      const { exec, deps, enqueued } = await freshHarness();
+      await seedAttempt(exec, { id: A1, author: PEER, unlocker: SELF, state: 'assigned' });
+      await uncancelUnlock(deps, A1);
+      expect((await getUnlock(exec, A1))?.state).toBe('assigned');
+      expect(enqueued.some((o) => o.kind === 'secret_unlock.uncancel')).toBe(false);
+    });
+
+    it('only the Unlocker can undo', async () => {
+      const { exec, deps } = await freshHarness();
+      // This device is the Author, not the Unlocker.
+      await seedAttempt(exec, { id: A1, author: SELF, unlocker: PEER, state: 'canceled' });
+      await expect(uncancelUnlock(deps, A1)).rejects.toThrow(/only the Unlocker/);
+    });
+
+    it('refuses to resurrect a second active attempt', async () => {
+      const { exec, deps } = await freshHarness();
+      await seedAttempt(exec, { id: A1, author: PEER, unlocker: SELF, state: 'assigned' });
+      await cancelUnlock(deps, A1);
+      // A different attempt is now active for the same Unlocker.
+      await seedAttempt(exec, { id: A2, author: PEER, unlocker: SELF, state: 'assigned' });
+      await expect(uncancelUnlock(deps, A1)).rejects.toThrow(/another active unlock/);
+    });
+
+    it('projects a peer uncancel onto the partner device (canceled → assigned)', async () => {
+      const { exec } = await freshHarness();
+      const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+      // On the partner's device, PEER is the Unlocker of a canceled attempt.
+      await exec.execute(
+        `INSERT INTO secret_unlock (id, author_pubkey, unlocker_pubkey, prompt_key,
+           state, created_at, canceled_at)
+         VALUES (?, ?, ?, 'pq_unhurried_walk', 'canceled', ?, ?)`,
+        [A1, SELF, PEER, FIXED_NOW_SEC, FIXED_NOW_SEC],
+      );
+      await applyCrdtOp(
+        exec,
+        {
+          v: 1,
+          kind: 'secret_unlock.uncancel',
+          attemptId: A1,
+          unlockerPubkey: bytesToHex(PEER),
+          uncanceledAt: FIXED_NOW_SEC,
+        },
+        PEER,
+      );
+      const row = await getUnlock(exec, A1);
+      expect(row?.state).toBe('assigned');
+      expect(row?.canceledAt).toBeNull();
+    });
+
+    it('ignores a spoofed uncancel whose unlockerPubkey ≠ sender', async () => {
+      const { exec } = await freshHarness();
+      const { applyCrdtOp } = await import('../src/features/connection-channel/projector');
+      await exec.execute(
+        `INSERT INTO secret_unlock (id, author_pubkey, unlocker_pubkey, prompt_key,
+           state, created_at, canceled_at)
+         VALUES (?, ?, ?, 'pq_unhurried_walk', 'canceled', ?, ?)`,
+        [A1, SELF, PEER, FIXED_NOW_SEC, FIXED_NOW_SEC],
+      );
+      await expect(
+        applyCrdtOp(
+          exec,
+          {
+            v: 1,
+            kind: 'secret_unlock.uncancel',
+            attemptId: A1,
+            unlockerPubkey: bytesToHex(PEER),
+            uncanceledAt: FIXED_NOW_SEC,
+          },
+          SELF, // sender ≠ unlockerPubkey
+        ),
+      ).rejects.toThrow(/does not match sender/);
+      expect((await getUnlock(exec, A1))?.state).toBe('canceled');
     });
   });
 

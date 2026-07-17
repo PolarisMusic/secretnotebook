@@ -6,6 +6,7 @@ import { buildApp } from '../src/server.js';
 import {
   MemoryBlobStore,
   MemoryDevicesStore,
+  MemoryPairRendezvousStore,
   MemoryPostsStore,
   MemoryPromptsStore,
   MemoryRelayStore,
@@ -13,7 +14,10 @@ import {
 import { buildSignedRequest } from './helpers/signed-inject.js';
 
 const FIXED_NOW_MS = 1_700_000_000_000;
-const TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Pin the TTL explicitly so this suite asserts the mechanism, not the
+// current default (which is intentionally short in production).
+const TTL_DAYS = 30;
+const TTL_MS = TTL_DAYS * 24 * 60 * 60 * 1000;
 
 interface TestCtx {
   app: FastifyInstance;
@@ -27,6 +31,7 @@ async function setupApp(maxBytes?: number): Promise<TestCtx> {
       LOG_LEVEL: 'fatal',
       RATE_LIMIT_MAX: '1000',
       RATE_LIMIT_WINDOW_MS: '60000',
+      BLOB_TTL_DAYS: String(TTL_DAYS),
       ...(maxBytes !== undefined ? { BLOB_MAX_BYTES: String(maxBytes) } : {}),
     }),
     now: () => FIXED_NOW_MS,
@@ -35,6 +40,7 @@ async function setupApp(maxBytes?: number): Promise<TestCtx> {
     relayStore: new MemoryRelayStore(),
     blobsStore: blobs,
     promptsStore: new MemoryPromptsStore(),
+    pairRendezvousStore: new MemoryPairRendezvousStore(),
   });
   return { app, blobs };
 }

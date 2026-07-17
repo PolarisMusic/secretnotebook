@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text } from 'react-native';
@@ -17,10 +17,14 @@ import { recordFlush, recordSyncError } from '../../features/connection-channel/
 import { useSyncEngineStore } from '../../features/connection-channel/store';
 import { randomUuidV4 } from '../../features/connection-channel/uuid';
 import { submitNoteCompose } from '../../features/notes/compose-wiring';
-import { writePendingNote } from '../../features/notes/pending-store';
+import {
+  getPendingNote,
+  updatePendingNote,
+  writePendingNote,
+} from '../../features/notes/pending-store';
 import { getTermState } from '../../features/safeword/term-store';
 import type { MainStackParamList } from '../../navigation/MainStack';
-import { NotesCompose, type StagedMedia } from './NotesCompose';
+import { NotesCompose, type ComposeInput, type StagedMedia } from './NotesCompose';
 
 interface StagedItem extends StagedMedia {
   prepared?: PreparedAttachment;
@@ -35,12 +39,32 @@ interface StagedItem extends StagedMedia {
  */
 export function NotesComposeRoute(): JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
+  const route = useRoute<RouteProp<MainStackParamList, 'NotesCompose'>>();
+  const draftId = route.params?.draftId;
   const exec = useDatabaseStore((s) => s.exec);
   const engine = useSyncEngineStore((s) => s.engine);
   const apiClient = useApiStore((s) => s.client);
   const [termNotSet, setTermNotSet] = useState(false);
   const [staged, setStaged] = useState<StagedItem[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  // Prefill when editing a draft: undefined = still loading it, null = a
+  // fresh compose with nothing to prefill.
+  const [initial, setInitial] = useState<ComposeInput | null | undefined>(
+    draftId ? undefined : null,
+  );
+
+  useEffect(() => {
+    if (!exec || !draftId) return;
+    let cancelled = false;
+    void getPendingNote(exec, draftId).then((d) => {
+      if (cancelled) return;
+      // Draft gone (discarded elsewhere) → fall back to a fresh compose.
+      setInitial(d ? { kind: d.kind, body: d.body, ...(d.title ? { title: d.title } : {}) } : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [exec, draftId]);
 
   const mediaSource = useMemo(() => createExpoMediaSource(), []);
   const recorder = useMemo(() => createExpoAudioRecorder(), []);
@@ -127,7 +151,7 @@ export function NotesComposeRoute(): JSX.Element {
     await stageAndPrepare(picked);
   }, [isRecording, recorder, stageAndPrepare]);
 
-  if (!exec) {
+  if (!exec || initial === undefined) {
     return (
       <SafeAreaView style={styles.gate} testID="screen.notes-compose.waiting">
         <ActivityIndicator color="#f5f5f5" />
@@ -137,14 +161,33 @@ export function NotesComposeRoute(): JSX.Element {
   }
 
   // Media (encrypt + upload) needs both the connection identity and the API;
-  // an unpaired draft is text-only.
-  const mediaReady = engine != null && apiClient != null;
+  // an unpaired draft is text-only, and a draft being edited stays text-only
+  // (the pending_note table carries no attachments).
+  const mediaReady = engine != null && apiClient != null && draftId == null;
+
+  // Save-as-draft is offered as a secondary action only when already paired
+  // and composing fresh — when unpaired the primary Save already writes a
+  // draft, and while editing a draft the primary Save updates it in place.
+  const saveAsDraft =
+    engine != null && draftId == null
+      ? async ({ kind, body, title }: ComposeInput): Promise<string | null> => {
+          try {
+            await writePendingNote(exec, { kind, body, ...(title ? { title } : {}) });
+            navigation.goBack();
+            return null;
+          } catch (e) {
+            return (e as Error).message ?? 'Could not save draft';
+          }
+        }
+      : undefined;
 
   return (
     <NotesCompose
       termNotSet={termNotSet}
       onSetTerm={() => navigation.navigate('SafeWord')}
       onCancel={() => navigation.goBack()}
+      initial={initial ?? undefined}
+      headerTitle={draftId ? 'Edit draft' : 'New note'}
       staged={staged}
       isRecording={isRecording}
       onAddPhoto={mediaReady ? () => void mediaSource.pickImage().then(stageAndPrepare) : undefined}
@@ -153,9 +196,13 @@ export function NotesComposeRoute(): JSX.Element {
       }
       onToggleRecord={mediaReady ? () => void onToggleRecord() : undefined}
       onRemoveMedia={(id) => setStaged((s) => s.filter((m) => m.id !== id))}
+      onSaveDraft={saveAsDraft}
       onSubmit={async ({ kind, body, title }) => {
         try {
-          if (engine) {
+          if (draftId) {
+            // Editing an existing draft — update it in place, stays a draft.
+            await updatePendingNote(exec, draftId, { kind, body, ...(title ? { title } : {}) });
+          } else if (engine) {
             const attachments = staged
               .filter((m) => m.status === 'ready' && m.prepared)
               .map((m) => m.prepared as PreparedAttachment);
@@ -180,7 +227,7 @@ export function NotesComposeRoute(): JSX.Element {
               .catch((e) => recordSyncError('flush', (e as Error).message));
           } else {
             // No partner yet — save a draft for first-connection triage.
-            await writePendingNote(exec, { kind, body });
+            await writePendingNote(exec, { kind, body, ...(title ? { title } : {}) });
           }
           navigation.goBack();
           return null;

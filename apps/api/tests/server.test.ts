@@ -13,6 +13,7 @@ import { buildApp } from '../src/server.js';
 import {
   MemoryBlobStore,
   MemoryDevicesStore,
+  MemoryPairRendezvousStore,
   MemoryPostsStore,
   MemoryPromptsStore,
   MemoryPromptsStore,
@@ -33,6 +34,7 @@ describe('GET /v1/health', () => {
       relayStore: new MemoryRelayStore(),
       blobsStore: new MemoryBlobStore(),
       promptsStore: new MemoryPromptsStore(),
+      pairRendezvousStore: new MemoryPairRendezvousStore(),
     });
   });
   afterEach(async () => {
@@ -58,6 +60,7 @@ describe('signed-request enforcement on a protected fixture route', () => {
       relayStore: new MemoryRelayStore(),
       blobsStore: new MemoryBlobStore(),
       promptsStore: new MemoryPromptsStore(),
+      pairRendezvousStore: new MemoryPairRendezvousStore(),
     });
     app.get('/v1/_test/protected', { preHandler: app.requireSignature }, async (req) => ({
       pubkey: req.devicePubkey ? bytesToHex(req.devicePubkey) : null,

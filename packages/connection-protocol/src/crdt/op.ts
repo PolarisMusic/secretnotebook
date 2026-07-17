@@ -462,6 +462,23 @@ export const SecretUnlockCancelOpSchema = z
 export type SecretUnlockCancelOp = z.infer<typeof SecretUnlockCancelOpSchema>;
 
 /**
+ * Unlocker undoes a cancel: canceled → assigned. A safety net for a
+ * mis-tap — offered until the one-per-day cap resets at local midnight.
+ * The projector restores the attempt to the base active state (the exact
+ * pre-cancel sub-state isn't preserved; the Unlocker simply resumes).
+ */
+export const SecretUnlockUncancelOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('secret_unlock.uncancel'),
+    attemptId: z.string().uuid(),
+    unlockerPubkey: HexString(32),
+    uncanceledAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SecretUnlockUncancelOp = z.infer<typeof SecretUnlockUncancelOpSchema>;
+
+/**
  * One partner's reflection on the revealed note. Add-only, keyed on
  * (attemptId, byPubkey) by the projector. The mutual-reflection award
  * fires once both partners' reflections exist (see ledger_entry.add).
@@ -591,6 +608,7 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   SecretUnlockRejectOpSchema,
   SecretUnlockVerifyOpSchema,
   SecretUnlockCancelOpSchema,
+  SecretUnlockUncancelOpSchema,
   SecretUnlockReflectOpSchema,
   SecretUnlockRerollOpSchema,
   ConnectionSeverScheduleOpSchema,

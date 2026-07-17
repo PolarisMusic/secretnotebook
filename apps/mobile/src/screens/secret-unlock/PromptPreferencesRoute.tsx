@@ -61,7 +61,18 @@ export function PromptPreferencesRoute(): JSX.Element {
   }, []);
 
   const onSave = useCallback(() => {
-    if (!exec || !engine || !enabled || !dirty || isSaving) return;
+    if (isSaving) return;
+    // Preferences are broadcast to the partner over the sync channel, so
+    // there's nothing to save (or send) until a connection exists. Tell the
+    // user rather than swallowing the tap.
+    if (!exec || !engine) {
+      Alert.alert(
+        'Pair with a partner first',
+        'Prompt preferences are shared with your partner, so you can set them once you’re connected.',
+      );
+      return;
+    }
+    if (!enabled || !dirty) return;
     setIsSaving(true);
     void (async () => {
       try {

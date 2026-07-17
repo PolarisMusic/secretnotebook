@@ -538,6 +538,23 @@ export async function applyCrdtOp(
       );
       return;
 
+    case 'secret_unlock.uncancel':
+      // Unlocker undoes a cancel: canceled → assigned. Only the Unlocker
+      // (unlockerPubkey must match sender). The state guard pins it to a
+      // canceled row so a replay after the attempt moved on can't apply,
+      // and clearing canceled_at leaves a clean active attempt.
+      if (op.unlockerPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: secret_unlock.uncancel unlockerPubkey does not match sender — refusing to apply`,
+        );
+      }
+      await exec.execute(
+        `UPDATE secret_unlock SET state = 'assigned', canceled_at = NULL
+          WHERE id = ? AND unlocker_pubkey = ? AND state = 'canceled'`,
+        [op.attemptId, hexToBytes(op.unlockerPubkey)],
+      );
+      return;
+
     case 'connection.sever.schedule': {
       // Either partner may schedule a sever; the actor must be the sender
       // (same author check as role.set). Last-write-wins: a newer schedule

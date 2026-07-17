@@ -125,9 +125,27 @@ export const prompts = pgTable('prompt', {
 export const blobs = pgTable('blobs', {
   id: uuid('id').primaryKey(),
   // Opaque ciphertext (chunked-AEAD framed); the server never decrypts it.
-  data: bytea('data').notNull(),
+  // Nullable since 0009: set only by the inline Postgres backend. With the
+  // object-storage backend the bytes live in the bucket and this stays NULL.
+  data: bytea('data'),
+  // Object-store key for the S3/R2 backend (NULL for inline Postgres rows).
+  blobKey: text('blob_key'),
   byteSize: integer('byte_size').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+/**
+ * Pairing rendezvous (long-distance flow). Two unpaired devices agree on a
+ * short code out-of-band; each POSTs its hello (a pair of base64 public
+ * keys, not secrets) and polls for the peer's. Persistent so a code
+ * survives the machine auto-stopping between the two devices showing up —
+ * the flow can span hours. One row per (code, hello); TTL'd like relay.
+ */
+export const pairRendezvous = pgTable('pair_rendezvous', {
+  code: text('code').notNull(),
+  hello: text('hello').notNull(),
+  postedAt: timestamp('posted_at', { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
 
@@ -145,3 +163,5 @@ export type BlobRow = typeof blobs.$inferSelect;
 export type NewBlobRow = typeof blobs.$inferInsert;
 export type PromptRow = typeof prompts.$inferSelect;
 export type NewPromptRow = typeof prompts.$inferInsert;
+export type PairRendezvousRow = typeof pairRendezvous.$inferSelect;
+export type NewPairRendezvousRow = typeof pairRendezvous.$inferInsert;

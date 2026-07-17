@@ -28,6 +28,7 @@ import {
   type PairingHooks,
   type PairingRun,
 } from '../../features/pairing/orchestrator';
+import { buildPairLink } from '../../features/pairing/pair-link';
 import { encodePairingQr, parsePairingQr } from '../../features/pairing/qr-code';
 import { RelayTransport } from '../../features/pairing/relay-transport';
 import type { PairingState, SelfKeys } from '../../features/pairing/state-machine';
@@ -64,6 +65,12 @@ export interface PairWithPartnerProps {
     selfPub: Uint8Array;
     peerPub: Uint8Array;
   }) => Promise<void>;
+  /** When set, immediately join this rendezvous code on mount — from a
+   *  `secretnotebook://pair?code=…` deep link or a resumed pending pairing. */
+  readonly initialCode?: string | null;
+  /** Notifies the host when a shared-code wait begins (`code`) or settles
+   *  (`null`), so it can persist/clear the pending pairing for later resume. */
+  readonly onWaitingChange?: (code: string | null) => void;
 }
 
 export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
@@ -86,12 +93,29 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   const [joinError, setJoinError] = useState<string | null>(null);
 
   const runRef = useRef<PairingRun | null>(null);
+  const autoJoinedRef = useRef(false);
 
   useEffect(() => {
     return () => {
       runRef.current?.cancel();
     };
   }, []);
+
+  // Deep link / resume: join the supplied code once, straight into the relay
+  // "waiting" state. Guarded so it fires a single time even as the prop
+  // resolves from undefined → code.
+  useEffect(() => {
+    if (autoJoinedRef.current) return;
+    const code = props.initialCode;
+    if (!code) return;
+    const normalized = normalizeRendezvousCode(code);
+    if (!isValidRendezvousCode(normalized)) return;
+    autoJoinedRef.current = true;
+    setMode('relay');
+    setRelayRole('join');
+    // startRelay is a hoisted function declaration; only the code drives this.
+    void startRelay(normalized);
+  }, [props.initialCode]);
 
   const hooks = useMemo<PairingHooks>(
     () => ({
@@ -221,6 +245,9 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   async function startRelay(code: string): Promise<void> {
     setRelayConnecting(true);
     setState({ name: 'idle' });
+    // Remember the code so the wait survives a background/kill and can resume
+    // within the server's 24h window.
+    props.onWaitingChange?.(code);
     try {
       const transport = new RelayTransport({ code, baseUrl: props.apiBaseUrl });
       const selfKeys = await generateSelfKeys();
@@ -234,8 +261,11 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
 
       const final = await run.result;
       await maybeFinishPairing(final, selfKeys);
+      // Settled (paired or otherwise terminal) — stop tracking the wait.
+      props.onWaitingChange?.(null);
     } catch (err) {
       setState({ name: 'error', reason: errorMessage(err) });
+      props.onWaitingChange?.(null);
     } finally {
       setRelayConnecting(false);
     }
@@ -243,8 +273,13 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
 
   async function shareCreatedCode(): Promise<void> {
     if (createdCode === null) return;
+    // Send a tappable deep link (opens straight onto pairing with the code
+    // filled in) plus the human-readable code as a fallback.
+    const link = buildPairLink(createdCode);
     try {
-      await Share.share({ message: `Our pairing code: ${formatRendezvousCode(createdCode)}` });
+      await Share.share({
+        message: `Pair with me on UsNotes — tap this link:\n${link}\n\nOr enter the code manually: ${formatRendezvousCode(createdCode)}`,
+      });
     } catch {
       // User dismissed the share sheet, or it's unavailable — non-fatal.
     }
@@ -263,6 +298,7 @@ export function PairWithPartner(props: PairWithPartnerProps): JSX.Element {
   function cancelAndReset(): void {
     runRef.current?.cancel();
     runRef.current = null;
+    props.onWaitingChange?.(null);
     scanLockRef.current = false;
     setQrRole('pick');
     setQrCode(null);

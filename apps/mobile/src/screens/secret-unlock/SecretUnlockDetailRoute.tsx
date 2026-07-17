@@ -25,6 +25,7 @@ import {
   rejectUnlock,
   rerollUnlock,
   submitUnlock,
+  uncancelUnlock,
   verifyUnlock,
   type SecretUnlockStoreDeps,
   type UnlockReflectionRow,
@@ -55,6 +56,7 @@ interface ViewModel {
   partnerReflection: ReflectionView | null;
   complete: boolean;
   rerollBalance: number;
+  canUndoCancel: boolean;
 }
 
 function reflectionView(r: UnlockReflectionRow | null): ReflectionView | null {
@@ -76,13 +78,17 @@ export function SecretUnlockDetailRoute(): JSX.Element {
   const [vm, setVm] = useState<ViewModel | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Random snapshots to flash through the prompt card on first arrival from
-  // "Start an unlock" (params.intro). Pre-drawn once so a re-render mid-
-  // shuffle doesn't shake the texts; the component animates through them
-  // exactly once on mount.
+  // Animation epoch for the prompt-card shuffle: starts at 1 when we arrive
+  // from "Start an unlock" (params.intro), stays 0 otherwise, and bumps on
+  // every re-roll. The card replays the shuffle each time it changes.
+  const [animationKey, setAnimationKey] = useState(params.intro ? 1 : 0);
+
+  // Random snapshots to flash through the prompt card. Re-drawn per epoch so
+  // each shuffle (intro or re-roll) flashes a fresh set before settling on
+  // the real prompt; null when no animation is due (a plain re-open).
   const shuffleTexts = useMemo<readonly string[] | null>(
-    () => (params.intro ? drawRandomPromptTexts(9) : null),
-    [params.intro],
+    () => (animationKey > 0 ? drawRandomPromptTexts(9) : null),
+    [animationKey],
   );
 
   const deps: SecretUnlockStoreDeps | null =
@@ -152,6 +158,15 @@ export function SecretUnlockDetailRoute(): JSX.Element {
     // prompt visible to the Author who has already seen it.
     const showPrompt = role === 'unlocker' || attempt.submittedAt != null;
     const rerollBalance = role === 'unlocker' ? await getRerollBalance(exec) : 0;
+    // Undo is offered to the Unlocker until the one-per-day cap resets — i.e.
+    // while the cancel happened on the current local calendar day.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const canUndoCancel =
+      role === 'unlocker' &&
+      attempt.state === 'canceled' &&
+      attempt.canceledAt != null &&
+      attempt.canceledAt >= Math.floor(startOfToday.getTime() / 1000);
 
     setVm({
       role,
@@ -167,6 +182,7 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       partnerReflection: reflectionView(partnerR),
       complete,
       rerollBalance,
+      canUndoCancel,
     });
   }, [exec, engine, attemptId]);
 
@@ -201,6 +217,7 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       promptSource={vm?.promptSource ?? null}
       showPrompt={vm?.showPrompt ?? false}
       shuffleTexts={shuffleTexts}
+      animationKey={animationKey}
       revealedBody={vm?.revealedBody ?? null}
       revealedHasMedia={vm?.revealedHasMedia ?? false}
       showSecret={vm?.showSecret ?? false}
@@ -210,9 +227,11 @@ export function SecretUnlockDetailRoute(): JSX.Element {
       complete={vm?.complete ?? false}
       busy={busy}
       rerollBalance={vm?.rerollBalance ?? 0}
+      canUndoCancel={vm?.canUndoCancel ?? false}
       onBack={() => navigation.goBack()}
       onSubmit={() => void run((d) => submitUnlock(d, attemptId), 'Could not submit')}
       onCancel={() => void run((d) => cancelUnlock(d, attemptId), 'Could not cancel')}
+      onUndoCancel={() => void run((d) => uncancelUnlock(d, attemptId), 'Could not undo')}
       onVerify={() => void run((d) => verifyUnlock(d, attemptId), 'Could not verify')}
       onReject={() => void run((d) => rejectUnlock(d, attemptId), 'Could not send back')}
       onDisclose={() =>
@@ -224,7 +243,14 @@ export function SecretUnlockDetailRoute(): JSX.Element {
           'Could not save reflection',
         )
       }
-      onReroll={() => void run((d) => rerollUnlock(d, attemptId), 'Could not re-roll')}
+      onReroll={() =>
+        void run(async (d) => {
+          await rerollUnlock(d, attemptId);
+          // New epoch → the prompt card replays the shuffle, settling on the
+          // freshly re-rolled prompt that refresh() loads next.
+          setAnimationKey((k) => k + 1);
+        }, 'Could not re-roll')
+      }
     />
   );
 }

@@ -3,7 +3,10 @@ import type { Database } from '../db/client.js';
 import { blobs } from '../db/schema.js';
 import type { BlobStore, NewBlobInput, StoredBlob } from './types.js';
 
-function rowToStored(row: typeof blobs.$inferSelect): StoredBlob {
+/** Map a row to a StoredBlob, or null if it carries no inline bytes (an
+ *  object-storage row is not servable by this inline backend). */
+function rowToStored(row: typeof blobs.$inferSelect): StoredBlob | null {
+  if (row.data == null) return null;
   return {
     id: row.id,
     data: row.data,
@@ -28,7 +31,8 @@ export class DrizzleBlobStore implements BlobStore {
       })
       .returning();
     if (!row) throw new Error('blob insert returned no row');
-    return rowToStored(row);
+    // Inserted with non-null data, so this never falls back.
+    return rowToStored(row) ?? { ...input };
   }
 
   async get(id: string, now: Date): Promise<StoredBlob | null> {

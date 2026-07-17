@@ -8,8 +8,10 @@ import type { SqlExecutor } from '../src/db/executor';
 import {
   countPendingNotes,
   discardPendingNote,
+  getPendingNote,
   listPendingNotes,
   sharePendingNote,
+  updatePendingNote,
   writePendingNote,
 } from '../src/features/notes/pending-store';
 import { getNote, type NoteStoreDeps } from '../src/features/notes/store';
@@ -54,6 +56,51 @@ describe('pending-note store', () => {
     await expect(writePendingNote(exec, { kind: 'shared', body: '   ' })).rejects.toThrow(
       /body required/,
     );
+  });
+
+  it('stores and returns an optional title (trimmed), null when absent', async () => {
+    const { exec } = await freshHarness();
+    const titled = await writePendingNote(exec, {
+      kind: 'shared',
+      body: 'b',
+      title: '  My draft  ',
+    });
+    expect(titled.title).toBe('My draft');
+    const untitled = await writePendingNote(exec, { kind: 'secret', body: 'b2' });
+    expect(untitled.title).toBeNull();
+    const reloaded = await getPendingNote(exec, titled.id);
+    expect(reloaded?.title).toBe('My draft');
+  });
+
+  it('updates a draft in place (kind, title, body)', async () => {
+    const { exec } = await freshHarness();
+    const d = await writePendingNote(exec, { kind: 'shared', body: 'first', title: 'T1' });
+    await updatePendingNote(exec, d.id, { kind: 'secret', body: 'second', title: 'T2' });
+    const reloaded = await getPendingNote(exec, d.id);
+    expect(reloaded).toMatchObject({ kind: 'secret', body: 'second', title: 'T2' });
+    // Clearing the title writes NULL.
+    await updatePendingNote(exec, d.id, { kind: 'secret', body: 'second' });
+    expect((await getPendingNote(exec, d.id))?.title).toBeNull();
+  });
+
+  it('carries the title when sharing a shared draft', async () => {
+    const { exec, deps, enqueued } = await freshHarness();
+    const draft = await writePendingNote(exec, { kind: 'shared', body: 'hi', title: 'Greeting' });
+    const note = await sharePendingNote(deps, draft.id);
+    expect(note.title).toBe('Greeting');
+    expect(enqueued.at(-1)).toMatchObject({ kind: 'note.share.add', title: 'Greeting' });
+  });
+
+  it('keeps a secret draft title local — never on the announce op', async () => {
+    const { exec, deps, enqueued } = await freshHarness();
+    const draft = await writePendingNote(exec, { kind: 'secret', body: 'hi', title: 'Hidden' });
+    const note = await sharePendingNote(deps, draft.id);
+    // Local row keeps the title so the author sees it…
+    expect(note.title).toBe('Hidden');
+    // …but the wire op announces existence only.
+    const op = enqueued.at(-1) as Record<string, unknown>;
+    expect(op.kind).toBe('note.secret.announce');
+    expect(op.title).toBeUndefined();
   });
 
   it('shares a shared draft: it becomes a note and announces with its body', async () => {

@@ -6,6 +6,7 @@ import type {
   SecretUnlockRerollOp,
   SecretUnlockStartOp,
   SecretUnlockSubmitOp,
+  SecretUnlockUncancelOp,
   SecretUnlockVerifyOp,
 } from '@secretnotebook/connection-protocol';
 import { bytesToHex } from '@secretnotebook/crypto';
@@ -142,6 +143,7 @@ export interface SecretUnlockStoreDeps {
       | SecretUnlockRejectOp
       | SecretUnlockVerifyOp
       | SecretUnlockCancelOp
+      | SecretUnlockUncancelOp
       | SecretUnlockReflectOp
       | SecretUnlockRerollOp
       | LedgerEntryAddOp,
@@ -521,6 +523,49 @@ export async function cancelUnlock(deps: SecretUnlockStoreDeps, attemptId: strin
       attemptId,
       unlockerPubkey: bytesToHex(deps.selfPubkey),
       canceledAt,
+    });
+  });
+}
+
+/**
+ * Undo a cancel: canceled → assigned. The safety net for a mis-tapped
+ * "Cancel unlock". Only the Unlocker can undo, and only while no other
+ * attempt of theirs is active — the UI offers it until the one-per-day cap
+ * resets at local midnight, and this guard stops a stale button from
+ * resurrecting a second active attempt after a new day's unlock started.
+ */
+export async function uncancelUnlock(
+  deps: SecretUnlockStoreDeps,
+  attemptId: string,
+): Promise<void> {
+  const row = await requireParticipantRow(deps, attemptId, 'uncancelUnlock');
+  if (!sameBytes(row.unlockerPubkey, deps.selfPubkey)) {
+    throw new Error('uncancelUnlock: only the Unlocker can undo a cancel');
+  }
+  if (row.state !== 'canceled') {
+    if (ACTIVE_STATES.includes(row.state)) return; // already active — idempotent
+    throw new Error(`uncancelUnlock: attempt is ${row.state}, nothing to undo`);
+  }
+  const uncanceledAt = nowSec(deps);
+  await deps.exec.transaction(async () => {
+    const fresh = await getUnlockInternal(deps.exec, attemptId);
+    if (!fresh || fresh.state !== 'canceled') return;
+    // The canceled attempt isn't counted as active, so a positive count here
+    // means a *different* attempt is live — don't create a second one.
+    if ((await countActiveAsUnlocker(deps.exec, deps.selfPubkey)) > 0) {
+      throw new Error('uncancelUnlock: you already have another active unlock');
+    }
+    await deps.exec.execute(
+      `UPDATE secret_unlock SET state = 'assigned', canceled_at = NULL
+        WHERE id = ? AND state = 'canceled'`,
+      [attemptId],
+    );
+    await deps.enqueue({
+      v: 1,
+      kind: 'secret_unlock.uncancel',
+      attemptId,
+      unlockerPubkey: bytesToHex(deps.selfPubkey),
+      uncanceledAt,
     });
   });
 }

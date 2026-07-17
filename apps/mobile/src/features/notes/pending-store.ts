@@ -15,6 +15,7 @@ import { getNote, type NoteKind, type NoteRow, type NoteStoreDeps } from './stor
 export interface PendingNoteRow {
   id: string;
   kind: NoteKind;
+  title: string | null;
   body: string;
   createdAt: number;
 }
@@ -22,35 +23,56 @@ export interface PendingNoteRow {
 interface RawPendingNoteRow {
   id: string;
   kind: NoteKind;
+  title: string | null;
   body: string;
   created_at: number;
 }
 
 function rowOf(r: RawPendingNoteRow): PendingNoteRow {
-  return { id: r.id, kind: r.kind, body: r.body, createdAt: r.created_at };
+  return { id: r.id, kind: r.kind, title: r.title, body: r.body, createdAt: r.created_at };
 }
 
 function nowSec(now?: () => Date): number {
   return Math.floor((now ?? (() => new Date()))().getTime() / 1000);
 }
 
-/** Author a draft note with no partner yet. Text-only (no identity, no sync). */
+/** Author a draft note with no partner yet. Text-only (no identity, no sync).
+ *  An optional short title is stored alongside the body. */
 export async function writePendingNote(
   exec: SqlExecutor,
-  input: { kind: NoteKind; body: string },
+  input: { kind: NoteKind; body: string; title?: string },
   now?: () => Date,
 ): Promise<PendingNoteRow> {
   const body = input.body.trim();
   if (body.length === 0) throw new Error('writePendingNote: body required');
+  const title = input.title?.trim();
+  const hasTitle = title != null && title.length > 0;
   const id = await randomUuidV4();
   const createdAt = nowSec(now);
-  await exec.execute(`INSERT INTO pending_note (id, kind, body, created_at) VALUES (?, ?, ?, ?)`, [
-    id,
+  await exec.execute(
+    `INSERT INTO pending_note (id, kind, title, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+    [id, input.kind, hasTitle ? title : null, body, createdAt],
+  );
+  return { id, kind: input.kind, title: hasTitle ? title : null, body, createdAt };
+}
+
+/** Update a draft in place (used by the "Edit draft" flow). Device-local, no
+ *  sync impact. Leaves created_at untouched so the draft keeps its position. */
+export async function updatePendingNote(
+  exec: SqlExecutor,
+  id: string,
+  input: { kind: NoteKind; body: string; title?: string },
+): Promise<void> {
+  const body = input.body.trim();
+  if (body.length === 0) throw new Error('updatePendingNote: body required');
+  const title = input.title?.trim();
+  const hasTitle = title != null && title.length > 0;
+  await exec.execute(`UPDATE pending_note SET kind = ?, title = ?, body = ? WHERE id = ?`, [
     input.kind,
+    hasTitle ? title : null,
     body,
-    createdAt,
+    id,
   ]);
-  return { id, kind: input.kind, body, createdAt };
 }
 
 export async function getPendingNote(
@@ -58,7 +80,7 @@ export async function getPendingNote(
   id: string,
 ): Promise<PendingNoteRow | null> {
   const rows = await exec.query<RawPendingNoteRow>(
-    `SELECT id, kind, body, created_at FROM pending_note WHERE id = ?`,
+    `SELECT id, kind, title, body, created_at FROM pending_note WHERE id = ?`,
     [id],
   );
   const row = rows[0];
@@ -68,7 +90,7 @@ export async function getPendingNote(
 /** All drafts, newest first — powers the first-connection triage list. */
 export async function listPendingNotes(exec: SqlExecutor): Promise<PendingNoteRow[]> {
   const rows = await exec.query<RawPendingNoteRow>(
-    `SELECT id, kind, body, created_at FROM pending_note ORDER BY created_at DESC, id DESC`,
+    `SELECT id, kind, title, body, created_at FROM pending_note ORDER BY created_at DESC, id DESC`,
   );
   return rows.map(rowOf);
 }
@@ -93,24 +115,29 @@ export async function discardPendingNote(exec: SqlExecutor, id: string): Promise
 export async function sharePendingNote(deps: NoteStoreDeps, id: string): Promise<NoteRow> {
   const pending = await getPendingNote(deps.exec, id);
   if (!pending) throw new Error(`sharePendingNote: no pending note ${id}`);
-  const { kind, body, createdAt } = pending;
+  const { kind, title, body, createdAt } = pending;
+  const hasTitle = title != null && title.length > 0;
   const noteId = await randomUuidV4();
   await deps.exec.transaction(async () => {
     await deps.exec.execute(
-      `INSERT INTO note (id, kind, author_pubkey, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-      [noteId, kind, deps.selfPubkey, body, createdAt],
+      `INSERT INTO note (id, kind, author_pubkey, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      [noteId, kind, deps.selfPubkey, hasTitle ? title : null, body, createdAt],
     );
     if (kind === 'shared') {
+      // Shared: title + body travel with the note, same as writeSharedNote.
       const op: NoteShareAddOp = {
         v: 1,
         kind: 'note.share.add',
         id: noteId,
         authorPubkey: bytesToHex(deps.selfPubkey),
+        ...(hasTitle ? { title } : {}),
         body,
         createdAt,
       };
       await deps.enqueue(op);
     } else {
+      // Secret: substance (title + body) stays local until reveal; the
+      // announce op carries existence only.
       const op: NoteSecretAnnounceOp = {
         v: 1,
         kind: 'note.secret.announce',

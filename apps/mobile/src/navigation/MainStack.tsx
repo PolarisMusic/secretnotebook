@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { SafeWordAlert } from '../components/SafeWordAlert';
 import { SeverBanner } from '../components/SeverBanner';
+import { BadgesRoute } from '../screens/badges/BadgesRoute';
 import { SavedByYouRoute } from '../screens/connection/SavedByYouRoute';
 import { GlobalFeedRoute } from '../screens/feed/GlobalFeedRoute';
 import { PostDetailRoute } from '../screens/feed/PostDetailRoute';
@@ -23,7 +24,8 @@ import { SettingsRoute } from '../screens/settings/SettingsRoute';
 
 export type MainStackParamList = {
   NotesList: undefined;
-  NotesCompose: undefined;
+  /** `draftId` present ⇒ edit that pending draft in place; absent ⇒ new note. */
+  NotesCompose: { draftId?: string } | undefined;
   NotesDetail: { id: string };
   NotesEdit: { id: string };
   NotesTriage: undefined;
@@ -34,9 +36,11 @@ export type MainStackParamList = {
   SecretUnlockList: undefined;
   SecretUnlockDetail: { id: string; intro?: boolean };
   PromptPreferences: undefined;
+  Badges: undefined;
   Settings: undefined;
   SafeWord: undefined;
-  Pairing: undefined;
+  /** `code` present ⇒ resume/join that rendezvous (from a deep link). */
+  Pairing: { code?: string } | undefined;
   OnboardingRole: undefined;
   OnboardingCategories: undefined;
   OnboardingSafeWord: undefined;
@@ -81,6 +85,7 @@ export function MainStack(): JSX.Element {
         <Stack.Screen name="SecretUnlockList" component={SecretUnlockListRoute} />
         <Stack.Screen name="SecretUnlockDetail" component={SecretUnlockDetailRoute} />
         <Stack.Screen name="PromptPreferences" component={PromptPreferencesRoute} />
+        <Stack.Screen name="Badges" component={BadgesRoute} />
         <Stack.Screen name="Settings" component={SettingsRoute} />
         <Stack.Screen name="SafeWord" component={SafeWordRoute} />
         <Stack.Screen
