@@ -2,7 +2,7 @@
   "expo": {
     "name": "UsNotes",
     "slug": "secretnotebook",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "orientation": "portrait",
     "scheme": "secretnotebook",
     "userInterfaceStyle": "dark",
@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.secretnotebook.app",
+      "buildNumber": "2",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Face ID unlocks your connection notebook and confirms pairing.",
         "NSCameraUsageDescription": "The camera is used to scan your partner's pairing QR code and to take photos for your notes.",
@@ -30,6 +31,7 @@
     },
     "android": {
       "package": "com.secretnotebook.app",
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0a0a0a"
