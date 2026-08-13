@@ -193,8 +193,8 @@ export function SettingsRoute(): JSX.Element {
             </View>
             {error !== null && <Text style={styles.error}>{error}</Text>}
             <Text style={styles.hint}>
-              Controls the default view of the public feed and certain UI settings. All other
-              settings can be changed independently of this setting.
+              Your role affects certain settings and feed defaults. You can change these settings
+              individually at any time.
             </Text>
           </>
         )}
@@ -209,10 +209,7 @@ export function SettingsRoute(): JSX.Element {
             testID="settings.points_toggle"
           />
         </View>
-        <Text style={styles.hint}>
-          Whether the Sparks total shows on the Unlock screen. Defaults based on your role; your
-          choice here overrides it on this device.
-        </Text>
+        <Text style={styles.hint}>Display or hide.</Text>
 
         {paired && (
           <>

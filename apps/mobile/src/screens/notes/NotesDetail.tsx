@@ -153,8 +153,9 @@ export function NotesDetail(props: NotesDetailProps): JSX.Element {
 
       {note ? (
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.meta}>
-            {note.kind.toUpperCase()} · {isoDate(note.createdAt)}
+          <Text style={styles.meta} testID="notes-detail.meta">
+            {note.kind.toUpperCase()} · {props.isAuthor ? 'You' : 'Partner'} ·{' '}
+            {isoDate(note.createdAt)}
           </Text>
 
           {note.title != null ? (

@@ -19,6 +19,10 @@ export interface NotesListProps {
    *  authored by this device. Rendered with a blue dot + border, mirroring
    *  the prompt list's "needs you" treatment. */
   readonly newNoteIds: ReadonlySet<string>;
+  /** Ids of notes this device authored — drives the "You" / "Partner" byline. */
+  readonly myNoteIds: ReadonlySet<string>;
+  /** Which attachment kinds each note carries, for the row indicators. */
+  readonly attachmentKinds: ReadonlyMap<string, { image: boolean; audio: boolean }>;
   /** Pre-pairing / pre-engine drafts (the `pending_note` table). Shown above
    *  the notes list with a DRAFT badge so they don't appear to vanish; tapping
    *  one opens a sheet to share or discard it. */
@@ -38,6 +42,16 @@ export interface NotesListProps {
 
 function isoDate(secs: number): string {
   return new Date(secs * 1000).toISOString().slice(0, 10);
+}
+
+/** Trailing " · 🖼 · 🎙" style marker showing which media a note carries.
+ *  Distinct glyph per kind so a photo note reads differently from a voice one. */
+function attachmentSuffix(kinds: { image: boolean; audio: boolean } | undefined): string {
+  if (!kinds) return '';
+  const marks: string[] = [];
+  if (kinds.image) marks.push('🖼');
+  if (kinds.audio) marks.push('🎙');
+  return marks.length > 0 ? ` · ${marks.join(' ')}` : '';
 }
 
 function previewBody(row: NoteRow): string {
@@ -162,7 +176,10 @@ export function NotesList(props: NotesListProps): JSX.Element {
               <Text style={styles.rowBody} numberOfLines={2}>
                 {previewBody(item)}
               </Text>
-              <Text style={styles.rowMeta}>{isoDate(item.createdAt)}</Text>
+              <Text style={styles.rowMeta}>
+                {props.myNoteIds.has(item.id) ? 'You' : 'Partner'} · {isoDate(item.createdAt)}
+                {attachmentSuffix(props.attachmentKinds.get(item.id))}
+              </Text>
             </Pressable>
           );
         }}

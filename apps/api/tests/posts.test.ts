@@ -606,10 +606,38 @@ describe('POST /v1/posts/:id/flag', () => {
         payload: req.body,
       });
     };
+    // Repeating the SAME reason is idempotent — still one row.
+    expect((await flag({ category: 'spam' })).statusCode).toBe(200);
+    expect((await flag({ category: 'spam' })).statusCode).toBe(200);
+    expect(ctx.posts.flags).toHaveLength(1);
+  });
+
+  it('lets the same device report a post again under a different reason', async () => {
+    seedPost();
+    const kp = await generateEd25519KeyPair();
+    const ts = Math.floor(ctx.now() / 1000);
+    const flag = async (body: Record<string, unknown>) => {
+      const req = await buildSignedRequest({
+        method: 'POST',
+        url: `/v1/posts/${POST_ID}/flag`,
+        body,
+        timestampSec: ts,
+        privateKey: kp.privateKey,
+        publicKey: kp.publicKey,
+      });
+      return ctx.app.inject({
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        payload: req.body,
+      });
+    };
     expect((await flag({ category: 'spam' })).statusCode).toBe(200);
     // 'other' requires `detail`; the schema rejects an empty other-flag.
     expect((await flag({ category: 'other', detail: 'really off-topic' })).statusCode).toBe(200);
-    expect(ctx.posts.flags).toHaveLength(1);
+    // Distinct reasons are kept separately so moderators see both.
+    expect(ctx.posts.flags).toHaveLength(2);
+    expect(ctx.posts.flags.map((f) => f.category).sort()).toEqual(['other', 'spam']);
   });
 
   it('rejects an "other" flag with no detail (400) — explanation required', async () => {

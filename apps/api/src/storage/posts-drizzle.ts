@@ -92,10 +92,11 @@ export class DrizzlePostsStore implements PostsStore {
   }
 
   async createFlag(input: NewFlagInput): Promise<StoredFlag> {
-    // Idempotent per (post_id, flagged_by): the DO UPDATE lets us RETURNING
-    // the existing row on a repeat report (re-flagging doesn't change the
-    // first report's category/detail). The audit log below is the OTHER
-    // path that grows on every report — see comment there.
+    // Idempotent per (post_id, flagged_by, category): the DO UPDATE lets us
+    // RETURNING the existing row when the same reason is reported twice, while
+    // a DIFFERENT reason from the same device inserts its own row (so a post
+    // can carry several distinct flags from one viewer). The audit log below
+    // is the OTHER path that grows on every report — see comment there.
     const [row] = await this.db
       .insert(postFlags)
       .values({
@@ -107,7 +108,7 @@ export class DrizzlePostsStore implements PostsStore {
         createdAt: input.createdAt,
       })
       .onConflictDoUpdate({
-        target: [postFlags.postId, postFlags.flaggedBy],
+        target: [postFlags.postId, postFlags.flaggedBy, postFlags.category],
         set: { postId: postFlags.postId },
       })
       .returning();

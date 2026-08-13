@@ -52,8 +52,14 @@ export const postFlags = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    // One report per (post, device); re-flagging is idempotent.
-    uniqByDevice: unique('post_flag_post_device_uniq').on(t.postId, t.flaggedBy),
+    // One report per (post, device, category): repeating the SAME reason is
+    // idempotent, but a viewer can still report a post again under a
+    // different reason (migration 0010 widened this from (post, device)).
+    uniqByDeviceCategory: unique('post_flag_post_device_category_uniq').on(
+      t.postId,
+      t.flaggedBy,
+      t.category,
+    ),
   }),
 );
 

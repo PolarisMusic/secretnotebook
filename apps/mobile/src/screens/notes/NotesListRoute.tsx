@@ -13,6 +13,7 @@ import {
   sharePendingNote,
   type PendingNoteRow,
 } from '../../features/notes/pending-store';
+import { attachmentKindsForNotes } from '../../features/attachments/store';
 import { listNotes, type NoteRow } from '../../features/notes/store';
 import {
   getAppSetting,
@@ -45,8 +46,18 @@ export function NotesListRoute(): JSX.Element {
   // are surfaced as "new". Captured once per focus, before we re-stamp the
   // watermark to now, so the marker persists for the whole visit then clears.
   const [newThreshold, setNewThreshold] = useState<number | null>(null);
+  const [attachmentKinds, setAttachmentKinds] = useState<
+    ReadonlyMap<string, { image: boolean; audio: boolean }>
+  >(new Map());
 
   const selfHex = useMemo(() => (engine ? bytesToHex(engine.selfPub) : null), [engine]);
+  // Notes this device wrote — drives the "You" / "Partner" byline on each row.
+  const myNoteIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (items == null || selfHex == null) return ids;
+    for (const n of items) if (bytesToHex(n.authorPubkey) === selfHex) ids.add(n.id);
+    return ids;
+  }, [items, selfHex]);
   const newNoteIds = useMemo(() => {
     const ids = new Set<string>();
     if (newThreshold == null || items == null) return ids;
@@ -94,6 +105,13 @@ export function NotesListRoute(): JSX.Element {
     const [rows, draftRows] = await Promise.all([listNotes(exec), listPendingNotes(exec)]);
     setItems(rows);
     setDrafts(draftRows);
+    // One batched lookup so each row can badge photo / voice attachments.
+    setAttachmentKinds(
+      await attachmentKindsForNotes(
+        exec,
+        rows.map((r) => r.id),
+      ),
+    );
   }, [exec]);
 
   // Pull the engine, then re-read. Used on focus + after draft actions.
@@ -231,6 +249,8 @@ export function NotesListRoute(): JSX.Element {
       <NotesList
         items={items ?? []}
         newNoteIds={newNoteIds}
+        myNoteIds={myNoteIds}
+        attachmentKinds={attachmentKinds}
         drafts={drafts}
         isLoading={items == null}
         isRefreshing={isRefreshing}
