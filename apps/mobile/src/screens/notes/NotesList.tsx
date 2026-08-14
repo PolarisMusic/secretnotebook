@@ -19,6 +19,10 @@ export interface NotesListProps {
    *  authored by this device. Rendered with a blue dot + border, mirroring
    *  the prompt list's "needs you" treatment. */
   readonly newNoteIds: ReadonlySet<string>;
+  /** Ids of notes this device authored — drives the "You" / "Partner" byline. */
+  readonly myNoteIds: ReadonlySet<string>;
+  /** Which attachment kinds each note carries, for the row indicators. */
+  readonly attachmentKinds: ReadonlyMap<string, { image: boolean; audio: boolean }>;
   /** Pre-pairing / pre-engine drafts (the `pending_note` table). Shown above
    *  the notes list with a DRAFT badge so they don't appear to vanish; tapping
    *  one opens a sheet to share or discard it. */
@@ -38,6 +42,16 @@ export interface NotesListProps {
 
 function isoDate(secs: number): string {
   return new Date(secs * 1000).toISOString().slice(0, 10);
+}
+
+/** Trailing " · 🖼 · 🎙" style marker showing which media a note carries.
+ *  Distinct glyph per kind so a photo note reads differently from a voice one. */
+function attachmentSuffix(kinds: { image: boolean; audio: boolean } | undefined): string {
+  if (!kinds) return '';
+  const marks: string[] = [];
+  if (kinds.image) marks.push('🖼');
+  if (kinds.audio) marks.push('🎙');
+  return marks.length > 0 ? ` · ${marks.join(' ')}` : '';
 }
 
 function previewBody(row: NoteRow): string {
@@ -106,7 +120,10 @@ export function NotesList(props: NotesListProps): JSX.Element {
                     <Text style={[styles.kindBadge, d.kind === 'secret' && styles.kindBadgeSecret]}>
                       {d.kind.toUpperCase()}
                     </Text>
-                    <Text style={styles.draftBadge}>DRAFT</Text>
+                    <View style={styles.rowBadgesRight}>
+                      {d.emoji ? <Text style={styles.rowEmoji}>{d.emoji}</Text> : null}
+                      <Text style={styles.draftBadge}>DRAFT</Text>
+                    </View>
                   </View>
                   {d.title ? (
                     <Text style={styles.rowTitle} numberOfLines={1}>
@@ -142,6 +159,11 @@ export function NotesList(props: NotesListProps): JSX.Element {
                   {item.kind.toUpperCase()}
                 </Text>
                 <View style={styles.rowBadgesRight}>
+                  {item.emoji ? (
+                    <Text style={styles.rowEmoji} testID={`notes.row.${item.id}.emoji`}>
+                      {item.emoji}
+                    </Text>
+                  ) : null}
                   {isNew ? (
                     <Text style={styles.newBadge} testID={`notes.row.${item.id}.new`}>
                       ● NEW
@@ -162,7 +184,10 @@ export function NotesList(props: NotesListProps): JSX.Element {
               <Text style={styles.rowBody} numberOfLines={2}>
                 {previewBody(item)}
               </Text>
-              <Text style={styles.rowMeta}>{isoDate(item.createdAt)}</Text>
+              <Text style={styles.rowMeta}>
+                {props.myNoteIds.has(item.id) ? 'You' : 'Partner'} · {isoDate(item.createdAt)}
+                {attachmentSuffix(props.attachmentKinds.get(item.id))}
+              </Text>
             </Pressable>
           );
         }}
@@ -215,6 +240,7 @@ const styles = StyleSheet.create({
   rowBadgesRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   kindBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   kindBadgeSecret: { color: '#ffb4b4' },
+  rowEmoji: { fontSize: 16 },
   newBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   publishedBadge: { color: '#9eff9e', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   draftBadge: { color: '#e0c080', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },

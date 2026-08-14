@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -42,6 +43,9 @@ export function SubmitPost(props: SubmitPostProps): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  // Publish-an-existing-note list starts collapsed so it can't crowd out the
+  // compose field when the device has many unpublished notes.
+  const [notesOpen, setNotesOpen] = useState(false);
 
   const notes = props.notes ?? [];
 
@@ -109,26 +113,43 @@ export function SubmitPost(props: SubmitPostProps): JSX.Element {
 
         {props.onPublishNote && notes.length > 0 ? (
           <View style={styles.notesSection}>
-            <Text style={styles.sectionLabel}>PUBLISH A NOTE</Text>
-            {notes.map((n) => (
-              <Pressable
-                key={n.id}
-                accessibilityRole="button"
-                disabled={publishingId !== null}
-                onPress={() => void publishNoteById(n.id)}
-                style={styles.noteRow}
-                testID={`submit-post.note.${n.id}`}
-              >
-                <Text style={styles.noteRowText} numberOfLines={1}>
-                  {n.preview}
-                </Text>
-                {publishingId === n.id ? (
-                  <ActivityIndicator color="#9ec5ff" />
-                ) : (
-                  <Text style={styles.noteRowCta}>Publish</Text>
-                )}
-              </Pressable>
-            ))}
+            {/* Collapsed by default: with many notes this list used to push the
+                body field off screen. The disclosure keeps the compose box in
+                reach and still advertises how many notes are publishable. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: notesOpen }}
+              onPress={() => setNotesOpen((v) => !v)}
+              style={styles.disclosureRow}
+              hitSlop={6}
+              testID="submit-post.notes-toggle"
+            >
+              <Text style={styles.sectionLabel}>PUBLISH A NOTE ({notes.length})</Text>
+              <Text style={styles.disclosureChevron}>{notesOpen ? '⌃' : '⌄'}</Text>
+            </Pressable>
+            {notesOpen ? (
+              <ScrollView style={styles.notesScroll} nestedScrollEnabled>
+                {notes.map((n) => (
+                  <Pressable
+                    key={n.id}
+                    accessibilityRole="button"
+                    disabled={publishingId !== null}
+                    onPress={() => void publishNoteById(n.id)}
+                    style={styles.noteRow}
+                    testID={`submit-post.note.${n.id}`}
+                  >
+                    <Text style={styles.noteRowText} numberOfLines={1}>
+                      {n.preview}
+                    </Text>
+                    {publishingId === n.id ? (
+                      <ActivityIndicator color="#9ec5ff" />
+                    ) : (
+                      <Text style={styles.noteRowCta}>Publish</Text>
+                    )}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
             <Text style={styles.sectionLabel}>OR WRITE A NEW POST</Text>
           </View>
         ) : null}
@@ -225,6 +246,11 @@ const styles = StyleSheet.create({
   submitDisabled: { backgroundColor: '#2a2a2a' },
   submitText: { color: '#0a0a0a', fontWeight: '600' },
   notesSection: { paddingHorizontal: 16, paddingTop: 8, gap: 8 },
+  disclosureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  disclosureChevron: { color: '#7a7a7a', fontSize: 14, fontWeight: '700' },
+  // Cap the expanded list so a long note collection still leaves the compose
+  // field visible; it scrolls within this box instead of growing the screen.
+  notesScroll: { maxHeight: 180 },
   sectionLabel: { color: '#7a7a7a', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
   noteRow: {
     flexDirection: 'row',

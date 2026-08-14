@@ -544,6 +544,56 @@ describe('connection sever ops round-trip', () => {
   });
 });
 
+describe('safe-word clear op', () => {
+  it('round-trips byte-for-byte', () => {
+    const op: CrdtOp = {
+      v: 1,
+      kind: 'connection.safeword.clear',
+      clearedByPubkey: '11'.repeat(32),
+      clearedAt: 1_700_600_500,
+    };
+    expect(deserialiseOp(serialiseOp(op))).toEqual(op);
+  });
+});
+
+describe('note emoji tag', () => {
+  it('rides note.share.add and note.secret.announce', () => {
+    const share: CrdtOp = {
+      v: 1,
+      kind: 'note.share.add',
+      id: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+      authorPubkey: '11'.repeat(32),
+      emoji: '❤️🔥',
+      body: 'hi',
+      createdAt: 1_700_000_000,
+    };
+    const announce: CrdtOp = {
+      v: 1,
+      kind: 'note.secret.announce',
+      id: '3f2504e0-4f89-41d3-9a0c-0305e82c3302',
+      authorPubkey: '11'.repeat(32),
+      emoji: '🤫',
+      createdAt: 1_700_000_000,
+    };
+    expect(deserialiseOp(serialiseOp(share))).toEqual(share);
+    expect(deserialiseOp(serialiseOp(announce))).toEqual(announce);
+  });
+
+  it('still refuses a body on the announce — the privacy lock holds', () => {
+    expect(() =>
+      CrdtOpSchema.parse({
+        v: 1,
+        kind: 'note.secret.announce',
+        id: '3f2504e0-4f89-41d3-9a0c-0305e82c3303',
+        authorPubkey: '11'.repeat(32),
+        emoji: '🤫',
+        body: 'leak',
+        createdAt: 1_700_000_000,
+      } as unknown as CrdtOp),
+    ).toThrow();
+  });
+});
+
 describe('secret-unlock ops round-trip', () => {
   it('round-trips start / submit / reject / cancel / uncancel byte-for-byte', () => {
     expect(deserialiseOp(serialiseOp(sampleUnlockStart))).toEqual(sampleUnlockStart);

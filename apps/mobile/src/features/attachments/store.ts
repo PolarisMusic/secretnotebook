@@ -125,6 +125,29 @@ export async function listNoteAttachments(
   return rows.map(rowOf);
 }
 
+/** Which attachment kinds each note carries, keyed by note id. One query for
+ *  the whole page so the notes list can badge rows without N round trips;
+ *  notes with no attachments are absent from the map. */
+export async function attachmentKindsForNotes(
+  exec: SqlExecutor,
+  noteIds: readonly string[],
+): Promise<Map<string, { image: boolean; audio: boolean }>> {
+  const out = new Map<string, { image: boolean; audio: boolean }>();
+  if (noteIds.length === 0) return out;
+  const placeholders = noteIds.map(() => '?').join(', ');
+  const rows = await exec.query<{ note_id: string; media_type: 'image' | 'audio' }>(
+    `SELECT DISTINCT note_id, media_type FROM attachment WHERE note_id IN (${placeholders})`,
+    [...noteIds],
+  );
+  for (const r of rows) {
+    const entry = out.get(r.note_id) ?? { image: false, audio: false };
+    if (r.media_type === 'image') entry.image = true;
+    else entry.audio = true;
+    out.set(r.note_id, entry);
+  }
+  return out;
+}
+
 export async function getAttachment(exec: SqlExecutor, id: string): Promise<AttachmentRow | null> {
   const rows = await exec.query<RawAttachmentRow>(
     `SELECT ${ATTACHMENT_SELECT} FROM attachment WHERE id = ?`,

@@ -107,8 +107,13 @@ export class MemoryPostsStore implements PostsStore {
   }
 
   async createFlag(input: NewFlagInput): Promise<StoredFlag> {
+    // Dedupe on (post, device, category) — mirrors the Drizzle unique key, so
+    // a repeat of the same reason is idempotent but a different reason lands.
     const existing = this.flags.find(
-      (f) => f.postId === input.postId && bytesEqual(f.flaggedBy, input.flaggedBy),
+      (f) =>
+        f.postId === input.postId &&
+        bytesEqual(f.flaggedBy, input.flaggedBy) &&
+        f.category === input.category,
     );
     const row: StoredFlag =
       existing ??

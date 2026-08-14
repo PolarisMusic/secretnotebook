@@ -21,6 +21,7 @@ import { sql as promptCacheSql } from './021-prompt-cache';
 import { sql as revealCommentSql } from './022-reveal-comment';
 import { sql as noteTitleSql } from './023-note-title';
 import { sql as pendingNoteTitleSql } from './024-pending-note-title';
+import { sql as noteEmojiSql } from './025-note-emoji';
 
 export interface Migration {
   readonly id: number;
@@ -54,4 +55,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 22, name: 'reveal-comment', sql: revealCommentSql },
   { id: 23, name: 'note-title', sql: noteTitleSql },
   { id: 24, name: 'pending-note-title', sql: pendingNoteTitleSql },
+  { id: 25, name: 'note-emoji', sql: noteEmojiSql },
 ];

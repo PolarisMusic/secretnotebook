@@ -59,7 +59,16 @@ export function NotesComposeRoute(): JSX.Element {
     void getPendingNote(exec, draftId).then((d) => {
       if (cancelled) return;
       // Draft gone (discarded elsewhere) → fall back to a fresh compose.
-      setInitial(d ? { kind: d.kind, body: d.body, ...(d.title ? { title: d.title } : {}) } : null);
+      setInitial(
+        d
+          ? {
+              kind: d.kind,
+              body: d.body,
+              ...(d.title ? { title: d.title } : {}),
+              ...(d.emoji ? { emoji: d.emoji } : {}),
+            }
+          : null,
+      );
     });
     return () => {
       cancelled = true;
@@ -170,9 +179,14 @@ export function NotesComposeRoute(): JSX.Element {
   // draft, and while editing a draft the primary Save updates it in place.
   const saveAsDraft =
     engine != null && draftId == null
-      ? async ({ kind, body, title }: ComposeInput): Promise<string | null> => {
+      ? async ({ kind, body, title, emoji }: ComposeInput): Promise<string | null> => {
           try {
-            await writePendingNote(exec, { kind, body, ...(title ? { title } : {}) });
+            await writePendingNote(exec, {
+              kind,
+              body,
+              ...(title ? { title } : {}),
+              ...(emoji ? { emoji } : {}),
+            });
             navigation.goBack();
             return null;
           } catch (e) {
@@ -197,11 +211,16 @@ export function NotesComposeRoute(): JSX.Element {
       onToggleRecord={mediaReady ? () => void onToggleRecord() : undefined}
       onRemoveMedia={(id) => setStaged((s) => s.filter((m) => m.id !== id))}
       onSaveDraft={saveAsDraft}
-      onSubmit={async ({ kind, body, title }) => {
+      onSubmit={async ({ kind, body, title, emoji }) => {
         try {
           if (draftId) {
             // Editing an existing draft — update it in place, stays a draft.
-            await updatePendingNote(exec, draftId, { kind, body, ...(title ? { title } : {}) });
+            await updatePendingNote(exec, draftId, {
+              kind,
+              body,
+              ...(title ? { title } : {}),
+              ...(emoji ? { emoji } : {}),
+            });
           } else if (engine) {
             const attachments = staged
               .filter((m) => m.status === 'ready' && m.prepared)
@@ -212,6 +231,7 @@ export function NotesComposeRoute(): JSX.Element {
               body,
               attachments,
               title,
+              emoji,
             );
             // Flush the just-enqueued op now instead of waiting up to 15s
             // for the next ticker cycle, so the note reaches the partner
@@ -227,7 +247,12 @@ export function NotesComposeRoute(): JSX.Element {
               .catch((e) => recordSyncError('flush', (e as Error).message));
           } else {
             // No partner yet — save a draft for first-connection triage.
-            await writePendingNote(exec, { kind, body, ...(title ? { title } : {}) });
+            await writePendingNote(exec, {
+              kind,
+              body,
+              ...(title ? { title } : {}),
+              ...(emoji ? { emoji } : {}),
+            });
           }
           navigation.goBack();
           return null;

@@ -89,9 +89,16 @@ export async function applyCrdtOp(
       }
       await exec.execute(
         `INSERT OR IGNORE INTO note (
-           id, kind, author_pubkey, title, body, created_at
-         ) VALUES (?, 'shared', ?, ?, ?, ?)`,
-        [op.id, hexToBytes(op.authorPubkey), op.title ?? null, op.body ?? null, op.createdAt],
+           id, kind, author_pubkey, title, emoji, body, created_at
+         ) VALUES (?, 'shared', ?, ?, ?, ?, ?)`,
+        [
+          op.id,
+          hexToBytes(op.authorPubkey),
+          op.title ?? null,
+          op.emoji ?? null,
+          op.body ?? null,
+          op.createdAt,
+        ],
       );
       // Media rides as descriptors on the op; project them as 'remote'
       // rows (no local file yet). INSERT OR IGNORE on the descriptor id
@@ -111,11 +118,14 @@ export async function applyCrdtOp(
           `applyCrdtOp: note.secret.announce authorPubkey does not match sender — refusing to apply`,
         );
       }
+      // Body stays NULL until the reveal. The author's emoji tag is the one
+      // authored field that rides the announce on purpose — it is the hint
+      // the partner sees while the secret is still locked.
       await exec.execute(
         `INSERT OR IGNORE INTO note (
-           id, kind, author_pubkey, body, created_at
-         ) VALUES (?, 'secret', ?, NULL, ?)`,
-        [op.id, hexToBytes(op.authorPubkey), op.createdAt],
+           id, kind, author_pubkey, emoji, body, created_at
+         ) VALUES (?, 'secret', ?, ?, NULL, ?)`,
+        [op.id, hexToBytes(op.authorPubkey), op.emoji ?? null, op.createdAt],
       );
       return;
 
@@ -554,6 +564,31 @@ export async function applyCrdtOp(
         [op.attemptId, hexToBytes(op.unlockerPubkey)],
       );
       return;
+
+    case 'connection.safeword.clear': {
+      // Either partner may clear the term — a safe word only works while both
+      // still consent to it. Wipes the active term AND any pending proposal;
+      // idempotent, so a replay against an already-cleared row is a no-op.
+      if (op.clearedByPubkey !== senderHex) {
+        throw new Error(
+          `applyCrdtOp: connection.safeword.clear clearedByPubkey does not match sender — refusing to apply`,
+        );
+      }
+      const clearer = hexToBytes(op.clearedByPubkey);
+      await exec.execute(
+        `UPDATE connection
+            SET safeword_verifier          = NULL,
+                safeword_term              = NULL,
+                safeword_confirmed_at      = NULL,
+                safeword_proposal_verifier = NULL,
+                safeword_proposal_by       = NULL,
+                safeword_proposal_at       = NULL,
+                safeword_proposal_term     = NULL
+          WHERE partner_a_pubkey = ? OR partner_b_pubkey = ?`,
+        [clearer, clearer],
+      );
+      return;
+    }
 
     case 'connection.sever.schedule': {
       // Either partner may schedule a sever; the actor must be the sender

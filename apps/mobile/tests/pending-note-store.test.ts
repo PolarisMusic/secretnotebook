@@ -83,6 +83,30 @@ describe('pending-note store', () => {
     expect((await getPendingNote(exec, d.id))?.title).toBeNull();
   });
 
+  it('carries the emoji tag through write, update, and share', async () => {
+    const { exec, deps, enqueued } = await freshHarness();
+    const d = await writePendingNote(exec, { kind: 'shared', body: 'b', emoji: '❤️🔥' });
+    expect(d.emoji).toBe('❤️🔥');
+    await updatePendingNote(exec, d.id, { kind: 'shared', body: 'b', emoji: '✨' });
+    expect((await getPendingNote(exec, d.id))?.emoji).toBe('✨');
+    const note = await sharePendingNote(deps, d.id);
+    expect(note.emoji).toBe('✨');
+    expect(enqueued.at(-1)).toMatchObject({ kind: 'note.share.add', emoji: '✨' });
+  });
+
+  it('sends a secret draft emoji on the announce — it is the locked-note hint', async () => {
+    const { exec, deps, enqueued } = await freshHarness();
+    const d = await writePendingNote(exec, { kind: 'secret', body: 'shh', emoji: '🤫' });
+    const note = await sharePendingNote(deps, d.id);
+    expect(note.emoji).toBe('🤫');
+    const op = enqueued.at(-1) as Record<string, unknown>;
+    expect(op.kind).toBe('note.secret.announce');
+    // The hint rides along, but the substance still does not.
+    expect(op.emoji).toBe('🤫');
+    expect(op.body).toBeUndefined();
+    expect(op.title).toBeUndefined();
+  });
+
   it('carries the title when sharing a shared draft', async () => {
     const { exec, deps, enqueued } = await freshHarness();
     const draft = await writePendingNote(exec, { kind: 'shared', body: 'hi', title: 'Greeting' });

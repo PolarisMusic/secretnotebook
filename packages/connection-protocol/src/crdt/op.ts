@@ -119,6 +119,11 @@ const NoteAttachmentsSchema = z
 /** Max length of a note title. Synced with the UI maxLength and the DB column. */
 export const NOTE_TITLE_MAX = 120;
 
+/** Max characters for a note's emoji tag. The UI caps the author at 3 emoji;
+ *  the byte budget is generous because a single emoji can be several code
+ *  points (skin tones, ZWJ sequences). */
+export const NOTE_EMOJI_MAX = 40;
+
 export const NoteShareAddOpSchema = z.object({
   v: z.literal(1),
   kind: z.literal('note.share.add'),
@@ -126,6 +131,8 @@ export const NoteShareAddOpSchema = z.object({
   authorPubkey: HexString(32),
   /** Optional short title set at compose time. */
   title: z.string().min(1).max(NOTE_TITLE_MAX).optional(),
+  /** Optional 1-3 emoji the author tagged the note with, shown in the list. */
+  emoji: z.string().min(1).max(NOTE_EMOJI_MAX).optional(),
   // Optional so a media-only note (a photo with no caption) is expressible.
   // When present it is non-empty; writers enforce "non-empty body OR >=1
   // attachment" — the wire schema can't (a discriminatedUnion member may not
@@ -152,6 +159,12 @@ export const NoteSecretAnnounceOpSchema = z
     kind: z.literal('note.secret.announce'),
     id: z.string().uuid(),
     authorPubkey: HexString(32),
+    /** The author's optional emoji tag. This is the ONE piece of authored
+     *  content that intentionally rides the announce: it is the "hint" the
+     *  partner sees while the secret is still locked. The author chooses it
+     *  deliberately and can leave it off, so the privacy trade is opt-in per
+     *  note. Body, title, and media remain withheld until reveal. */
+    emoji: z.string().min(1).max(NOTE_EMOJI_MAX).optional(),
     createdAt: z.number().int().nonnegative(),
   })
   // Strict: refuse unknown keys. This locks in the privacy
@@ -362,6 +375,22 @@ export const ConnectionSafeWordWithdrawOpSchema = z
   })
   .strict();
 export type ConnectionSafeWordWithdrawOp = z.infer<typeof ConnectionSafeWordWithdrawOpSchema>;
+
+/**
+ * Remove the agreed Safe Word entirely, returning both devices to "not set".
+ * Either partner may clear it — a safe word only works if both still consent
+ * to it, so neither side can hold the other to one. Any pending proposal is
+ * cleared with it. Idempotent: clearing when nothing is set is a no-op.
+ */
+export const ConnectionSafeWordClearOpSchema = z
+  .object({
+    v: z.literal(1),
+    kind: z.literal('connection.safeword.clear'),
+    clearedByPubkey: HexString(32),
+    clearedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ConnectionSafeWordClearOp = z.infer<typeof ConnectionSafeWordClearOpSchema>;
 
 /** Cap on a single reflection answer — generous for a couple of
  *  paragraphs without letting one op fan out unbounded text. */
@@ -603,6 +632,7 @@ export const CrdtOpSchema = z.discriminatedUnion('kind', [
   ConnectionSafeWordTriggerOpSchema,
   ConnectionSafeWordAckOpSchema,
   ConnectionSafeWordWithdrawOpSchema,
+  ConnectionSafeWordClearOpSchema,
   SecretUnlockStartOpSchema,
   SecretUnlockSubmitOpSchema,
   SecretUnlockRejectOpSchema,

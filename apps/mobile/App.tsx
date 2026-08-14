@@ -16,6 +16,7 @@ import {
   type SyncStep,
 } from './src/features/connection-channel/ticker';
 import { getSeverState, maybeFinalizeSever } from './src/features/connection/sever';
+import { refreshUnreadNotes } from './src/features/notes/unread-store';
 import { reconcileUnlockRewards } from './src/features/secret-unlock/store';
 import { useConnectionStore } from './src/state/connection';
 import { RootStack } from './src/navigation/RootStack';
@@ -44,6 +45,8 @@ function SyncTicker(): null {
               selfPubkey: engine.selfPub,
               enqueue: (op) => engine.enqueue(op),
             });
+            // Keep the unread badge live while the user is on another screen.
+            await refreshUnreadNotes(engine.exec, engine.selfPub);
             const wiped = await maybeFinalizeSever({
               exec: engine.exec,
               deleteAttachmentFiles: wipeAttachmentDirs,

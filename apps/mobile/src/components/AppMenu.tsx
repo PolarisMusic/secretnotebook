@@ -3,6 +3,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useUnreadNotesStore } from '../features/notes/unread-store';
 import type { MainStackParamList } from '../navigation/MainStack';
 import { useMenuStore } from '../state/menu';
 
@@ -41,6 +42,7 @@ export function AppMenu(): JSX.Element | null {
   // value crosses the Modal boundary via context, so we apply it as plain
   // padding on the panel instead.
   const insets = useSafeAreaInsets();
+  const unread = useUnreadNotesStore((s) => s.count);
 
   // Resolve the current route name so the active item can be highlighted.
   const currentRoute = useNavigationState((state) => state?.routes[state.index]?.name);
@@ -74,6 +76,9 @@ export function AppMenu(): JSX.Element | null {
                 >
                   <Text style={[styles.itemText, active && styles.itemTextActive]}>
                     {item.label}
+                    {item.key === 'notes' && unread > 0 ? (
+                      <Text style={styles.itemBadge}> ● {unread} new</Text>
+                    ) : null}
                   </Text>
                 </Pressable>
               );
@@ -107,4 +112,5 @@ const styles = StyleSheet.create({
   itemActive: { borderLeftWidth: 3, borderLeftColor: '#9ec5ff', paddingLeft: 10, marginLeft: -10 },
   itemText: { color: '#f5f5f5', fontSize: 18, fontWeight: '600' },
   itemTextActive: { color: '#9ec5ff' },
+  itemBadge: { color: '#9ec5ff', fontSize: 13, fontWeight: '700' },
 });

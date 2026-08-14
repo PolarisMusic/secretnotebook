@@ -22,7 +22,8 @@ export async function submitNoteCompose(
   body: string,
   attachments: readonly PreparedAttachment[] = [],
   title?: string,
+  emoji?: string,
 ): Promise<NoteRow> {
-  if (kind === 'shared') return writeSharedNote(deps, body, attachments, title);
-  return writeSecretNote(deps, body, attachments, title);
+  if (kind === 'shared') return writeSharedNote(deps, body, attachments, title, emoji);
+  return writeSecretNote(deps, body, attachments, title, emoji);
 }
