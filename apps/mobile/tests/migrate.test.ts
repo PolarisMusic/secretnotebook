@@ -63,6 +63,7 @@ describe('runMigrations', () => {
       'reveal-comment',
       'note-title',
       'pending-note-title',
+      'note-emoji',
     ]);
     expect(result.alreadyApplied).toEqual([]);
 
@@ -110,6 +111,7 @@ describe('runMigrations', () => {
       'reveal-comment',
       'note-title',
       'pending-note-title',
+      'note-emoji',
     ]);
   });
 

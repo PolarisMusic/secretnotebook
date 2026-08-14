@@ -225,9 +225,27 @@ export function SettingsRoute(): JSX.Element {
               <Text style={styles.hint}>
                 {termState?.kind === 'awaiting_partner'
                   ? 'Waiting for your partner to confirm — tap to manage or cancel.'
-                  : 'An optional shared safe word. Tap to set, change, or use it.'}
+                  : termState?.kind === 'set'
+                    ? 'Tap to change or remove it.'
+                    : 'An optional shared safe word. Tap to set one.'}
               </Text>
             </Pressable>
+
+            {/* Using the safe word is a distinct, higher-stakes action than
+                managing it, so it gets its own button rather than hiding
+                behind the same tap target. */}
+            {termState?.kind === 'set' && (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.tile}
+                hitSlop={6}
+                onPress={() => navigation.navigate('SafeWord')}
+                testID="settings.safeword_use"
+              >
+                <Text style={styles.tileTextDanger}>Use the safe word</Text>
+                <Text style={styles.hint}>Tell your partner you need to pause, right now.</Text>
+              </Pressable>
+            )}
 
             <Text style={styles.sectionLabel}>DANGER ZONE</Text>
             {severAt != null ? (
@@ -279,6 +297,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   tileText: { color: '#f5f5f5', fontSize: 16 },
+  tileTextDanger: { color: '#ffb4b4', fontSize: 16, fontWeight: '700' },
   cta: { backgroundColor: '#3a3a3a', borderRadius: 10, paddingVertical: 16, alignItems: 'center' },
   ctaText: { color: '#f5f5f5', fontSize: 16, fontWeight: '600' },
   roleRow: { flexDirection: 'row', gap: 10 },

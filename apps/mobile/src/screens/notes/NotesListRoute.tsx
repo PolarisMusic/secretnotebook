@@ -15,6 +15,7 @@ import {
 } from '../../features/notes/pending-store';
 import { attachmentKindsForNotes } from '../../features/attachments/store';
 import { listNotes, type NoteRow } from '../../features/notes/store';
+import { refreshUnreadNotes } from '../../features/notes/unread-store';
 import {
   getAppSetting,
   getNotesLastViewedAt,
@@ -230,6 +231,8 @@ export function NotesListRoute(): JSX.Element {
           const nowSecs = Math.floor(Date.now() / 1000);
           if (active) setNewThreshold(stored ?? nowSecs);
           await setNotesLastViewedAt(exec, nowSecs);
+          // Visiting the list clears the badge — the watermark just moved.
+          await refreshUnreadNotes(exec, engine?.selfPub ?? null);
         }
       })();
       // On focus: pull + list once. Then re-read the DB every few seconds so
@@ -241,7 +244,7 @@ export function NotesListRoute(): JSX.Element {
         active = false;
         clearInterval(handle);
       };
-    }, [exec, syncLists, loadLists]),
+    }, [exec, engine, syncLists, loadLists]),
   );
 
   return (

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useUnreadNotesStore } from '../features/notes/unread-store';
 import { useMenuStore } from '../state/menu';
 import { AppMenu } from './AppMenu';
 
@@ -19,6 +20,9 @@ export interface ScreenHeaderProps {
  */
 export function ScreenHeader(props: ScreenHeaderProps): JSX.Element {
   const open = useMenuStore((s) => s.open);
+  // Unread partner notes: a dot on the menu button so the badge is visible
+  // from any screen without opening the menu.
+  const unread = useUnreadNotesStore((s) => s.count);
   return (
     <>
       <View style={styles.bar}>
@@ -31,6 +35,7 @@ export function ScreenHeader(props: ScreenHeaderProps): JSX.Element {
           testID="header.menu"
         >
           <Text style={styles.hamburgerGlyph}>☰</Text>
+          {unread > 0 ? <View style={styles.unreadDot} testID="header.unread_dot" /> : null}
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>
           {props.title}
@@ -57,6 +62,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   hamburgerGlyph: { color: '#f5f5f5', fontSize: 22, lineHeight: 26 },
+  unreadDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#9ec5ff',
+  },
   title: { color: '#f5f5f5', fontSize: 20, fontWeight: '700', flex: 1 },
   right: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });

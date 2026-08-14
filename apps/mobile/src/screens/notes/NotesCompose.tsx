@@ -32,7 +32,41 @@ export interface ComposeInput {
   readonly kind: NoteKind;
   readonly body: string;
   readonly title?: string;
+  /** 1-3 emoji the author tagged the note with (concatenated). */
+  readonly emoji?: string;
 }
+
+/** Palette offered in compose. A curated grid rather than a free-text field:
+ *  tapping is faster than opening the emoji keyboard, and it sidesteps
+ *  counting grapheme clusters to enforce the 3-emoji cap. */
+const EMOJI_CHOICES = [
+  '❤️',
+  '🔥',
+  '😂',
+  '🥰',
+  '😍',
+  '😘',
+  '🙈',
+  '😉',
+  '💋',
+  '🌹',
+  '✨',
+  '🎁',
+  '🍑',
+  '🍆',
+  '🥂',
+  '🛏️',
+  '🎶',
+  '🌙',
+  '💌',
+  '🤫',
+  '😈',
+  '🥺',
+  '💦',
+  '⭐',
+] as const;
+/** Author may tag a note with at most this many emoji. */
+const MAX_EMOJI = 3;
 
 export interface NotesComposeProps {
   /** Resolves to an error string to show inline, or null on success.
@@ -76,6 +110,19 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
   const [kind, setKind] = useState<NoteKind>(props.initial?.kind ?? 'shared');
   const [title, setTitle] = useState(props.initial?.title ?? '');
   const [body, setBody] = useState(props.initial?.body ?? '');
+  // Selected emoji, in tap order. Stored/sent as a single concatenated string.
+  const [emoji, setEmoji] = useState<readonly string[]>(() =>
+    props.initial?.emoji ? EMOJI_CHOICES.filter((e) => props.initial?.emoji?.includes(e)) : [],
+  );
+  const [emojiOpen, setEmojiOpen] = useState(false);
+
+  function toggleEmoji(choice: string): void {
+    setEmoji((prev) => {
+      if (prev.includes(choice)) return prev.filter((e) => e !== choice);
+      if (prev.length >= MAX_EMOJI) return prev; // cap reached — ignore extra taps
+      return [...prev, choice];
+    });
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promptDismissed, setPromptDismissed] = useState(false);
@@ -95,10 +142,12 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
 
   function buildInput(): ComposeInput {
     const trimmedTitle = title.trim();
+    const joined = emoji.join('');
     return {
       kind,
       body: body.trim(),
       ...(trimmedTitle.length > 0 ? { title: trimmedTitle } : {}),
+      ...(joined.length > 0 ? { emoji: joined } : {}),
     };
   }
 
@@ -269,6 +318,39 @@ export function NotesCompose(props: NotesComposeProps): JSX.Element {
           returnKeyType="next"
         />
 
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: emojiOpen }}
+          onPress={() => setEmojiOpen((v) => !v)}
+          style={styles.emojiBar}
+          hitSlop={6}
+          testID="notes.emoji-toggle"
+        >
+          <Text style={styles.emojiBarLabel}>
+            {emoji.length > 0 ? emoji.join(' ') : 'Add emoji (optional)'}
+          </Text>
+          <Text style={styles.emojiBarChevron}>{emojiOpen ? '⌃' : '⌄'}</Text>
+        </Pressable>
+        {emojiOpen ? (
+          <View style={styles.emojiGrid} testID="notes.emoji-grid">
+            {EMOJI_CHOICES.map((choice) => {
+              const picked = emoji.includes(choice);
+              return (
+                <Pressable
+                  key={choice}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: picked }}
+                  onPress={() => toggleEmoji(choice)}
+                  style={[styles.emojiCell, picked && styles.emojiCellActive]}
+                  testID={`notes.emoji.${choice}`}
+                >
+                  <Text style={styles.emojiGlyph}>{choice}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
         <TextInput
           value={body}
           onChangeText={setBody}
@@ -391,6 +473,36 @@ const styles = StyleSheet.create({
   draftButtonDisabled: { opacity: 0.5 },
   draftButtonText: { color: '#cfcfcf', fontWeight: '600', fontSize: 15 },
   draftButtonTextDisabled: { color: '#7a7a7a' },
+  emojiBar: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  emojiBarLabel: { color: '#cfcfcf', fontSize: 16 },
+  emojiBarChevron: { color: '#7a7a7a', fontSize: 14, fontWeight: '700' },
+  emojiGrid: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  emojiCell: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#161616',
+  },
+  emojiCellActive: { backgroundColor: '#2a2a3a', borderWidth: 1, borderColor: '#9ec5ff' },
+  emojiGlyph: { fontSize: 22 },
   statusRow: { paddingHorizontal: 16, paddingBottom: 16, gap: 6 },
   counter: { color: '#666', fontSize: 12, textAlign: 'right' },
   errorText: { color: '#ffb4b4', fontSize: 13 },

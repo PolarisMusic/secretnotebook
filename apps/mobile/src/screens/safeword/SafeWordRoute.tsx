@@ -26,6 +26,7 @@ import {
   type SafeWordTermState,
   type TermStoreDeps,
   withdrawProposal,
+  clearTerm,
 } from '../../features/safeword/term-store';
 import {
   ackTrigger,
@@ -159,6 +160,35 @@ export function SafeWordRoute(): JSX.Element {
     } finally {
       setBusy(false);
     }
+  }, [termDeps, refresh]);
+
+  const handleRemove = useCallback(() => {
+    Alert.alert(
+      'Remove safe word?',
+      'This clears the term for both of you. You can agree a new one any time.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const deps = termDeps();
+              if (!deps) return;
+              setBusy(true);
+              try {
+                await clearTerm(deps);
+                await refresh();
+              } catch (e) {
+                setError((e as Error).message ?? 'Could not remove the term');
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
   }, [termDeps, refresh]);
 
   const handleTrigger = useCallback(() => {
@@ -338,6 +368,16 @@ export function SafeWordRoute(): JSX.Element {
                   testID="safeword.change"
                 >
                   <Text style={styles.secondaryText}>Change term</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.secondary}
+                  hitSlop={8}
+                  disabled={busy}
+                  onPress={handleRemove}
+                  testID="safeword.remove"
+                >
+                  <Text style={styles.secondaryText}>Remove term</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"

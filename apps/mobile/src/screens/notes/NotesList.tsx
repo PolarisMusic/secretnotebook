@@ -120,7 +120,10 @@ export function NotesList(props: NotesListProps): JSX.Element {
                     <Text style={[styles.kindBadge, d.kind === 'secret' && styles.kindBadgeSecret]}>
                       {d.kind.toUpperCase()}
                     </Text>
-                    <Text style={styles.draftBadge}>DRAFT</Text>
+                    <View style={styles.rowBadgesRight}>
+                      {d.emoji ? <Text style={styles.rowEmoji}>{d.emoji}</Text> : null}
+                      <Text style={styles.draftBadge}>DRAFT</Text>
+                    </View>
                   </View>
                   {d.title ? (
                     <Text style={styles.rowTitle} numberOfLines={1}>
@@ -156,6 +159,11 @@ export function NotesList(props: NotesListProps): JSX.Element {
                   {item.kind.toUpperCase()}
                 </Text>
                 <View style={styles.rowBadgesRight}>
+                  {item.emoji ? (
+                    <Text style={styles.rowEmoji} testID={`notes.row.${item.id}.emoji`}>
+                      {item.emoji}
+                    </Text>
+                  ) : null}
                   {isNew ? (
                     <Text style={styles.newBadge} testID={`notes.row.${item.id}.new`}>
                       ● NEW
@@ -232,6 +240,7 @@ const styles = StyleSheet.create({
   rowBadgesRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   kindBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   kindBadgeSecret: { color: '#ffb4b4' },
+  rowEmoji: { fontSize: 16 },
   newBadge: { color: '#9ec5ff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   publishedBadge: { color: '#9eff9e', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   draftBadge: { color: '#e0c080', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },

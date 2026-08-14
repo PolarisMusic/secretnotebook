@@ -2,6 +2,7 @@ import type {
   ConnectionSafeWordConfirmOp,
   ConnectionSafeWordProposeOp,
   ConnectionSafeWordWithdrawOp,
+  ConnectionSafeWordClearOp,
 } from '@secretnotebook/connection-protocol';
 import { bytesToHex, constantTimeEqual } from '@secretnotebook/crypto';
 
@@ -37,7 +38,8 @@ export type SafeWordTermState =
 type SafeWordTermOp =
   | ConnectionSafeWordProposeOp
   | ConnectionSafeWordConfirmOp
-  | ConnectionSafeWordWithdrawOp;
+  | ConnectionSafeWordWithdrawOp
+  | ConnectionSafeWordClearOp;
 
 export interface TermStoreDeps {
   readonly exec: SqlExecutor;
@@ -292,6 +294,40 @@ export async function withdrawProposal(deps: TermStoreDeps): Promise<void> {
       kind: 'connection.safeword.withdraw',
       withdrawerPubkey: bytesToHex(deps.selfPubkey),
       withdrawnAt: at,
+    });
+  });
+}
+
+/**
+ * Remove the agreed term entirely (and any pending proposal), returning both
+ * devices to "not set". Either partner may do this — a safe word only works
+ * while both still consent to it, so neither side can hold the other to one.
+ * Idempotent: clearing when nothing is set simply no-ops.
+ */
+export async function clearTerm(deps: TermStoreDeps): Promise<void> {
+  const conn = await loadConn(deps.exec);
+  if (!conn) throw new Error('clearTerm: no active connection');
+  assertSelfIsPartner(conn, deps.selfPubkey);
+
+  const at = nowSec(deps);
+  await deps.exec.transaction(async () => {
+    await deps.exec.execute(
+      `UPDATE connection
+          SET safeword_verifier          = NULL,
+              safeword_term              = NULL,
+              safeword_confirmed_at      = NULL,
+              safeword_proposal_verifier = NULL,
+              safeword_proposal_by       = NULL,
+              safeword_proposal_at       = NULL,
+              safeword_proposal_term     = NULL
+        WHERE id = ?`,
+      [conn.id],
+    );
+    await deps.enqueue({
+      v: 1,
+      kind: 'connection.safeword.clear',
+      clearedByPubkey: bytesToHex(deps.selfPubkey),
+      clearedAt: at,
     });
   });
 }
